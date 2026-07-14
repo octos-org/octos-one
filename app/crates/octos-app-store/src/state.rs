@@ -486,10 +486,18 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
             // the top-bar usage chip.
             state.context = Some(e.context_state);
         }
-        // Voice sessions have no surface in octos-app yet.
+        // Voice sessions have no surface in octos-app yet (streamed TTS
+        // audio included).
         UiNotification::VoiceExit(_) => {}
+        UiNotification::VoiceAudioChunk(_) => {}
         // Transport-level wrapper; the ws layer unwraps before folding.
         UiNotification::Envelope(_) => {}
+        // 2026-07 protocol catch-up: model-authored plan checklists have no
+        // surface in octos-app (the AMA routes to app cards, not plans).
+        UiNotification::PlanUpdated(_) => {}
+        // Compaction start is informational; the top-bar usage chip keys off
+        // `ContextCompactionCompleted`'s context_state above.
+        UiNotification::ContextCompactionStarted(_) => {}
     }
 }
 

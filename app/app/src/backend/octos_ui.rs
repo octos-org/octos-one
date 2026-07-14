@@ -161,18 +161,37 @@ impl OctosUiAgent {
     /// "octos-app:…0001" key and silently re-attach to (and grow) the
     /// previous launch's server session. Old sessions stay reachable via
     /// `session/list` + `resume_session`.
-    fn make_session_key(session_id: SessionId) -> SessionKey {
+    fn make_session_key(&self, session_id: SessionId) -> SessionKey {
         static BOOT_NONCE: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0)
         });
-        SessionKey(format!(
-            "octos-app:{:08x}-{:08x}",
-            *BOOT_NONCE,
-            session_id.0.0 as u32
-        ))
+        // stdio: the kernel resolves the turn's ProfileRuntime from the
+        // SESSION KEY's `{profile}:{channel}:{chat_id}` shape
+        // (`SessionKey::profile_id()` — the `session/open` param alone does
+        // not bind it; see octos `run_native_*_turn`'s
+        // `session_id.profile_id().or(routed_profile_id)`). Without the
+        // prefix every turn/start fails with "No ProfileRuntime registered
+        // for profile '<unset>'". `api` is a registry channel name
+        // (`is_channel_name`), which the profile-prefix parse requires;
+        // the WS transport keeps the legacy opaque key (profile rides the
+        // `X-Profile-Id` header / bearer instead).
+        if self.stdio_transport {
+            SessionKey(format!(
+                "{}:api:{:08x}-{:08x}",
+                self.fallback_profile,
+                *BOOT_NONCE,
+                session_id.0.0 as u32
+            ))
+        } else {
+            SessionKey(format!(
+                "octos-app:{:08x}-{:08x}",
+                *BOOT_NONCE,
+                session_id.0.0 as u32
+            ))
+        }
     }
 
     /// Profile to name in `session/open` params. The stdio transport carries
@@ -529,8 +548,12 @@ impl OctosUiAgent {
             | UiNotification::LoopFired(_)
             | UiNotification::LoopCompleted(_)
             | UiNotification::ContextCompactionCompleted(_)
+            | UiNotification::ContextCompactionStarted(_)
             | UiNotification::ContextNormalizationReported(_)
             | UiNotification::SessionOrchestration(_)
+            // 2026-07 protocol catch-up: no plan pane / voice surface here.
+            | UiNotification::PlanUpdated(_)
+            | UiNotification::VoiceAudioChunk(_)
             | UiNotification::Envelope(_) => Vec::new(),
         }
     }
@@ -539,7 +562,7 @@ impl OctosUiAgent {
 impl Agent for OctosUiAgent {
     fn create_session(&mut self, _cx: &mut Cx, _config: SessionConfig) -> SessionId {
         let session_id = SessionId::new();
-        let key = Self::make_session_key(session_id);
+        let key = self.make_session_key(session_id);
         log::info!("octos-ui-agent: create_session → session/open {}", key.0);
         self.session_keys.insert(session_id, key.clone());
         self.session_ids.insert(key.clone(), session_id);

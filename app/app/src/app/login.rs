@@ -396,6 +396,26 @@ fn apply_llm_config(family: &str, model: Option<&str>, key: Option<&str>) -> Res
     if !root.get("config").map(|c| c.is_object()).unwrap_or(false) {
         root["config"] = serde_json::json!({});
     }
+    // octos's `UserProfile` deserializer REQUIRES `id`, `name`, `created_at`
+    // and `updated_at` (no serde defaults), and the AppUI runtime bootstrap
+    // (`ensure_session_profile_runtime`) skips profiles with
+    // `enabled: false`. A bare `{config}` file parses as *no profile* —
+    // `ProfileStore::get` returns Err → the session opens but every
+    // `turn/start` fails with "profile '_main' is not configured". Fill the
+    // envelope on first write (and heal older bare files on re-provision)
+    // so a freshly provisioned device works without manual profile surgery.
+    if root.get("id").and_then(|v| v.as_str()).is_none() {
+        root["id"] = serde_json::json!("_main");
+    }
+    if root.get("name").and_then(|v| v.as_str()).is_none() {
+        root["name"] = serde_json::json!("Main");
+    }
+    root["enabled"] = serde_json::json!(true);
+    let now = chrono::Utc::now().to_rfc3339();
+    if root.get("created_at").and_then(|v| v.as_str()).is_none() {
+        root["created_at"] = serde_json::json!(now);
+    }
+    root["updated_at"] = serde_json::json!(now);
     let cfg = root["config"].as_object_mut().unwrap();
 
     let mut primary = serde_json::Map::new();
