@@ -4026,15 +4026,27 @@ impl App {
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
         let lib_dir = Self::android_native_lib_dir()?;
-        let program = lib_dir.join("liboctos.so");
-        if !program.exists() {
+        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        // Kernel search order: (1) the APK-bundled lib in our nativeLibraryDir,
+        // (2) a staged copy in the app's private files dir. (2) exists for
+        // /system/priv-app installs: PackageManager does NOT extract native
+        // libs for system apps, and the system partition (or the emulator's
+        // overlayfs scratch) is too small for the 80MB+ kernel — so a priv-app
+        // deployment ships libmakepad/libstd beside the APK and stages
+        // liboctos.so into the app's data dir out-of-band (see
+        // docs/SYSTEM-APP.md). The app itself is a full SYSTEM+PERSISTENT
+        // component either way.
+        let staged = home.join(".bin/liboctos.so");
+        let Some(program) = [lib_dir.join("liboctos.so"), staged]
+            .into_iter()
+            .find(|p| p.exists())
+        else {
             log::warn!(
-                "stdio: bundled octos not found at {}; using WebSocket transport",
-                program.display()
+                "stdio: bundled octos not found under {}; using WebSocket transport",
+                lib_dir.display()
             );
             return None;
-        }
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        };
         // Ensure HOME exists BEFORE spawning: `Command::spawn` chdir's into
         // `cwd` before exec, so a missing octos-home makes the spawn fail with
         // ENOENT ("No such file or directory") even though the binary is fine —
