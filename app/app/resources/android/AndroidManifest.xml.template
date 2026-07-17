@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="{package_id}"
+    android:versionCode="{version_code}"
+    android:versionName="{version_name}">
+    <application
+        android:label="{label}"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/MakepadAppTheme"
+        android:allowBackup="true"
+        android:supportsRtl="true"
+        android:debuggable="{debuggable}"
+        android:largeHeap="true"
+        android:persistent="true"
+        tools:targetApi="{target_sdk_version}">
+        <meta-data android:name="android.max_aspect" android:value="2.1" />
+        <activity
+            android:name=".{class_name}"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustNothing|stateUnchanged"
+            android:theme="@style/MakepadLaunchTheme">
+            <!-- App-drawer entry (regular app) -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Home-screen registration: the app can be picked as the
+                 device launcher (system HOME component). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+    <uses-sdk android:minSdkVersion="{min_sdk_version}" android:targetSdkVersion="{target_sdk_version}" />
+    <uses-feature android:glEsVersion="0x00020000" android:required="true"/>
+    <!-- Hardware features are optional so the APK stays installable on
+         devices without BLE/MIDI (and on emulator system images). -->
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
+    <uses-feature android:name="android.software.midi" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.location" android:required="false"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"  />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"  />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+        </intent>
+    </queries>
+</manifest>
