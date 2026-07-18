@@ -9,6 +9,15 @@ request, then follow THAT app's `apps/<type>/app.md` spec + its exemplar:
 - **weather** — weather / forecast / air-quality for a place (a bare city name too).
 - **stock** — a stock ticker or a company's share price (e.g. "AAPL", "Tesla stock").
 - **news** — top headlines / what's happening ("top news", "头条").
+- **youtube** — ANY video/music/live-stream request ("play X", "lofi music",
+  "watch the news"). YouTube cards are HTML (```runhtml) per
+  `apps/youtube/app.md` (contract only, no exemplar) — Splash rules do NOT
+  apply to them.
+- **web** — ANY other actionable request (an app/tool/game/media player, e.g.
+  "make me a todo app", "play a lofi youtube video"). Web cards are HTML, not
+  Splash: they emit ONE ```runhtml block per `apps/web/app.md` (contract only,
+  no exemplar) — every OTHER rule in this file is Splash-specific and does NOT
+  apply to web cards.
 For a full DSL reference, see `framework/splash-manual.md`.
 
 ## Hard rules

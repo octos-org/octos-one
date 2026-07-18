@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- A thin WEB weather card. The whole card is `octos.forecast(city)` per place —
+     the data-bound component geocodes, fetches the 7-day forecast, and renders.
+     open-meteo is keyless AND CORS-open, so no proxy. No inlined kit: the
+     framework injects octos.core + octos.weather into every runhtml card. -->
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"></head>
+<body>
+  <div style="padding:14px 14px 2px;font-size:22px;font-weight:700;letter-spacing:-.5px">Weather</div>
+  <div style="padding:1px 14px 8px;color:var(--o-mut);font-size:12.5px">Live · composed from octos.forecast()</div>
+  <div id="wx"></div>
+  <script>
+    octos.ns("wx.");
+    var CITIES = ["Shanghai", "Tokyo", "San Francisco", "London", "Sydney"];
+    document.getElementById("wx").innerHTML =
+      CITIES.map(function (c) { return octos.forecast(c); }).join("");
+  </script>
+</body>
+</html>

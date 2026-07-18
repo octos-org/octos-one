@@ -32,6 +32,8 @@ FILES = [
     ("apps/stock/exemplars/stock-canonical.splash", " (known-good reference)"),
     ("apps/news/app.md", ""),
     ("apps/news/exemplars/news-canonical.splash", " (known-good reference)"),
+    ("apps/web/app.md", ""),
+    ("apps/youtube/app.md", ""),
 ]
 
 
