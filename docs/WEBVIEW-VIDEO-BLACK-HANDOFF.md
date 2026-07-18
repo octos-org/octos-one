@@ -62,6 +62,18 @@ WebView's video surface and Makepad's GL `SurfaceView`.
    over adb (DevTools UI taps don't register via `input tap`), and its efficacy
    this build is UNVERIFIED.
 
+## Render dimensions are NORMAL (rules out the viewport/tile-size theory)
+
+CDP against the live card: `innerWidth=371, innerHeight=720, devicePixelRatio=2.81,
+document scrollHeight=1552, viewport meta = "width=device-width, initial-scale=1",
+player element = 371x209`. So the raster area is small and correct — the "tile
+memory exceeded" is a **symptom, not the cause**: the small HTML draws fine, so a
+371x209 video layer would too if it were in the compositor. It is not. The video's
+MediaCodec output surface (SurfaceControl/SurfaceView) is **created but never
+composited to the display**, and NONE of the feature-flag levers change that. The
+remaining lever is CODE-level: how the overlay WebView (and its video surface) is
+hosted over Makepad's GL SurfaceView. Everything below is supporting detail.
+
 ## DECISIVE CLUE (logcat, `--enable-logging=stderr`) — read this first
 
 With `--enable-logging=stderr` in the flag file, the WebView logs confirm:
