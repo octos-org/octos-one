@@ -27,7 +27,7 @@
 use makepad_widgets::*;
 use crate::fpath;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -402,6 +402,17 @@ fn octos_profile_config_path() -> Result<PathBuf, String> {
 /// the config. Takes effect on the next kernel/session start.
 fn apply_llm_config(family: &str, model: Option<&str>, key: Option<&str>) -> Result<(), String> {
     let path = octos_profile_config_path()?;
+    apply_llm_config_at_path(&path, family, model, key)
+}
+
+/// Path-injected implementation so persistence can be tested without touching
+/// the real desktop or Android profile.
+fn apply_llm_config_at_path(
+    path: &Path,
+    family: &str,
+    model: Option<&str>,
+    key: Option<&str>,
+) -> Result<(), String> {
     let mut root: serde_json::Value = if path.exists() {
         serde_json::from_slice(&std::fs::read(&path).map_err(|e| e.to_string())?)
             .map_err(|e| format!("parse {}: {e}", path.display()))?
@@ -551,5 +562,43 @@ mod tests {
         assert_eq!(config.llm_family, "zai");
         assert_eq!(config.llm_model.as_deref(), Some("glm-5.2"));
         assert_eq!(config.llm_key, "sk-test");
+    }
+
+    #[test]
+    fn llm_qr_persistence_updates_profile_without_clobbering_other_config() {
+        let unique = format!(
+            "octos-qr-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let dir = std::env::temp_dir().join(unique);
+        let path = dir.join("_main.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &path,
+            br#"{"config":{"memory":{"max_inject_tokens":60000},"custom":"keep-me"}}"#,
+        )
+        .unwrap();
+
+        apply_llm_config_at_path(&path, "zai", Some("glm-5.2"), Some("sk-fake-test"))
+            .unwrap();
+        let profile: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+
+        assert_eq!(profile["id"], "_main");
+        assert_eq!(profile["name"], "Main");
+        assert_eq!(profile["enabled"], true);
+        assert!(profile["created_at"].is_string());
+        assert!(profile["updated_at"].is_string());
+        assert_eq!(profile["config"]["llm"]["primary"]["family_id"], "zai");
+        assert_eq!(profile["config"]["llm"]["primary"]["model_id"], "glm-5.2");
+        assert_eq!(profile["config"]["env_vars"]["ZAI_API_KEY"], "sk-fake-test");
+        assert_eq!(profile["config"]["memory"]["max_inject_tokens"], 60000);
+        assert_eq!(profile["config"]["custom"], "keep-me");
+
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

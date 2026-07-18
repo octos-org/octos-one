@@ -178,6 +178,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qrcode::types::Color;
 
     #[test]
     fn generated_payload_contains_only_llm_data() {
@@ -208,5 +209,46 @@ mod tests {
             ),
         });
         assert!(result.unwrap_err().contains("not allowed"));
+    }
+
+    #[test]
+    fn generated_qr_round_trips_through_android_decoder() {
+        let payload = build_payload(&Args {
+            family: Some("zai".into()),
+            model: Some("glm-5.2".into()),
+            key: Some("sk-fake-roundtrip-only".into()),
+            json: None,
+        })
+        .unwrap();
+        let code = QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::M).unwrap();
+
+        // Rasterize exactly what the terminal renderer represents: dark modules
+        // on a light field, with the standard four-module quiet zone. Scaling
+        // gives rqrr a camera-like greyscale frame rather than direct module data.
+        let modules = code.width();
+        let quiet = 4usize;
+        let scale = 6usize;
+        let side = (modules + quiet * 2) * scale;
+        let mut luma = vec![255u8; side * side];
+        for my in 0..modules {
+            for mx in 0..modules {
+                if code[(mx, my)] == Color::Dark {
+                    let x0 = (mx + quiet) * scale;
+                    let y0 = (my + quiet) * scale;
+                    for y in y0..y0 + scale {
+                        luma[y * side + x0..y * side + x0 + scale].fill(0);
+                    }
+                }
+            }
+        }
+
+        let mut image =
+            rqrr::PreparedImage::prepare_from_greyscale(side, side, |x, y| luma[y * side + x]);
+        let decoded = image
+            .detect_grids()
+            .into_iter()
+            .find_map(|grid| grid.decode().ok().map(|(_, content)| content))
+            .expect("Android-compatible decoder should detect generated QR");
+        assert_eq!(decoded, payload);
     }
 }
