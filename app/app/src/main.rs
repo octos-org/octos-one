@@ -754,6 +754,11 @@ fn force_fullbleed_image_fit(body: &str) -> String {
 /// background image — sized to fill this device's viewport. Root and image share
 /// it so the Overlay image covers the card exactly (no offset, no letterbox).
 const FULLBLEED_CARD_HEIGHT: u32 = 1200;
+/// Height forced onto a full-bleed card ROOT that the model made `height: Fill`.
+/// Matches the immersive weather template's `height: 1500`, so after the rewrite
+/// `card_root_height` finds it and `force_fullbleed_image_fit` pins the
+/// background image to the same value (root == image, nothing letterboxes).
+const FULLBLEED_FALLBACK_HEIGHT: u32 = 1500;
 fn rewrite_image_fit_crop(inner: &str, full_h: u32) -> String {
     let mut s = inner.to_string();
     for v in ["Biggest", "Smallest", "Vertical", "Horizontal", "Stretch", "Size"] {
@@ -789,6 +794,51 @@ fn card_root_height(body: &str) -> Option<u32> {
         i = s;
     }
     None
+}
+
+/// A card whose ROOT container is `height: Fill` collapses to a blank slot: the
+/// immersive card system sizes each card from its intrinsic height
+/// (`card_root_height`), and a `Fill` root has none, so the Overlay root resolves
+/// to zero. Layout still runs and images still decode — the card looks
+/// "generated but invisible" — but nothing paints. The immersive template pins
+/// the root to a fixed `height: 1500`; a model that reaches for `height: Fill` on
+/// the root instead ships a blank card. Enforce the fixed height at render time
+/// rather than trusting the DSL (same philosophy as `force_fullbleed_image_fit`,
+/// and ordered BEFORE it so the background image pins to the now-fixed root
+/// height: root == image, no letterbox).
+///
+/// Only the ROOT's own `height: Fill` is rewritten — the search is confined to
+/// the root's attribute span (before its first nested `{`), so a child's
+/// `height: Fill` is never touched — and only when the card declares NO fixed
+/// height >= 700 anywhere. A card that already pins its root renders fine and is
+/// left alone, as are small `height: Fit` cards (whose first `height: Fill`, if
+/// any, belongs to a child this never reaches).
+fn pin_fullbleed_root_height(body: &str) -> String {
+    // Already has a fixed root height (>= 700) → it renders; don't touch it.
+    if card_root_height(body).is_some() {
+        return body.to_string();
+    }
+    let Some(root_open) = body.find('{') else {
+        return body.to_string();
+    };
+    // Root's own attributes run from its `{` to the first nested `{` (a child
+    // widget, or a brace-valued attr like `Inset{…}`). Confining the rewrite
+    // there guarantees a child's `height: Fill` is never rewritten; the worst
+    // case (a brace-valued attr ahead of `height`) is a no-op, not a misedit.
+    let attr_end = body[root_open + 1..]
+        .find('{')
+        .map(|r| root_open + 1 + r)
+        .unwrap_or(body.len());
+    let attrs = &body[root_open + 1..attr_end];
+    let fixed = format!("height: {FULLBLEED_FALLBACK_HEIGHT}");
+    let new_attrs = if attrs.contains("height: Fill") {
+        attrs.replacen("height: Fill", &fixed, 1)
+    } else if attrs.contains("height:Fill") {
+        attrs.replacen("height:Fill", &fixed, 1)
+    } else {
+        return body.to_string();
+    };
+    format!("{}{}{}", &body[..root_open + 1], new_attrs, &body[attr_end..])
 }
 
 /// Substitute `{{state.<key>}}` tokens with this card's live values. Missing
@@ -916,7 +966,10 @@ fn substitute_card_state(body: &str, item_id: usize, state: &CardState) -> Strin
     let named = strip_card_name_line(body);
     let subst = substitute_state_keys(&named, state);
     let safe = neutralize_bare_view(&subst);
-    let fitted = force_fullbleed_image_fit(&safe);
+    // Pin a `height: Fill` root to a fixed height BEFORE the image fit, so the
+    // background image (`force_fullbleed_image_fit`) pins to the same height.
+    let rooted = pin_fullbleed_root_height(&safe);
+    let fitted = force_fullbleed_image_fit(&rooted);
     tag_notify_calls(&fitted, item_id)
 }
 
@@ -7309,7 +7362,8 @@ mod tests {
 
     use super::{
         assistant_message_is_safe_for_history, assistant_message_is_safe_to_store,
-        glass_opacity_values, should_start_window_drag, DEFAULT_GLASS_OPACITY,
+        card_root_height, glass_opacity_values, pin_fullbleed_root_height,
+        should_start_window_drag, DEFAULT_GLASS_OPACITY, FULLBLEED_FALLBACK_HEIGHT,
         MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
     };
 
@@ -7370,6 +7424,44 @@ mod tests {
             DVec2 { x: 700.0, y: 24.0 },
             size
         ));
+    }
+
+    #[test]
+    fn fullbleed_root_height_fill_root_is_pinned() {
+        // A model that made the immersive root `height: Fill` (instead of the
+        // template's `height: 1500`) ships a card that lays out but paints blank.
+        // The root must be pinned to a fixed height, and ONLY the root's own
+        // `height: Fill` — the child image's `height: Fill` is left for the image
+        // fit to handle.
+        let card = "SolidView{ width: Fill height: Fill flow: Overlay new_batch: true\n\
+             Image{ src: http_resource(sys.photo(\"tokyo\")) width: Fill height: Fill }\n\
+             View{ width: Fill height: Fit flow: Down } }";
+        assert!(card_root_height(card).is_none(), "Fill root has no fixed height");
+        let out = pin_fullbleed_root_height(card);
+        assert_eq!(
+            card_root_height(&out),
+            Some(FULLBLEED_FALLBACK_HEIGHT),
+            "root pinned so the image fit finds root == image"
+        );
+        // Exactly one `height: Fill` rewritten: the child Image's remains for the
+        // image-fit pass.
+        assert_eq!(out.matches("height: Fill").count(), 1);
+        assert!(out.contains(&format!("height: {FULLBLEED_FALLBACK_HEIGHT} flow: Overlay")));
+    }
+
+    #[test]
+    fn fullbleed_root_height_leaves_fixed_and_fit_cards_alone() {
+        // Already pins its root (>= 700): untouched.
+        let fixed = "SolidView{ width: Fill height: 1500 flow: Overlay\n\
+             Image{ width: Fill height: Fill } }";
+        assert_eq!(pin_fullbleed_root_height(fixed), fixed);
+        // A small `height: Fit` list card whose only `height: Fill` is a CHILD
+        // must not have that child rewritten (would blow up a small card to
+        // full-screen). Root attr span ends at the first child `{`, so the
+        // child's Fill is out of reach.
+        let fit = "RoundedView{ width: Fill height: Fit flow: Down\n\
+             Image{ width: Fill height: Fill } }";
+        assert_eq!(pin_fullbleed_root_height(fit), fit);
     }
 
     // (W02 strip) — `aichat_backend_type_includes_claude_code`,
