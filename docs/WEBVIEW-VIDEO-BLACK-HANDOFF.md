@@ -1,5 +1,21 @@
 # Handoff: WebView video renders black over the Makepad GL surface
 
+> ## ✅ RESOLVED (2026-07-18)
+> **Root cause:** the custom manifest template
+> `app/app/resources/android/AndroidManifest.xml.template` was missing
+> `android:hardwareAccelerated="true"` on `<application>` AND emitted `<uses-sdk>`
+> **after** `</application>`. Android therefore defaulted hardware-accel to FALSE →
+> the whole app (WebView included) **software-rendered** → `cc` "tile memory limits
+> exceeded" → video black while HTML painted. (This custom template silently
+> overrides the `mod.rs` default template where the fix had lived; it arrived via
+> the octos-one merge — main's copy lacked the fix.)
+> **Fix:** add `android:hardwareAccelerated="true"` to `<application>` and move
+> `<uses-sdk>` before `<application>`. Verified on the OnePlus 6T: `tile memory
+> limits exceeded` went 82 → **0**, and the live video renders (visible even in a
+> plain `screencap`). The diagnosis below is kept for the record.
+
+
+
 **Symptom.** In the octos app on-device, a `runhtml` web card that plays video
 (e.g. the YouTube card) shows the **video area black**. Everything else in the
 WebView renders correctly — top bar, thumbnails, the player *chrome* (play/pause,
