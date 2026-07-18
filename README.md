@@ -2,11 +2,11 @@
 
 An **agent-OS phone client**: a native Android app where a routing brain (the
 **AMA**) dispatches every request to one of several concurrent **app agents**
-(weather, stock, news, youtube, web), each of which generates a live, full-screen
+(weather, stock, news, web), each of which generates a live, full-screen
 interactive card. Cards come in **two substrates** — native **Splash DSL** cards
 and **webview** (HTML/JS) cards — and both bind **real data at render time**
-(open-meteo, Yahoo Finance, Hacker News, the YouTube IFrame API) — the LLM writes
-the *layout and the data bindings*, never the numbers.
+(open-meteo, Yahoo Finance, Hacker News) — the LLM writes the *layout and the data
+bindings*, never the numbers.
 
 <p align="center"><em>You type "TSLA" → the AMA routes <code>stock</code> → the stock
 agent takes the screen with a live quote. You type "Shanghai" → the weather agent
@@ -20,8 +20,8 @@ octos-one/
                 routing (decision → activation), the Splash card renderer, and the
                 shared WebView overlay that hosts webview (runhtml) cards.
   a2app/        The "app-card memory": the framework rules, widget docs, and one
-                spec + exemplar per app (weather / stock / news / youtube / web).
-                Assembled into the MEMORY.md that octos injects into each agent.
+                spec + exemplar per app (weather / stock / news / web). Assembled
+                into the MEMORY.md that octos injects into each agent's context.
   scripts/      build_memory.py — assemble a2app/ → MEMORY.md (reproducible).
   docs/
     ARCHITECTURE.md            How it all fits together (read this first).
@@ -75,10 +75,11 @@ A card is emitted as a fenced block; the substrate is chosen per card:
   and the home of effects the web can't cheaply match: shader-animated weather
   icons and **real glass** (`glass.Panel` = gaussian backdrop blur + lensing).
   Splash cards can load bundled fonts (e.g. Roboto weights) via `crate_resource`.
-- **Webview** (` ```runhtml `) — an HTML/JS document in a shared native WebView
-  overlay (`octos_web_card`). All cards share one origin, so `localStorage` state
-  composes across them. This is how the **YouTube** card runs a real IFrame-API
-  player (captions, translate, PiP, swipe-to-minimize).
+- **Webview** (` ```runhtml `) — a self-contained HTML/JS document in a shared
+  native WebView overlay (`octos_web_card`). All cards share one origin, so
+  `localStorage` state composes across them, and a card can use the full web
+  platform (embeds, media players, rich in-document interactivity) with `fetch()`
+  binding live data.
 
 **The `octos.*` web-widget kit** is the web counterpart of Splash's `glass.*`:
 `aichat/widgets/src/octos_{core,media,finance,weather}.js`, auto-injected into
@@ -105,8 +106,7 @@ condition-matched tints and tap-to-detail navigation.
 
 **Webview app cards** — the runhtml pipeline (WebCard widget + cross-platform
 `SystemBrowser` `set_html` + shared WebView overlay + auto-injected `octos.*` kit)
-is implemented; the **YouTube** agent runs a full IFrame-API player card on-device.
+is implemented; the **web** agent generates self-contained HTML/JS cards on-device.
 
-The AMA routes weather / stock / news / youtube / web correctly in English and
-Chinese (including `<style> weather <place>` → weather) and activates the matching
-agent.
+The AMA routes weather / stock / news / web correctly in English and Chinese
+(including `<style> weather <place>` → weather) and activates the matching agent.
