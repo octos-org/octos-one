@@ -296,6 +296,36 @@ const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow:
 /// Deliberately generic over ANY id — dynamically composed apps (`compose_app`)
 /// reuse it unchanged: the fresh session's injected memory carries the
 /// AMA-authored `apps/<domain>/app.md`, which this prompt points the agent at.
+/// The complete hand-authored YouTube app card (home / watch / search / library,
+/// composing the `octos.media` kit). Served DIRECTLY on a youtube route so the
+/// full app renders reliably — the on-device model under-generates a 14 KB app
+/// down to a bare player, so youtube is a deterministic card, not a generation.
+const YOUTUBE_REFERENCE_CARD: &str = include_str!("../../../docs/youtube-player-reference.html");
+
+/// (live-channel handle, the video id it occupies in the reference card). The
+/// freshest ids from `youtube_live_cache` replace these so the card always opens
+/// on a currently-live stream (live ids rotate).
+const YOUTUBE_REF_PLACEHOLDER_IDS: [(&str, &str); 4] = [
+    ("LofiGirl", "VAlMDl00mYY"),
+    ("SkyNews", "YDvsBbKfLPA"),
+    ("aljazeeraenglish", "gCNeDWCI0vo"),
+    ("NASA", "awQzjn72bI0"),
+];
+
+/// The reference youtube card with the freshest resolved live ids substituted in.
+fn youtube_reference_card() -> String {
+    let cache = youtube_live_cache().lock().unwrap();
+    let mut html = YOUTUBE_REFERENCE_CARD.to_string();
+    for (handle, placeholder) in YOUTUBE_REF_PLACEHOLDER_IDS {
+        if let Some(fresh) = cache.get(handle) {
+            if fresh.len() == 11 && fresh.as_str() != placeholder {
+                html = html.replace(placeholder, fresh);
+            }
+        }
+    }
+    html
+}
+
 fn app_splash_router_for(domain: &str, intent: &str) -> String {
     if domain == "youtube" {
         let cache = youtube_live_cache().lock().unwrap();
@@ -3997,18 +4027,32 @@ impl App {
             cx.system_browser(web_card_browser_id()).detach();
         }
         if app_id == "youtube" {
-            // Refresh for the NEXT generation; this one uses the warm cache.
+            // Resolve ground-truth live ids, then serve the COMPLETE hand-authored
+            // youtube app DIRECTLY (no LLM — the on-device model under-generates the
+            // 14 KB app to a bare player) with the fresh ids substituted in.
             refresh_youtube_live_ids();
-            // Give the warmup a short bounded window so the FIRST generation
-            // after a cold boot still gets ground-truth live ids (the prompt
-            // is built right below). Generation itself takes ~a minute, so a
-            // brief stall here is invisible in comparison.
             for _ in 0..20 {
                 if youtube_live_cache().lock().unwrap().len() >= 3 {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(150));
             }
+            let card = youtube_reference_card();
+            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut data) = CHAT_DATA.write() {
+                data.messages.push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    text: format!("```runhtml\n{card}\n```"),
+                });
+                data.is_streaming = false;
+            }
+            let chat_list = self.ui.widget(cx, ids!(chat_list));
+            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
+            self.apps[idx].repair_attempted = false;
+            self.update_empty_state_visibility(cx);
+            self.sync_app_tabs(cx);
+            cx.redraw_all();
+            return;
         }
         // New foreground → drop ChatList's render cache so the card re-parses.
         CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
