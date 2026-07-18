@@ -326,6 +326,82 @@ fn youtube_reference_card() -> String {
     html
 }
 
+/// Root of the deployed app-cards tree on device. The current octos main this
+/// branch builds against no longer assembles/injects app-cards as agent memory,
+/// so the app reads the routed app's spec + shared widget docs from here and
+/// INLINES them into the generation prompt (`app_card_docs` + `splash_gen_prompt`)
+/// — the same self-contained pattern the youtube/weather-style paths already use.
+#[cfg(target_os = "android")]
+const APP_CARDS_ROOT: &str = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards";
+
+fn app_cards_root_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        Some(std::path::PathBuf::from(APP_CARDS_ROOT))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        std::env::var("OCTOS_APP_CARDS_DIR")
+            .ok()
+            .map(std::path::PathBuf::from)
+    }
+}
+
+/// Read the docs an app agent needs to generate a `domain` card — the shared
+/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec — from
+/// the deployed app-cards tree, formatted for inlining into the prompt. Empty
+/// string if the tree isn't present (caller then falls back to the older
+/// memory-reliant prompt). The spec goes LAST so it's the freshest context.
+fn app_card_docs(domain: &str) -> String {
+    let Some(root) = app_cards_root_dir() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for w in [
+        "design-system",
+        "containers",
+        "interaction",
+        "sys-helpers",
+        "weather-icon",
+    ] {
+        if let Ok(s) = std::fs::read_to_string(root.join("widgets").join(format!("{w}.md"))) {
+            out.push_str(&format!("\n----- widgets/{w}.md -----\n{}\n", s.trim_end()));
+        }
+    }
+    if let Ok(s) = std::fs::read_to_string(root.join("apps").join(domain).join("app.md")) {
+        out.push_str(&format!(
+            "\n----- apps/{domain}/app.md — THIS IS YOUR SPEC, follow it EXACTLY -----\n{}\n",
+            s.trim_end()
+        ));
+    }
+    out
+}
+
+/// Assemble the SELF-CONTAINED Splash generation prompt for `domain`: the baked
+/// syntax manual + the inlined app-cards `docs` + the output contract. Pure
+/// (`docs` passed in) so the assembly is unit-testable off-device. The explicit
+/// "only real Splash syntax" clause targets the observed GLM-5.2 failure mode of
+/// inventing `Card {}` / `layout: {}` / `background:` pseudo-DSL.
+fn splash_gen_prompt(domain: &str, intent: &str, docs: &str) -> String {
+    format!(
+        "You ARE the {domain} app agent and you OWN the entire card generation. Your \
+SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
+do NOT claim anything is missing, do NOT read or fetch files, and do NOT ask \
+questions. Follow the `apps/{domain}/app.md` spec EXACTLY, assembling it from the \
+widget patterns and the SYNTAX MANUAL, using ONLY the `sys.*` helpers the spec \
+names and binding live data through them (NEVER hardcode or invent numbers, \
+headlines, or venues). Use ONLY real Makepad Splash syntax from the manual — real \
+widgets (`SolidView`/`View`/`RoundedView`/`Label`/`Image`/…) with inline \
+attributes. NEVER invent syntax such as `Card {{ }}`, `layout: {{ }}`, or \
+`background:` — those are not Splash and render blank.\n\n\
+Emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the \
+COMPLETE card DSL with ALL mandatory sections the spec lists, no prose before or \
+after, never truncated.\n\n\
+===== SPLASH SYNTAX MANUAL =====\n{SPLASH_MANUAL}\n{docs}\n===== END REFERENCE =====\
+\n\nThe AMA routed this request to the {domain} app.\n\nUser request: {intent}"
+    )
+}
+
 fn app_splash_router_for(domain: &str, intent: &str) -> String {
     if domain == "youtube" {
         let cache = youtube_live_cache().lock().unwrap();
@@ -395,12 +471,21 @@ patterns (e.g. the YouTube iframe with autoplay+playsinline+mute).\n\nUser \
 request: {intent}"
         );
     }
-    format!(
-        "{APP_SPLASH_ROUTER}\n\nThe AMA routed this request to the {domain} app — \
+    // Default (weather-no-style, stock, news, activity, weather-activity, …).
+    // octos no longer injects the app-cards tree as memory, so inline the routed
+    // app's spec + the widget/syntax docs directly (self-contained prompt). Fall
+    // back to the old memory-reliant prompt only if the tree isn't deployed.
+    let docs = app_card_docs(domain);
+    if docs.is_empty() {
+        format!(
+            "{APP_SPLASH_ROUTER}\n\nThe AMA routed this request to the {domain} app — \
 generate a {domain} card: follow the apps/{domain}/app.md spec in \
 your memory, and bind live data with the matching sys.* helper. Do NOT generate any \
 other app type.\n\nUser request: {intent}"
-    )
+        )
+    } else {
+        splash_gen_prompt(domain, intent, &docs)
+    }
 }
 
 fn app_splash_prompt(request: &str) -> String {
@@ -7363,8 +7448,8 @@ mod tests {
     use super::{
         assistant_message_is_safe_for_history, assistant_message_is_safe_to_store,
         card_root_height, glass_opacity_values, pin_fullbleed_root_height,
-        should_start_window_drag, DEFAULT_GLASS_OPACITY, FULLBLEED_FALLBACK_HEIGHT,
-        MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
+        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
+        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
     };
 
     #[test]
@@ -7424,6 +7509,25 @@ mod tests {
             DVec2 { x: 700.0, y: 24.0 },
             size
         ));
+    }
+
+    #[test]
+    fn splash_gen_prompt_is_self_contained() {
+        // The routed generation prompt must inline the spec + manual and forbid
+        // the invented pseudo-DSL, since octos no longer injects app-cards.
+        let docs = "\n----- apps/weather/app.md — THIS IS YOUR SPEC -----\nmandatory: 7-day forecast via sys.weather\n";
+        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
+        assert!(p.contains("weather in tokyo"), "carries the user intent");
+        assert!(p.contains("apps/weather/app.md"), "inlines the routed spec");
+        assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
+        assert!(p.contains("```runsplash"), "demands one runsplash block");
+        // Directly targets the GLM-5.2 failure mode.
+        assert!(p.contains("Card {"), "names the forbidden pseudo-DSL");
+        assert!(p.contains("layout:"), "names the forbidden pseudo-DSL");
+        assert!(
+            !p.contains("in your memory"),
+            "must NOT rely on the dead memory injection"
+        );
     }
 
     #[test]
