@@ -62,7 +62,44 @@ WebView's video surface and Makepad's GL `SurfaceView`.
    over adb (DevTools UI taps don't register via `input tap`), and its efficacy
    this build is UNVERIFIED.
 
-## ROOT CAUSE (confirmed by the SurfaceFlinger layer stack)
+## DECISIVE CLUE (logcat, `--enable-logging=stderr`) — read this first
+
+With `--enable-logging=stderr` in the flag file, the WebView logs confirm:
+- **The flag file IS read** (chromium logging appears) — so earlier `--disable-features`
+  attempts were applied and still did nothing; they are not the lever.
+- **The video decoder runs fine:** `cr_MediaCodecBridge: create MediaCodec video
+  decoder, mime video/avc, decoder name OMX.qcom.video.decoder.avc`, `OMX-VDEC-1080P`,
+  audio focus granted. So decode + audio work; only the *picture* is missing.
+- **The compositor is memory-starved and DROPS content:**
+  `[ERROR:cc/tiles/tile_manager.cc:1014] WARNING: tile memory limits exceeded, some
+  content may not draw` — spammed continuously. This is the same *class* of error as
+  the original black-video bug that `hardwareAccelerated` fixed; it is back.
+- `[ERROR:media/gpu/android/frame_info_helper.cc:246] Guessed coded size
+  incorrectly. Expected 432x240, got 426x240` (minor).
+
+**Did NOT fix it:** `--disable-features=AndroidSurfaceControl,WebViewSurfaceControl,
+UseSurfaceLayerForVideoDefault,UseSurfaceLayerForVideo,OverlayFullscreenVideo`;
+`--force-gpu-mem-available-mb=768…1024` (tile error count unchanged, ~82). Even
+FULLSCREEN (`onShowCustomView`, top window layer) is black — so it is NOT z-order
+occlusion. Everything else (HTML, thumbnails, player chrome) draws.
+
+**Most likely root cause:** the WebView's compositor cannot get enough GPU/tile
+memory (or is not truly hardware-accelerated) when hosted as an overlay over
+Makepad's GL `SurfaceView`, so `cc` drops the largest layer — the video — while
+smaller raster tiles still draw. Best directions to chase in CODE (not flags):
+- Force the WebView onto a hardware layer explicitly:
+  `web.setLayerType(View.LAYER_TYPE_HARDWARE, null)` in `ensureSystemBrowser`.
+- Check the card's rendering resolution: `setUseWideViewPort(true)` +
+  `setLoadWithOverviewMode(true)` are set; if the card's `<meta viewport>` isn't
+  `width=device-width`, the WebView may raster a huge area → tile-memory blowout.
+- Confirm the WebView is actually GPU-composited in this window (the app's main
+  content is a GL SurfaceView; the overlay WebView may be getting a starved/soft
+  raster budget). Consider a dedicated GPU memory policy / larger tile budget, or
+  hosting the WebView so it doesn't contend with Makepad's GL context.
+- Sanity-check on a device with more GPU memory / different WebView build — the tile
+  budget scales with available GPU memory.
+
+## ROOT CAUSE (SurfaceFlinger layer stack — supporting evidence)
 
 `adb shell dumpsys SurfaceFlinger` while the youtube card plays (audio) shows, for
 `dev.makepad.octos_app`, three composited layers, z bottom→top:
@@ -90,13 +127,30 @@ all set via the command-line file, with a **confirmed-debuggable** app
 the CDP compositor shot stayed black. So the fix is a **surface z-order / opacity**
 problem, not a WebView feature toggle.
 
-**Strong lead for the fix:** the fullscreen path (`onShowCustomView`) adds the video
-view to `mRootLayout` — the **window** layer, which IS above Makepad's GL surface —
-so fullscreen video should composite and show. If it does, the inline fix is to make
-the inline video surface composite at the window level too (or make Makepad's GL
-SurfaceView non-occluding: `setZOrderMediaOverlay`/`setZOrderOnTop` experiments, a
-transparent hole under the video, or hosting the WebView so its video surface
-z-orders above the GL surface).
+**UPDATE — it is NOT occlusion.** Fullscreen (`onShowCustomView` adds the video
+view to `mRootLayout`, the top window layer, ABOVE Makepad's GL surface) is **also
+black**. So the video surface does not composite at ANY z-order — the problem is
+that WebView hardware video never reaches the display in this app at all, not that
+it's hidden behind Makepad. Feature flags (`WebViewSurfaceControl`,
+`UseSurfaceLayerForVideo*`, `OverlayFullscreenVideo`) on a debuggable build did not
+change it (unverified whether the flag file is actually read — `chrome://version`
+is blocked in WebView, so the applied command line couldn't be confirmed).
+
+Likely the root issue: the app's **main content is a GL `SurfaceView`** (Makepad),
+and a WebView hosted as an overlay in that same window cannot get its hardware
+**video** surface composited (audio decodes, video surface is created but never
+shown). This is the classic "WebView video is black inside a
+SurfaceView/TextureView-based app" problem. Directions to try:
+- Confirm whether the command-line flag file is actually read (log
+  `--enable-logging=stderr` and grep logcat for the applied switches; or check the
+  WebView's variations). If not read, that's why every `--disable-features` no-op'd.
+- If SurfaceControl-disable IS applied and video is still black, the WebView video
+  needs to render into the WebView's own accelerated **texture** layer. Investigate
+  hosting the WebView differently (its own hardware layer / a TextureView-backed
+  surface) so video composites with the HTML.
+- Verify it EVER worked on-device (the earlier "playing" may have been audio-only —
+  lofi is a radio stream). If it never showed video, treat as a first-time bring-up
+  of WebView video over a GL SurfaceView, not a regression.
 
 ## Hypotheses for Codex (in rough priority)
 
