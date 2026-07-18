@@ -126,13 +126,19 @@ function viewAllHist(){st.histAll=!st.histAll;renderYou()}
 function openSearch(){O.player.mini(false);document.body.classList.remove("o-pip");
  document.getElementById("search").innerHTML='<div id="sbar"><button onclick="go(\'home\')">'+O.ic("back")+'</button><input id="sin" placeholder="Search videos or paste a link" oninput="renderSearch(this.value)" autocomplete="off"><button onclick="document.getElementById(\'sin\').value=\'\';renderSearch(\'\')">'+O.ic("close")+'</button></div><div id="sresults"></div>';
  go("search");renderSearch("");setTimeout(function(){var i=document.getElementById("sin");if(i)i.focus()},120)}
-function renderSearch(q){q=(q||"").trim();var el=document.getElementById("sresults");if(!el)return;var out="",id=O.ytId(q);
- if(id)out+='<div class="o-tile" style="padding:11px 14px" onclick="playById(\''+id+'\')">'+O.ic("play")+'&nbsp; Play this video · '+id+'</div>';
- var ql=q.toLowerCase(),hits=q?CAT.filter(function(v){return v.t.toLowerCase().indexOf(ql)>=0||v.ch.toLowerCase().indexOf(ql)>=0}):CAT;
- if(!q)out+='<div class="o-empty" style="padding:12px 14px">Search the catalog, or paste a YouTube link to play any video.</div>';
- out+=hits.map(function(v){return O.tile(v,"playById")}).join("");
- if(q&&!hits.length&&!id)out+='<div class="o-empty" style="padding:12px 14px">No matches. Paste a YouTube link to play any video.</div>';
- el.innerHTML=out}
+var _searchSeq=0,_searchTimer=null;
+function renderSearch(q){q=(q||"").trim();var el=document.getElementById("sresults");if(!el)return;
+ var id=O.ytId(q),seq=++_searchSeq;clearTimeout(_searchTimer);
+ var head=id?'<div class="o-tile" style="padding:11px 14px" onclick="playById(\''+id+'\')">'+O.ic("play")+'&nbsp; Play this video · '+id+'</div>':"";
+ if(!q){el.innerHTML=head+'<div class="o-empty" style="padding:12px 14px">Search YouTube, or paste a link to play any video.</div>'+CAT.map(function(v){return O.tile(v,"playById")}).join("");return}
+ el.innerHTML=head+'<div class="o-empty" style="padding:12px 14px">Searching YouTube…</div>';
+ _searchTimer=setTimeout(function(){O.ytSearch(q).then(function(res){
+  if(seq!==_searchSeq)return;
+  var out=head;
+  if(res&&res.length){res.forEach(function(v){if(!findV(v.id))CAT.push(v)});out+=res.map(function(v){return O.tile(v,"playById")}).join("")}
+  else{var ql=q.toLowerCase(),hits=CAT.filter(function(v){return v.t.toLowerCase().indexOf(ql)>=0||v.ch.toLowerCase().indexOf(ql)>=0});
+   out+=hits.map(function(v){return O.tile(v,"playById")}).join("")+'<div class="o-empty" style="padding:12px 14px">'+(hits.length?'Live search unavailable — showing catalog. ':'No results found. ')+'Paste a YouTube link to play any video.</div>'}
+  el.innerHTML=out})},350)}
 
 /* ===== actions (kit state + rerender) ===== */
 function doLike(){var v=st.cur;if(st.liked[v.id])delete st.liked[v.id];else{st.liked[v.id]={id:v.id,t:v.t,ch:v.ch,live:v.live};delete st.disliked[v.id];O.toast("Added to Liked videos")}O.set("liked",st.liked);O.set("disliked",st.disliked);renderWatch()}
