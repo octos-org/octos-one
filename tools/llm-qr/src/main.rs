@@ -15,16 +15,18 @@
 //!
 //! Usage:
 //! ```text
-//! cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family zai --model glm-5.2 --key sk-XXXX
+//! cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family zai --model glm-5.2 --prompt-key --svg /tmp/zai.svg
 //! cargo run --manifest-path tools/llm-qr/Cargo.toml -- --json '{"llm_family":"zai",...}'
 //! ```
 //!
-//! By default it prints the JSON payload and a Unicode QR to the terminal (scan it
-//! straight off the screen). NOTE: the key is a secret — treat the QR like a password.
+//! By default it prints a Unicode QR to the terminal. `--svg` is preferred for
+//! camera scanning because terminal font metrics can distort QR geometry.
+//! NOTE: the generated QR contains the key — treat it like a password.
 
-use qrcode::render::unicode;
+use qrcode::render::{svg, unicode};
 use qrcode::{EcLevel, QrCode};
 use serde_json::{Map, Value};
+use std::path::Path;
 use std::process::exit;
 
 /// Provider family_id -> the env-var name octos reads the key from. Extend as the
@@ -43,7 +45,9 @@ struct Args {
     family: Option<String>,
     model: Option<String>,
     key: Option<String>,
+    prompt_key: bool,
     json: Option<String>,
+    svg: Option<String>,
 }
 
 fn die(msg: &str) -> ! {
@@ -56,7 +60,9 @@ fn parse_args() -> Args {
         family: None,
         model: None,
         key: None,
+        prompt_key: false,
         json: None,
+        svg: None,
     };
     let mut it = std::env::args().skip(1);
     while let Some(flag) = it.next() {
@@ -70,7 +76,9 @@ fn parse_args() -> Args {
             "--family" => a.family = val(),
             "--model" => a.model = val(),
             "--key" => a.key = val(),
+            "--prompt-key" => a.prompt_key = true,
             "--json" => a.json = val(),
+            "--svg" => a.svg = val(),
             "-h" | "--help" => {
                 print_help();
                 exit(0);
@@ -88,7 +96,9 @@ fn print_help() {
          --family <id>     provider family_id (zai, deepseek, openai, anthropic, …)\n  \
          --model  <id>     model_id (e.g. glm-5.2, deepseek-v4-pro)\n  \
          --key    <key>    the provider API key (stays on-device once scanned)\n  \
+         --prompt-key      securely prompt for the API key without shell history\n  \
          --json   <json>   encode an LLM-only JSON payload instead\n  \
+         --svg    <path>   also write a large, high-contrast SVG QR image\n  \
          -h, --help        show this help"
     );
 }
@@ -140,27 +150,50 @@ fn validate_llm_payload(value: &Value) -> Result<(), String> {
     Ok(())
 }
 
-/// Render a Unicode QR (half-block chars) that scans straight off a dark terminal.
-fn render_qr(payload: &str) {
+/// Render a Unicode QR, or a high-contrast SVG when a path is provided.
+fn render_qr(payload: &str, svg_path: Option<&str>) {
     let code =
         QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::M).unwrap_or_else(|e| {
             die(&format!(
                 "error: could not encode QR (payload too long?): {e}"
             ))
         });
-    // Dense1x2 packs two module rows per line; swapping the colors inverts it so
-    // the dark background of a typical terminal becomes the QR's light field.
-    let art = code
-        .render::<unicode::Dense1x2>()
-        .dark_color(unicode::Dense1x2::Light)
-        .light_color(unicode::Dense1x2::Dark)
-        .quiet_zone(true)
-        .build();
-    println!("{art}");
+    if let Some(path) = svg_path {
+        let image = code
+            .render::<svg::Color>()
+            .min_dimensions(1024, 1024)
+            .dark_color(svg::Color("#000000"))
+            .light_color(svg::Color("#ffffff"))
+            .quiet_zone(true)
+            .build();
+        std::fs::write(Path::new(path), image)
+            .unwrap_or_else(|e| die(&format!("error: could not write SVG {path:?}: {e}")));
+        println!("Wrote scannable QR image: {path}");
+    } else {
+        // Dense1x2 packs two module rows per line; swapping the colors inverts
+        // it for a typical dark terminal. Some fonts distort this rendering,
+        // which is why camera provisioning should prefer `--svg`.
+        let art = code
+            .render::<unicode::Dense1x2>()
+            .dark_color(unicode::Dense1x2::Light)
+            .light_color(unicode::Dense1x2::Dark)
+            .quiet_zone(true)
+            .build();
+        println!("{art}");
+    }
 }
 
 fn main() {
-    let a = parse_args();
+    let mut a = parse_args();
+    if a.prompt_key {
+        if a.key.is_some() || a.json.is_some() {
+            die("error: --prompt-key cannot be combined with --key or --json");
+        }
+        a.key = Some(
+            rpassword::prompt_password("API key: ")
+                .unwrap_or_else(|e| die(&format!("error: could not read API key: {e}"))),
+        );
+    }
     let payload = build_payload(&a).unwrap_or_else(|e| die(&format!("error: {e}")));
     if let Some(family) = &a.family {
         if !KNOWN_FAMILIES.contains(&family.as_str()) {
@@ -171,8 +204,8 @@ fn main() {
             );
         }
     }
-    println!("QR payload (treat as a secret):\n  {payload}\n");
-    render_qr(&payload);
+    println!("QR payload generated (contains your API key; value not printed).\n");
+    render_qr(&payload, a.svg.as_deref());
 }
 
 #[cfg(test)]
@@ -186,7 +219,9 @@ mod tests {
             family: Some("zai".into()),
             model: Some("glm-5.2".into()),
             key: Some("sk-test".into()),
+            prompt_key: false,
             json: None,
+            svg: None,
         })
         .unwrap();
         let value: Value = serde_json::from_str(&payload).unwrap();
@@ -203,10 +238,12 @@ mod tests {
             family: None,
             model: None,
             key: None,
+            prompt_key: false,
             json: Some(
                 r#"{"llm_family":"zai","llm_key":"sk-test","base_url":"https://example.com"}"#
                     .into(),
             ),
+            svg: None,
         });
         assert!(result.unwrap_err().contains("not allowed"));
     }
@@ -217,7 +254,9 @@ mod tests {
             family: Some("zai".into()),
             model: Some("glm-5.2".into()),
             key: Some("sk-fake-roundtrip-only".into()),
+            prompt_key: false,
             json: None,
+            svg: None,
         })
         .unwrap();
         let code = QrCode::with_error_correction_level(payload.as_bytes(), EcLevel::M).unwrap();
