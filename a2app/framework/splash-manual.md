@@ -1931,6 +1931,11 @@ fn do_search(query) {
 - `match` in shaders: `match self.block_type { Type.A => { ... } Type.B => { ... } }`
 - Inherit + override: `theme.mspace_1{left: theme.space_2}` — takes mspace_1 but overrides left
 - Strings use double quotes only: `text: "Hello"`. No single quotes, no backticks.
+- A widget body opens with `{` and closes with `}` — **never** `]`. Square
+  brackets belong only to array literals (`pts: [10 10 50 80]`) and indexing
+  (`items[0]`). This one is worth re-reading before you emit: closing a widget
+  with `]` does not fail locally. The parser loses sync and misreads every
+  line after it, so a single wrong character blanks the entire card.
 
 ## Guidelines
 
