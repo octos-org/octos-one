@@ -1,0 +1,172 @@
+SolidView{ width: Fill height: 1560 flow: Down new_batch: true draw_bg.color: #0f0f0f padding: Inset{left: 12 top: 50 right: 12 bottom: 20} spacing: 11
+    Label{ text: "Weather" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 24 } margin: Inset{left: 3 top: 0 bottom: 0} }
+    Label{ text: "Native · Splash / Makepad · Roboto" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 12 margin: Inset{left: 3 bottom: 2} }
+
+    // ===================== SHANGHAI 31.23,121.47 =====================
+    RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 16 top: 14 right: 16 bottom: 13} draw_bg.color: #181818 draw_bg.border_radius: 16.0 spacing: 0
+        Label{ text: "Shanghai" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 17 } }
+        Label{ text: "China" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 12 margin: Inset{top: 2 bottom: 6} }
+        View{ width: Fill height: 78 flow: Right align: Align{y: 0.5} spacing: 12
+            Label{ text: sys.weather(31.23, 121.47, "current.temperature_2m") + "°" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 } } font_size: 37 } }
+            View{ width: Fill height: Fit flow: Down spacing: 3
+                Label{ text: "Drizzle" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+                Label{ text: "Feels " + sys.weather(31.23, 121.47, "current.apparent_temperature") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+            }
+            WeatherIcon{ draw_bg.cond: 3.0 width: 46 height: 46 }
+        }
+        View{ width: Fill height: Fit flow: Right spacing: 6 margin: Inset{top: 12}
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Today" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 4.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.0") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.0") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Sun" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 4.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.1") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.1") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Mon" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 4.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.2") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.2") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Tue" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 3.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.3") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.3") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Wed" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 1.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.4") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.4") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+        }
+    }
+
+    // ===================== TOKYO 35.68,139.65 =====================
+    RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 16 top: 14 right: 16 bottom: 13} draw_bg.color: #181818 draw_bg.border_radius: 16.0 spacing: 0
+        Label{ text: "Tokyo" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 17 } }
+        Label{ text: "Japan" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 12 margin: Inset{top: 2 bottom: 6} }
+        View{ width: Fill height: 78 flow: Right align: Align{y: 0.5} spacing: 12
+            Label{ text: sys.weather(35.68, 139.65, "current.temperature_2m") + "°" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 } } font_size: 37 } }
+            View{ width: Fill height: Fit flow: Down spacing: 3
+                Label{ text: "Partly cloudy" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+                Label{ text: "Feels " + sys.weather(35.68, 139.65, "current.apparent_temperature") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+            }
+            WeatherIcon{ draw_bg.cond: 1.0 width: 46 height: 46 }
+        }
+        View{ width: Fill height: Fit flow: Right spacing: 6 margin: Inset{top: 12}
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Today" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 3.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.0") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.0") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Sun" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 1.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.1") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.1") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Mon" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 1.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.2") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.2") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Tue" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 4.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.3") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.3") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Wed" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 4.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.4") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.4") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+        }
+    }
+
+    // ===================== SAN FRANCISCO 37.77,-122.42 =====================
+    RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 16 top: 14 right: 16 bottom: 13} draw_bg.color: #181818 draw_bg.border_radius: 16.0 spacing: 0
+        Label{ text: "San Francisco" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 17 } }
+        Label{ text: "United States" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 12 margin: Inset{top: 2 bottom: 6} }
+        View{ width: Fill height: 78 flow: Right align: Align{y: 0.5} spacing: 12
+            Label{ text: sys.weather(37.77, -122.42, "current.temperature_2m") + "°" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 } } font_size: 37 } }
+            View{ width: Fill height: Fit flow: Down spacing: 3
+                Label{ text: "Clear sky" draw_text.color: #f1f1f1 draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+                Label{ text: "Feels " + sys.weather(37.77, -122.42, "current.apparent_temperature") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+            }
+            WeatherIcon{ draw_bg.cond: 0.0 width: 46 height: 46 }
+        }
+        View{ width: Fill height: Fit flow: Right spacing: 6 margin: Inset{top: 12}
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Today" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 7.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_max.0") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_min.0") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Sat" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 7.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_max.1") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_min.1") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Sun" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 0.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_max.2") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_min.2") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Mon" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 2.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_max.3") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_min.3") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+            RoundedView{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 4 padding: Inset{top: 8 bottom: 7} draw_bg.color: #ffffff14 draw_bg.border_radius: 11.0
+                Label{ text: "Tue" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                WeatherIcon{ draw_bg.cond: 0.0 width: 26 height: 26 }
+                View{ width: Fit height: Fit flow: Down spacing: 0 align: Align{x: 0.5}
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_max.4") + "°" draw_text.color: #f1f1f1 draw_text.text_style.font_size: 11 }
+                    Label{ text: sys.weather(37.77, -122.42, "daily.temperature_2m_min.4") + "°" draw_text.color: #9aa0a6 draw_text.text_style.font_size: 11 }
+                }
+            }
+        }
+    }
+}

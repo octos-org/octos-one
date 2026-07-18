@@ -1,0 +1,66 @@
+SolidView{ width: Fill height: 940 flow: Overlay new_batch: true draw_bg.color: #05070c
+    Image{ src: http_resource(sys.photo("tokyo skyline partly cloudy daytime")) fit: ImageFit.CropToFill width: Fill height: Fill }
+    GradientYView{ width: Fill height: Fill new_batch: true draw_bg.color: #0a0f1a22 draw_bg.color_2: #05070cf2 }
+    View{ width: Fill height: Fill flow: Down padding: Inset{left: 24 top: 58 right: 24 bottom: 40} spacing: 2
+        Label{ text: "Tokyo" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Regular.ttf") asc: 0.0 desc: 0.0 } } font_size: 34 } }
+        Label{ text: sys.weather(35.68, 139.65, "current.temperature_2m") + "°" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 } } font_size: 78 } margin: Inset{top: 2 bottom: 0} }
+        View{ width: Fill height: 40 flow: Right align: Align{y: 0.5} spacing: 10
+            WeatherIcon{ draw_bg.cond: 1.0 width: 34 height: 34 }
+            Label{ text: "Partly Cloudy" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 18 } }
+        }
+        Label{ text: "H:" + sys.weather(35.68, 139.65, "daily.temperature_2m_max.0") + "°   L:" + sys.weather(35.68, 139.65, "daily.temperature_2m_min.0") + "°   Feels " + sys.weather(35.68, 139.65, "current.apparent_temperature") + "°" draw_text.color: #ffffffdd draw_text.text_style.font_size: 14 margin: Inset{top: 4} }
+        View{ width: Fill height: 26 }
+        RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 16 top: 6 right: 16 bottom: 8} draw_bg.color: #ffffff1a draw_bg.border_radius: 22.0 spacing: 0
+            Label{ text: "7-DAY FORECAST" draw_text.color: #ffffff99 draw_text.text_style.font_size: 11 margin: Inset{top: 6 bottom: 4} }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Today" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "⛅" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.0") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.0") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Sun" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "☀️" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.1") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.1") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Mon" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "⛅" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.2") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.2") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Tue" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "🌧️" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.3") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.3") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Wed" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "⛅" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.4") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.4") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Thu" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "☀️" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.5") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.5") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+            View{ width: Fill height: 38 flow: Right align: Align{y: 0.5}
+                Label{ width: 92 text: "Fri" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+                Label{ width: 40 text: "☀️" draw_text.text_style.font_size: 16 }
+                Filler{}
+                Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.6") + "°" draw_text.color: #ffffff88 draw_text.text_style.font_size: 15 }
+                Label{ width: 52 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.6") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            }
+        }
+    }
+}

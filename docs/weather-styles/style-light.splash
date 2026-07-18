@@ -1,0 +1,81 @@
+SolidView{ width: Fill height: 1500 flow: Down new_batch: true draw_bg.color: #f2f2f7 padding: Inset{left: 14 top: 52 right: 14 bottom: 20} spacing: 14
+    Label{ text: "Weather" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Bold.ttf") asc: 0.0 desc: 0.0 } } font_size: 26 } margin: Inset{left: 4} }
+
+    // ---- Shanghai ----
+    RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 18 top: 16 right: 18 bottom: 6} draw_bg.color: #ffffff draw_bg.border_radius: 18.0 spacing: 0
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5}
+            View{ width: Fill height: Fit flow: Down spacing: 1
+                Label{ text: "Shanghai" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 18 } }
+                Label{ text: "Drizzle" draw_text.color: #8e8e93 draw_text.text_style.font_size: 13 margin: Inset{top: 2} }
+            }
+            Label{ text: sys.weather(31.23, 121.47, "current.temperature_2m") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 } } font_size: 44 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #e2e2e7 margin: Inset{top: 12 bottom: 2} }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Today" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 3.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.0") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.0") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Sun" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 3.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.1") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.1") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Mon" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 3.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.2") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.2") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Tue" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 2.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(31.23, 121.47, "daily.temperature_2m_min.3") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(31.23, 121.47, "daily.temperature_2m_max.3") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+    }
+
+    // ---- Tokyo ----
+    RoundedView{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 18 top: 16 right: 18 bottom: 6} draw_bg.color: #ffffff draw_bg.border_radius: 18.0 spacing: 0
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5}
+            View{ width: Fill height: Fit flow: Down spacing: 1
+                Label{ text: "Tokyo" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 18 } }
+                Label{ text: "Partly cloudy" draw_text.color: #8e8e93 draw_text.text_style.font_size: 13 margin: Inset{top: 2} }
+            }
+            Label{ text: sys.weather(35.68, 139.65, "current.temperature_2m") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 } } font_size: 44 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #e2e2e7 margin: Inset{top: 12 bottom: 2} }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Today" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 1.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.0") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.0") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Sun" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 0.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.1") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.1") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+        SolidView{ width: Fill height: 1 draw_bg.color: #ececf1 }
+        View{ width: Fill height: 44 flow: Right align: Align{y: 0.5}
+            Label{ width: 92 text: "Mon" draw_text.color: #1c1c1e draw_text.text_style.font_size: 14 }
+            WeatherIcon{ draw_bg.cond: 0.0 width: 24 height: 24 }
+            Filler{}
+            Label{ text: sys.weather(35.68, 139.65, "daily.temperature_2m_min.2") + "°" draw_text.color: #8e8e93 draw_text.text_style.font_size: 14 }
+            Label{ width: 46 text: sys.weather(35.68, 139.65, "daily.temperature_2m_max.2") + "°" draw_text.color: #1c1c1e draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 14 } }
+        }
+    }
+}

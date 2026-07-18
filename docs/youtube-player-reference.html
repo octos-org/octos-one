@@ -1,0 +1,176 @@
+<!-- name: youtube-player -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{padding-bottom:132px}
+body.o-pip #watch>*:not(.o-player){display:none!important}
+#you .prof{display:flex;align-items:center;gap:14px;padding:14px 12px 4px}
+#you .prof .pn{font-size:19px;font-weight:700}
+#you .prof .ps{font-size:12px;color:#aaa;margin-top:2px}
+#yhist{display:flex;gap:10px;overflow-x:auto;padding:2px 12px 6px;scrollbar-width:none}
+#yhist::-webkit-scrollbar{display:none}
+.hc{flex-shrink:0;width:148px}
+.hc img{width:148px;height:83px;object-fit:cover;border-radius:10px;background:#272727;display:block}
+.hc .t{font-size:12px;font-weight:500;line-height:1.3;margin-top:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.hc .c{font-size:11px;color:#aaa;margin-top:2px}
+.yrow{display:flex;gap:10px;padding:5px 12px;align-items:center;position:relative}
+.yrow img{width:108px;height:61px;object-fit:cover;border-radius:8px;background:#272727}
+.yrow .t{font-size:12.5px;font-weight:500;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.yrow .c{font-size:11px;color:#aaa;margin-top:2px}
+#ysubs{display:flex;gap:16px;overflow-x:auto;padding:4px 12px 8px;scrollbar-width:none}
+#ysubs::-webkit-scrollbar{display:none}
+.sc{flex-shrink:0;width:64px;text-align:center}
+.sc .o-ava{margin:0 auto}
+.sc .n{font-size:10.5px;margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:6px;padding:8px 10px;background:#0f0f0f;border-bottom:1px solid #222}
+#sbar button{width:38px;height:38px;border:0;background:transparent;display:flex;align-items:center;justify-content:center}
+#sbar svg{width:22px;height:22px;fill:#f1f1f1}
+#sin{flex:1;height:40px;background:#121212;border:1px solid #333;border-radius:20px;color:#f1f1f1;font-size:15px;padding:0 16px;outline:none}
+</style>
+</head>
+<body>
+<div id="topbar"></div>
+<div id="watch"></div>
+<div id="home" class="o-hidden"></div>
+<div id="you" class="o-hidden"></div>
+<div id="search" class="o-hidden"></div>
+
+<script>
+/* ===== data (the LLM's job: catalog + handles) ===== */
+octos.handles={"Lofi Girl":"LofiGirl","Sky News":"SkyNews","Al Jazeera English":"aljazeeraenglish","NASA":"NASA","Blender":"BlenderOfficial","Rick Astley":"RickAstleyYT","officialpsy":"officialpsy","Luis Fonsi":"LuisFonsiVEVO","LuisFonsiVEVO":"LuisFonsiVEVO","Ed Sheeran":"EdSheeran","jawed":"jawed"};
+var CAT=[
+ {id:"VAlMDl00mYY",t:"lofi hip hop radio — beats to relax/study to",ch:"Lofi Girl",live:1,sub:"Live radio channel",tags:["music"]},
+ {id:"YDvsBbKfLPA",t:"Sky News — watch live",ch:"Sky News",live:1,sub:"World news 24/7",tags:["news"]},
+ {id:"gCNeDWCI0vo",t:"Al Jazeera English — live",ch:"Al Jazeera English",live:1,sub:"Global news",tags:["news"]},
+ {id:"awQzjn72bI0",t:"NASA live — official stream",ch:"NASA",live:1,sub:"Space & science",tags:["science"]},
+ {id:"aqz-KE-bpKQ",t:"Big Buck Bunny 60fps 4K",ch:"Blender",live:0,sub:"Open movies",tags:["film"]},
+ {id:"dQw4w9WgXcQ",t:"Rick Astley — Never Gonna Give You Up",ch:"Rick Astley",live:0,sub:"Official artist channel",tags:["music"]},
+ {id:"9bZkp7q19f0",t:"PSY — GANGNAM STYLE M/V",ch:"officialpsy",live:0,sub:"Official artist channel",tags:["music"]},
+ {id:"kJQP7kiw5Fk",t:"Luis Fonsi — Despacito ft. Daddy Yankee",ch:"Luis Fonsi",live:0,sub:"Official artist channel",tags:["music"]},
+ {id:"JGwWNGJdvx8",t:"Ed Sheeran — Shape of You",ch:"Ed Sheeran",live:0,sub:"Official artist channel",tags:["music"]},
+ {id:"jNQXAC9IVRw",t:"Me at the zoo",ch:"jawed",live:0,sub:"The first YouTube video",tags:["film"]}
+];
+var CHIPS=["All","Music","Live","News"];
+
+/* ===== app state ===== */
+var O=octos, st={cur:CAT[0],view:"watch",chip:"All",cexp:false,histAll:false,hidden:{},
+ subs:O.get("subs",{}),liked:O.get("liked",{}),disliked:O.get("disliked",{}),saved:O.get("saved",{}),hist:O.get("hist",[]),cmts:O.get("cmts",{})};
+function findV(id){return CAT.filter(function(x){return x.id===id})[0]||st.hist.filter(function(x){return x.id===id})[0]}
+function CATV(){return CAT.filter(function(v){return !st.hidden[v.id]})}
+
+/* ===== navigation ===== */
+function go(v){O.closeSheet();
+ var playing=(O.player.ready&&O.player.yt&&!st.miniClosed);
+ var isMini=(v!=="watch"&&v!=="search"&&playing);
+ O.player.mini(isMini);
+ ["home","you","search"].forEach(function(x){document.getElementById(x).classList.toggle("o-hidden",x!==v)});
+ document.getElementById("watch").classList.toggle("o-hidden",!(v==="watch"||isMini));
+ document.getElementById("topbar").classList.toggle("o-hidden",v==="watch");
+ var yb=document.getElementById("o-you"); if(yb)yb.classList.toggle("on",v==="you");
+ if(isMini)pipIcon(O.player.state()!==2);
+ st.view=v; if(v==="you")renderYou(); if(v==="home")renderHome(); window.scrollTo(0,0)}
+function pipIcon(playing){var b=document.querySelector(".o-pipov .tog");if(b)b.innerHTML=O.ic(playing?"pause":"play")}
+
+/* ===== play ===== */
+function play(v){st.cur=v;st.miniClosed=false;st.cexp=false;
+ document.getElementById("o-player").style.backgroundImage="url("+O.thumb(v.id)+")";
+ O.player.load(v);
+ st.hist=st.hist.filter(function(x){return x.id!==v.id});st.hist.unshift({id:v.id,t:v.t,ch:v.ch,live:v.live});st.hist=st.hist.slice(0,20);O.set("hist",st.hist);
+ renderWatch();go("watch");setTimeout(function(){window.scrollTo(0,0)},150)}
+function playById(id){var v=findV(id);if(!v){v={id:id,t:"YouTube video",ch:"",live:0,sub:"",tags:[]};CAT.push(v);O.oembed(id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch()})}play(v)}
+
+/* ===== watch view ===== */
+function renderWatch(){var v=st.cur;
+ if(!O.player._mounted){
+  document.getElementById("watch").innerHTML=
+    O.playerHtml({onMin:"go('home')",onMax:"go('watch')",onToggle:"pipToggle",onClose:"pipClose"})+'<div id="wmeta"></div>';
+  O.player.mount("o-yt");O.player._mounted=true;O.player.load(v);
+  O.player.onState(function(s){if(document.body.classList.contains("o-pip"))pipIcon(s!==2)});
+  O.player.gestures(function(){go("home")});
+ }
+ document.getElementById("wmeta").innerHTML=
+   '<div class="o-title">'+O.esc(v.t)+'</div>'
+  +'<div class="o-meta">'+(v.live?'<span class="o-live">● LIVE</span> · ':'')+O.esc(v.sub||"On YouTube")+'</div>'
+  +O.actionBar(v,{liked:!!st.liked[v.id],disliked:!!st.disliked[v.id],saved:!!st.saved[v.id],cc:O.player.cc},
+    {like:"doLike",dislike:"doDislike",share:"doShare",save:"doSave",remix:"doRemix",report:"doReport",captions:"doCC",translate:"doTr"})
+  +O.channelRow(v,!!st.subs[v.ch],"doSub")
+  +O.comments(v.id,st.cmts[v.id]||[],st.cexp,{expand:"cExpand",post:"cPost"})
+  +O.sec("Up next")+'<div id="upnext"></div>';
+ renderUpnext();}
+function renderUpnext(){document.getElementById("upnext").innerHTML=CATV().filter(function(v){return v.id!==st.cur.id}).map(function(v){return O.tile(v,"playById")}).join("")}
+
+/* ===== home view ===== */
+function renderHome(){document.getElementById("home").innerHTML=
+  '<div class="o-chips">'+O.chips(CHIPS,st.chip,"setChip")+'</div><div id="feed"></div>';
+ var f=st.chip==="All"?CATV():CATV().filter(function(v){return st.chip==="Live"?v.live:st.chip==="Music"?v.tags.indexOf("music")>=0:st.chip==="News"?v.tags.indexOf("news")>=0:1});
+ document.getElementById("feed").innerHTML=f.map(function(v){return O.feedCard(v,"playById")}).join("")}
+function setChip(c){st.chip=c;renderHome()}
+
+/* ===== you view ===== */
+function renderYou(){var el=document.getElementById("you");
+ el.innerHTML='<div class="prof">'+O.avatar("You",56,24).replace("You","Y")+'<div><div class="pn">You</div><div class="ps">Library on this device</div></div></div>'
+  +O.sec("History","viewAllHist")+'<div id="yhist"></div>'
+  +O.sec("Liked videos")+'<div id="yliked"></div>'+O.sec("Watch later")+'<div id="ysaved"></div>'+O.sec("Subscriptions")+'<div id="ysubs"></div>';
+ var hc=function(v){return '<div class="hc" onclick="playById(\''+v.id+'\')"><img src="'+O.thumb(v.id)+'"><div class="t">'+O.esc(v.t)+'</div><div class="c">'+O.esc(v.ch)+'</div></div>'};
+ var yr=function(v){return '<div class="yrow" onclick="playById(\''+v.id+'\')"><img src="'+O.thumb(v.id)+'"><div class="tx" style="flex:1;min-width:0"><div class="t">'+O.esc(v.t)+'</div><div class="c">'+O.esc(v.ch)+'</div></div></div>'};
+ document.getElementById("yhist").innerHTML=st.hist.length?(st.histAll?st.hist.slice(0,20).map(yr).join(""):st.hist.slice(0,10).map(hc).join("")):'<div class="o-empty">Videos you watch will show up here</div>';
+ var lk=Object.keys(st.liked).map(function(k){return st.liked[k]});document.getElementById("yliked").innerHTML=lk.length?lk.map(yr).join(""):'<div class="o-empty">Tap Like to see it here</div>';
+ var sv=Object.keys(st.saved).map(function(k){return st.saved[k]});document.getElementById("ysaved").innerHTML=sv.length?sv.map(yr).join(""):'<div class="o-empty">Tap Save on a video</div>';
+ var sb=Object.keys(st.subs);document.getElementById("ysubs").innerHTML=sb.length?sb.map(function(n){return '<div class="sc">'+O.avatar(n,56,22)+'<div class="n">'+O.esc(n)+'</div></div>'}).join(""):'<div class="o-empty">Channels you subscribe to appear here</div>'}
+function viewAllHist(){st.histAll=!st.histAll;renderYou()}
+
+/* ===== search view ===== */
+function openSearch(){O.player.mini(false);document.body.classList.remove("o-pip");
+ document.getElementById("search").innerHTML='<div id="sbar"><button onclick="go(\'home\')">'+O.ic("back")+'</button><input id="sin" placeholder="Search videos or paste a link" oninput="renderSearch(this.value)" autocomplete="off"><button onclick="document.getElementById(\'sin\').value=\'\';renderSearch(\'\')">'+O.ic("close")+'</button></div><div id="sresults"></div>';
+ go("search");renderSearch("");setTimeout(function(){var i=document.getElementById("sin");if(i)i.focus()},120)}
+var _searchSeq=0,_searchTimer=null;
+function renderSearch(q){q=(q||"").trim();var el=document.getElementById("sresults");if(!el)return;
+ var id=O.ytId(q),seq=++_searchSeq;clearTimeout(_searchTimer);
+ var head=id?'<div class="o-tile" style="padding:11px 14px" onclick="playById(\''+id+'\')">'+O.ic("play")+'&nbsp; Play this video · '+id+'</div>':"";
+ if(!q){el.innerHTML=head+'<div class="o-empty" style="padding:12px 14px">Search YouTube, or paste a link to play any video.</div>'+CAT.map(function(v){return O.tile(v,"playById")}).join("");return}
+ el.innerHTML=head+'<div class="o-empty" style="padding:12px 14px">Searching YouTube…</div>';
+ _searchTimer=setTimeout(function(){O.ytSearch(q).then(function(res){
+  if(seq!==_searchSeq)return;
+  var out=head;
+  if(res&&res.length){res.forEach(function(v){if(!findV(v.id))CAT.push(v)});out+=res.map(function(v){return O.tile(v,"playById")}).join("")}
+  else{var ql=q.toLowerCase(),hits=CAT.filter(function(v){return v.t.toLowerCase().indexOf(ql)>=0||v.ch.toLowerCase().indexOf(ql)>=0});
+   out+=hits.map(function(v){return O.tile(v,"playById")}).join("")+'<div class="o-empty" style="padding:12px 14px">'+(hits.length?'Live search unavailable — showing catalog. ':'No results found. ')+'Paste a YouTube link to play any video.</div>'}
+  el.innerHTML=out})},350)}
+
+/* ===== actions (kit state + rerender) ===== */
+function doLike(){var v=st.cur;if(st.liked[v.id])delete st.liked[v.id];else{st.liked[v.id]={id:v.id,t:v.t,ch:v.ch,live:v.live};delete st.disliked[v.id];O.toast("Added to Liked videos")}O.set("liked",st.liked);O.set("disliked",st.disliked);renderWatch()}
+function doDislike(){var v=st.cur;if(st.disliked[v.id])delete st.disliked[v.id];else{st.disliked[v.id]=1;delete st.liked[v.id];O.toast("You disliked this")}O.set("liked",st.liked);O.set("disliked",st.disliked);renderWatch()}
+function doSave(){var v=st.cur;if(st.saved[v.id]){delete st.saved[v.id];O.toast("Removed from Watch later")}else{st.saved[v.id]={id:v.id,t:v.t,ch:v.ch,live:v.live};O.toast("Saved to Watch later","VIEW")}O.set("saved",st.saved);renderWatch()}
+function doSub(){var v=st.cur;if(st.subs[v.ch]){delete st.subs[v.ch];O.toast("Unsubscribed")}else{st.subs[v.ch]=1;O.toast("Subscribed to "+v.ch)}O.set("subs",st.subs);renderWatch()}
+function doShare(){var v=st.cur,u="https://youtu.be/"+v.id;try{var t=document.createElement("textarea");t.value=u;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);O.toast("Link copied")}catch(e){O.toast(u)}}
+function doRemix(){O.toast("Remix isn't available for this video")}
+function doReport(){O.toast("Thanks — feedback noted")}
+function doCC(){O.player.captions({on:!O.player.cc});renderWatch();O.toast(O.player.cc?"Captions on":"Captions off")}
+function doTr(){O.sheet("Translate captions",O.player.LANGS.map(function(l){return {icon:l[0]===O.player.ccLang?"cc":"translate",label:l[1],on:function(){O.player.captions({lang:l[0]});renderWatch();O.toast(l[0]?"Captions: "+l[1]:"Captions off")}}}))}
+function cExpand(e){if(e.target.id==="o-cin")return;st.cexp=!st.cexp;renderWatch()}
+function cPost(e){e.stopPropagation();var i=document.getElementById("o-cin"),t=i.value.trim();if(!t)return;var v=st.cur;(st.cmts[v.id]=st.cmts[v.id]||[]).unshift(t);O.set("cmts",st.cmts);st.cexp=true;renderWatch();O.toast("Comment added")}
+
+/* kebab -> sheet */
+window.ok=function(id){var v=findV(id);if(!v)return;
+ O.sheet(null,[
+  {icon:"save_o",label:"Save to Watch later",on:function(){st.saved[id]={id:v.id,t:v.t,ch:v.ch,live:v.live};O.set("saved",st.saved);O.toast("Saved to Watch later","VIEW")}},
+  {icon:"share",label:"Share",on:doShare},
+  {icon:"eyeoff",label:"Not interested",on:function(){st.hidden[id]=1;renderUpnext();if(st.view==="home")renderHome();O.toast("We won't recommend that","UNDO")}},
+  {icon:"personoff",label:"Don't recommend channel",on:function(){CAT.forEach(function(x){if(x.ch===v.ch)st.hidden[x.id]=1});renderUpnext();if(st.view==="home")renderHome();O.toast("We won't recommend "+v.ch,"UNDO")}},
+  {icon:"report",label:"Report",on:doReport}])};
+
+/* pip controls */
+function pipToggle(){O.player.toggle();pipIcon(O.player.state()!==1)}
+function pipClose(){st.miniClosed=true;O.player.mini(false);O.player.stop();O.toast("Playback stopped")}
+
+/* ===== boot ===== */
+document.getElementById("topbar").innerHTML=O.topbar({onHome:"go('home')",onBell:"function(){octos.toast('Notifications aren\\'t available')}()",onSearch:"openSearch()",onYou:"go('you')"});
+if(!st.hist.length||st.hist[0].id!==st.cur.id){st.hist.unshift({id:st.cur.id,t:st.cur.t,ch:st.cur.ch,live:1});st.hist=st.hist.slice(0,20);O.set("hist",st.hist)}
+renderWatch();
+CAT.forEach(function(v){O.oembed(v.id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch();else{renderUpnext();if(st.view==="home")renderHome()}})});
+</script>
+</body>
+</html>

@@ -60,9 +60,235 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
+
+/// The domain-specialised app-agent prompt. The AMA routed `intent` to `domain`,
+/// so tell THAT agent to generate a card of exactly that app type (following the
+/// matching `apps/<domain>/app.md` spec + exemplar in its injected memory).
+const YOUTUBE_CARD_CONTRACT: &str = include_str!("../../../a2app/apps/youtube/app.md");
+
+/// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
+/// (like the youtube contract) so a "dark/glass/minimal/photo weather" request
+/// reproduces that style precisely without needing the profile MEMORY updated.
+/// The default (no style keyword) still uses the injected canonical exemplar.
+const WEATHER_STYLE_DARK: &str = include_str!("../../../a2app/apps/weather/exemplars/style-dark.splash");
+const WEATHER_STYLE_LIGHT: &str = include_str!("../../../a2app/apps/weather/exemplars/style-light.splash");
+const WEATHER_STYLE_GLASS: &str = include_str!("../../../a2app/apps/weather/exemplars/style-glass.splash");
+const WEATHER_STYLE_IMMERSIVE: &str = include_str!("../../../a2app/apps/weather/exemplars/style-immersive.splash");
+
+/// Map a weather request to an explicit style template, if one is named. Bare
+/// `dark` is treated as a style keyword (a weather intent never means "is it
+/// dark"); `light` is required to be qualified (mode/theme/style/minimal) so it
+/// is never confused with "light rain".
+fn detect_weather_style(intent: &str) -> Option<(&'static str, &'static str)> {
+    let q = intent.to_lowercase();
+    let has = |ss: &[&str]| ss.iter().any(|s| q.contains(s));
+    if has(&["glass", "vibrant", "gradient", "毛玻璃", "玻璃"]) {
+        Some(("glass", WEATHER_STYLE_GLASS))
+    } else if has(&["minimal", "简约", "浅色", "light mode", "light theme", "light style", "clean"]) {
+        Some(("light", WEATHER_STYLE_LIGHT))
+    } else if has(&["dark", "深色"]) {
+        Some(("dark", WEATHER_STYLE_DARK))
+    } else if has(&["immersive", "photo", "大图"]) {
+        Some(("immersive (photo)", WEATHER_STYLE_IMMERSIVE))
+    } else {
+        None
+    }
+}
+
+/// Live channels the youtube agent can offer instantly. (handle, label)
+const YOUTUBE_LIVE_CHANNELS: [(&str, &str); 4] = [
+    ("LofiGirl", "Lofi Girl lofi radio"),
+    ("SkyNews", "Sky News world news"),
+    ("aljazeeraenglish", "Al Jazeera English news"),
+    ("NASA", "NASA space"),
+];
+
+/// handle -> current live video id, resolved by the app runtime (ground truth
+/// for the youtube agent — memorized live ids in the model are always stale).
+fn youtube_live_cache() -> &'static std::sync::Mutex<std::collections::HashMap<&'static str, String>>
+{
+    static CACHE: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<&'static str, String>>,
+    > = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Resolve each channel's CURRENT live video id in a background thread by
+/// fetching `youtube.com/@handle/live` (through the OCTOS proxy when set) and
+/// pulling the first `"videoId":"..."`. Results land in `youtube_live_cache`;
+/// the youtube router prompt injects whatever is cached at generation time.
+fn refresh_youtube_live_ids() {
+    std::thread::spawn(|| {
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(rt) => rt,
+            Err(_) => return,
+        };
+        rt.block_on(async {
+            let mut builder = reqwest::Client::builder();
+            if let Ok(proxy) = std::env::var("MAKEPAD_OCTOS_PROXY") {
+                let proxy = proxy.trim().to_owned();
+                if !proxy.is_empty() {
+                    if let Ok(p) = reqwest::Proxy::all(&proxy) {
+                        builder = builder.proxy(p);
+                    }
+                }
+            }
+            let Ok(client) = builder
+                .user_agent("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36")
+                .timeout(std::time::Duration::from_secs(8))
+                .build()
+            else {
+                return;
+            };
+            for (handle, _) in YOUTUBE_LIVE_CHANNELS {
+                if youtube_live_cache().lock().unwrap().contains_key(handle) {
+                    continue;
+                }
+                let url = format!("https://www.youtube.com/@{handle}/live");
+                let mut body = String::new();
+                for attempt in 0..3 {
+                    if attempt > 0 {
+                        tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                    }
+                    if let Ok(resp) = client.get(&url).send().await {
+                        if let Ok(text) = resp.text().await {
+                            if text.contains("videoId") {
+                                body = text;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if body.is_empty() {
+                    continue;
+                }
+                if let Some(pos) = body.find("\"videoId\":\"") {
+                    let start = pos + "\"videoId\":\"".len();
+                    if let Some(id) = body.get(start..start + 11) {
+                        if id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                        {
+                            log::info!("youtube live resolve: @{handle} -> {id}");
+                            youtube_live_cache()
+                                .lock()
+                                .unwrap()
+                                .insert(handle, id.to_string());
+                        }
+                    }
+                }
+            }
+        });
+    });
+}
+
+/// Condition code → (label, glass tint hex, WeatherIcon cond, photo scene). The
+/// glass tint tracks the sky: blue=clear, gray=overcast/fog, slate=rain, cool=snow.
+fn wx_cond_meta(cond: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+    match cond.trim() {
+        "0" => ("Clear Sky", "0f3e73", "0.0", "clear blue sky bright sunny"),
+        "1" => ("Partly Cloudy", "24425f", "1.0", "partly cloudy blue sky"),
+        "2" => ("Overcast", "3f454d", "2.0", "overcast grey clouds"),
+        "3" => ("Rain", "213645", "3.0", "rain wet reflective streets"),
+        "4" => ("Thunderstorm", "241f38", "4.0", "thunderstorm dramatic dark clouds"),
+        "5" => ("Snow", "3f5163", "5.0", "snow winter white"),
+        "6" => ("Windy", "2a3f4a", "6.0", "windy dramatic sky"),
+        "7" => ("Fog", "40454b", "7.0", "fog mist haze"),
+        _ => ("Weather", "1a2b40", "2.0", "skyline"),
+    }
+}
+
+/// Build a REAL-glass single-city detail card (glass.Panel = gaussian backdrop
+/// blur + lensing) over a condition-matched live photo, all numbers live via
+/// `sys.weather(lat, lon, …)`. Rendered directly on a list tap — no LLM.
+fn glass_detail_card(city: &str, lat: &str, lon: &str, cond: &str) -> String {
+    let (label, tint, icon, scene) = wx_cond_meta(cond);
+    GLASS_DETAIL_TEMPLATE
+        .replace("__CITY__", city)
+        .replace("__LAT__", lat)
+        .replace("__LON__", lon)
+        .replace("__TINT__", tint)
+        .replace("__ICON__", icon)
+        .replace("__LABEL__", label)
+        .replace("__SCENE__", scene)
+}
+
+/// Placeholders (`__CITY__ __LAT__ __LON__ __TINT__ __ICON__ __LABEL__ __SCENE__`)
+/// are substituted by `glass_detail_card`. `.replace()` (not `format!`) so the
+/// DSL's own `{ }` need no escaping. Roboto loaded from the bundled resources.
+const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow: Overlay new_batch: true draw_bg.color: #05070c
+    Image{ src: http_resource(sys.photo("__CITY__ skyline __SCENE__")) fit: ImageFit.CropToFill width: Fill height: Fill }
+    View{ width: Fill height: Fill flow: Down padding: Inset{left: 16 top: 56 right: 16 bottom: 40} spacing: 14
+        glass.Panel{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 22 top: 20 right: 22 bottom: 18} spacing: 2
+            draw_bg +: { tint_color: #x__TINT__ tint_alpha: 0.36 border_color: #xcdd9e6 border_alpha: 0.5 corner_radius: 26.0 highlight_strength: 0.3 }
+            Label{ text: "__CITY__" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Regular.ttf") asc: 0.0 desc: 0.0 } } font_size: 30 } }
+            View{ width: Fill height: 82 flow: Right align: Align{y: 0.5} spacing: 12
+                Label{ text: sys.weather(__LAT__, __LON__, "current.temperature_2m") + "°" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 } } font_size: 62 } }
+                View{ width: Fill height: Fit flow: Down spacing: 3
+                    Label{ text: "__LABEL__" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 16 } }
+                    Label{ text: "Feels " + sys.weather(__LAT__, __LON__, "current.apparent_temperature") + "°" draw_text.color: #ffffffcc draw_text.text_style.font_size: 12 }
+                }
+                WeatherIcon{ draw_bg.cond: __ICON__ width: 44 height: 44 }
+            }
+            Label{ text: "H:" + sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.0") + "°    L:" + sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.0") + "°" draw_text.color: #ffffffdd draw_text.text_style.font_size: 13 margin: Inset{top: 4} }
+        }
+        glass.Panel{ width: Fill height: Fit flow: Right new_batch: true padding: Inset{left: 8 top: 14 right: 8 bottom: 14}
+            draw_bg +: { tint_color: #x__TINT__ tint_alpha: 0.32 border_color: #xcdd9e6 border_alpha: 0.45 corner_radius: 24.0 }
+            View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 3
+                Label{ text: "HUMIDITY" draw_text.color: #ffffffaa draw_text.text_style.font_size: 10 }
+                Label{ text: sys.weather(__LAT__, __LON__, "current.relative_humidity_2m") + "%" draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 19 } }
+            }
+            View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 3
+                Label{ text: "WIND" draw_text.color: #ffffffaa draw_text.text_style.font_size: 10 }
+                Label{ text: sys.weather(__LAT__, __LON__, "current.wind_speed_10m") draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 19 } }
+            }
+            View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 3
+                Label{ text: "UV" draw_text.color: #ffffffaa draw_text.text_style.font_size: 10 }
+                Label{ text: sys.weather(__LAT__, __LON__, "daily.uv_index_max.0") draw_text.color: #ffffff draw_text.text_style: TextStyle{ font_family: FontFamily{ latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Medium.ttf") asc: 0.0 desc: 0.0 } } font_size: 19 } }
+            }
+        }
+        glass.Panel{ width: Fill height: Fit flow: Down new_batch: true padding: Inset{left: 12 top: 12 right: 12 bottom: 14} spacing: 8
+            draw_bg +: { tint_color: #x__TINT__ tint_alpha: 0.32 border_color: #xcdd9e6 border_alpha: 0.45 corner_radius: 24.0 }
+            Label{ text: "7-DAY FORECAST" draw_text.color: #ffffffaa draw_text.text_style.font_size: 10 margin: Inset{left: 4} }
+            View{ width: Fill height: Fit flow: Right spacing: 4
+                View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 6
+                    Label{ text: "Today" draw_text.color: #ffffffcc draw_text.text_style.font_size: 11 }
+                    WeatherIcon{ draw_bg.cond: __ICON__ width: 28 height: 28 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.0") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 13 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.0") + "°" draw_text.color: #ffffff99 draw_text.text_style.font_size: 12 }
+                }
+                View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 6
+                    Label{ text: "Sun" draw_text.color: #ffffffcc draw_text.text_style.font_size: 11 }
+                    WeatherIcon{ draw_bg.cond: __ICON__ width: 28 height: 28 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.1") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 13 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.1") + "°" draw_text.color: #ffffff99 draw_text.text_style.font_size: 12 }
+                }
+                View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 6
+                    Label{ text: "Mon" draw_text.color: #ffffffcc draw_text.text_style.font_size: 11 }
+                    WeatherIcon{ draw_bg.cond: __ICON__ width: 28 height: 28 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.2") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 13 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.2") + "°" draw_text.color: #ffffff99 draw_text.text_style.font_size: 12 }
+                }
+                View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 6
+                    Label{ text: "Tue" draw_text.color: #ffffffcc draw_text.text_style.font_size: 11 }
+                    WeatherIcon{ draw_bg.cond: __ICON__ width: 28 height: 28 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.3") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 13 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.3") + "°" draw_text.color: #ffffff99 draw_text.text_style.font_size: 12 }
+                }
+                View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} spacing: 6
+                    Label{ text: "Wed" draw_text.color: #ffffffcc draw_text.text_style.font_size: 11 }
+                    WeatherIcon{ draw_bg.cond: __ICON__ width: 28 height: 28 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_max.4") + "°" draw_text.color: #ffffff draw_text.text_style.font_size: 13 }
+                    Label{ text: sys.weather(__LAT__, __LON__, "daily.temperature_2m_min.4") + "°" draw_text.color: #ffffff99 draw_text.text_style.font_size: 12 }
+                }
+            }
+        }
+    }
+}"##;
 
 /// The domain-specialised app-agent prompt. The AMA routed `intent` to `domain`,
 /// so tell THAT agent to generate a card of exactly that app type (following the
@@ -70,13 +296,196 @@ const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire ca
 /// Deliberately generic over ANY id — dynamically composed apps (`compose_app`)
 /// reuse it unchanged: the fresh session's injected memory carries the
 /// AMA-authored `apps/<domain>/app.md`, which this prompt points the agent at.
-fn app_splash_router_for(domain: &str, intent: &str) -> String {
+/// The complete hand-authored YouTube app card (home / watch / search / library,
+/// composing the `octos.media` kit). Served DIRECTLY on a youtube route so the
+/// full app renders reliably — the on-device model under-generates a 14 KB app
+/// down to a bare player, so youtube is a deterministic card, not a generation.
+const YOUTUBE_REFERENCE_CARD: &str = include_str!("../../../docs/youtube-player-reference.html");
+
+/// (live-channel handle, the video id it occupies in the reference card). The
+/// freshest ids from `youtube_live_cache` replace these so the card always opens
+/// on a currently-live stream (live ids rotate).
+const YOUTUBE_REF_PLACEHOLDER_IDS: [(&str, &str); 4] = [
+    ("LofiGirl", "VAlMDl00mYY"),
+    ("SkyNews", "YDvsBbKfLPA"),
+    ("aljazeeraenglish", "gCNeDWCI0vo"),
+    ("NASA", "awQzjn72bI0"),
+];
+
+/// The reference youtube card with the freshest resolved live ids substituted in.
+fn youtube_reference_card() -> String {
+    let cache = youtube_live_cache().lock().unwrap();
+    let mut html = YOUTUBE_REFERENCE_CARD.to_string();
+    for (handle, placeholder) in YOUTUBE_REF_PLACEHOLDER_IDS {
+        if let Some(fresh) = cache.get(handle) {
+            if fresh.len() == 11 && fresh.as_str() != placeholder {
+                html = html.replace(placeholder, fresh);
+            }
+        }
+    }
+    html
+}
+
+/// Root of the deployed app-cards tree on device. The current octos main this
+/// branch builds against no longer assembles/injects app-cards as agent memory,
+/// so the app reads the routed app's spec + shared widget docs from here and
+/// INLINES them into the generation prompt (`app_card_docs` + `splash_gen_prompt`)
+/// — the same self-contained pattern the youtube/weather-style paths already use.
+#[cfg(target_os = "android")]
+const APP_CARDS_ROOT: &str = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards";
+
+fn app_cards_root_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        Some(std::path::PathBuf::from(APP_CARDS_ROOT))
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        std::env::var("OCTOS_APP_CARDS_DIR")
+            .ok()
+            .map(std::path::PathBuf::from)
+    }
+}
+
+/// Read the docs an app agent needs to generate a `domain` card — the shared
+/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec — from
+/// the deployed app-cards tree, formatted for inlining into the prompt. Empty
+/// string if the tree isn't present (caller then falls back to the older
+/// memory-reliant prompt). The spec goes LAST so it's the freshest context.
+fn app_card_docs(domain: &str) -> String {
+    let Some(root) = app_cards_root_dir() else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for w in [
+        "design-system",
+        "containers",
+        "interaction",
+        "sys-helpers",
+        "weather-icon",
+    ] {
+        if let Ok(s) = std::fs::read_to_string(root.join("widgets").join(format!("{w}.md"))) {
+            out.push_str(&format!("\n----- widgets/{w}.md -----\n{}\n", s.trim_end()));
+        }
+    }
+    if let Ok(s) = std::fs::read_to_string(root.join("apps").join(domain).join("app.md")) {
+        out.push_str(&format!(
+            "\n----- apps/{domain}/app.md — THIS IS YOUR SPEC, follow it EXACTLY -----\n{}\n",
+            s.trim_end()
+        ));
+    }
+    out
+}
+
+/// Assemble the SELF-CONTAINED Splash generation prompt for `domain`: the baked
+/// syntax manual + the inlined app-cards `docs` + the output contract. Pure
+/// (`docs` passed in) so the assembly is unit-testable off-device. The explicit
+/// "only real Splash syntax" clause targets the observed GLM-5.2 failure mode of
+/// inventing `Card {}` / `layout: {}` / `background:` pseudo-DSL.
+fn splash_gen_prompt(domain: &str, intent: &str, docs: &str) -> String {
     format!(
-        "{APP_SPLASH_ROUTER}\n\nThe AMA routed this request to the {domain} app — \
+        "You ARE the {domain} app agent and you OWN the entire card generation. Your \
+SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
+do NOT claim anything is missing, do NOT read or fetch files, and do NOT ask \
+questions. Follow the `apps/{domain}/app.md` spec EXACTLY, assembling it from the \
+widget patterns and the SYNTAX MANUAL, using ONLY the `sys.*` helpers the spec \
+names and binding live data through them (NEVER hardcode or invent numbers, \
+headlines, or venues). Use ONLY real Makepad Splash syntax from the manual — real \
+widgets (`SolidView`/`View`/`RoundedView`/`Label`/`Image`/…) with inline \
+attributes. NEVER invent syntax such as `Card {{ }}`, `layout: {{ }}`, or \
+`background:` — those are not Splash and render blank.\n\n\
+Emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the \
+COMPLETE card DSL with ALL mandatory sections the spec lists, no prose before or \
+after, never truncated.\n\n\
+===== SPLASH SYNTAX MANUAL =====\n{SPLASH_MANUAL}\n{docs}\n===== END REFERENCE =====\
+\n\nThe AMA routed this request to the {domain} app.\n\nUser request: {intent}"
+    )
+}
+
+fn app_splash_router_for(domain: &str, intent: &str) -> String {
+    if domain == "youtube" {
+        let cache = youtube_live_cache().lock().unwrap();
+        let live_block = if cache.is_empty() {
+            String::new()
+        } else {
+            let mut lines = String::new();
+            for (handle, label) in YOUTUBE_LIVE_CHANNELS {
+                if let Some(id) = cache.get(handle) {
+                    lines.push_str(&format!("- {label} (@{handle}): videoId `{id}`\n"));
+                }
+            }
+            format!(
+                "\n\nCURRENT LIVE VIDEO IDS (ground truth — resolved by the app runtime \
+moments ago; for live content USE THESE EXACT IDS and SKIP the web_fetch step):\n{lines}"
+            )
+        };
+        drop(cache);
+        return format!(
+            "You ARE the youtube app agent and you OWN the card generation. Follow the \
+CONTRACT below EXACTLY — it is your complete spec.\n\nSTEP 1 (MANDATORY for any \
+live/radio/news/music-stream intent): call the `web_fetch` tool on the matching \
+channel live page (e.g. https://www.youtube.com/@LofiGirl/live) and extract the \
+FIRST \"videoId\":\"...\" (11 chars) from the fetched page — that is the CURRENT \
+live id. Any live id you remember from training is ALWAYS dead; NEVER use one. If \
+the fetch fails, use the live_stream?channel= fallback from the contract.\n\nSTEP \
+2: emit EXACTLY ONE ```runhtml fenced block as your ENTIRE final answer (the \
+COMPLETE html document, first line <!-- name: youtube-player -->, never truncated, \
+no prose, no other tool calls).{live_block}\n\n----- CONTRACT (apps/youtube/app.md) \
+-----\n{YOUTUBE_CARD_CONTRACT}\n----- END CONTRACT -----\n\nUser request: {intent}"
+        );
+    }
+    if domain == "weather" {
+        if let Some((style_name, style_dsl)) = detect_weather_style(intent) {
+            return format!(
+                "You ARE the weather app agent and you OWN the card generation. The user \
+asked for the **{style_name}** weather style. Reproduce the EXACT visual style \
+(colors, fonts, chrome, layout) of the TEMPLATE below. Rules:\n\
+- If the request names ONE city, emit that city in this style. If the template \
+shows MULTIPLE demo cities (e.g. Shanghai/Tokyo/SF), keep only ONE card — the \
+requested city — reusing one demo card's block as the pattern. If NO city is \
+named, keep the template's multi-city layout as-is.\n\
+- Use the requested city's REAL decimal lat/lon in EVERY `sys.weather(<lat>, \
+<lon>, \"...\")` call, and set the condition label + WeatherIcon `draw_bg.cond` to \
+the real current condition.\n\
+- NEVER hardcode a number — every temperature/humidity/etc stays a `sys.weather` \
+call exactly as in the template (the runtime shows whole-degree temps for you).\n\
+- Keep the bundled-font TextStyle blocks verbatim (they load Roboto).\n\
+Emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the \
+COMPLETE card DSL, no prose, never truncated.\n\n----- {style_name} STYLE TEMPLATE \
+-----\n{style_dsl}\n----- END TEMPLATE -----\n\nUser request: {intent}"
+            );
+        }
+        // no explicit style → fall through to the default (injected canonical exemplar)
+    }
+    if domain == "web" {
+        return format!(
+            "You ARE the web app agent and you OWN the entire card generation. Your \
+memory contains the apps/web/app.md CONTRACT — follow it exactly. Build the app the \
+user asked for as ONE complete, self-contained HTML document (inline <style> and \
+<script>, <meta charset=\"utf-8\">, dark theme, 54px top padding) and stream it as \
+your answer: emit EXACTLY ONE ```runhtml fenced block as your ENTIRE final answer — \
+the COMPLETE document, no prose before or after, never truncated. First line inside \
+the block: <!-- name: <short-kebab-slug> -->. Bind live data with fetch() on keyless \
+JSON APIs and NEVER hardcode live values; for media use the documented embed \
+patterns (e.g. the YouTube iframe with autoplay+playsinline+mute).\n\nUser \
+request: {intent}"
+        );
+    }
+    // Default (weather-no-style, stock, news, activity, weather-activity, …).
+    // octos no longer injects the app-cards tree as memory, so inline the routed
+    // app's spec + the widget/syntax docs directly (self-contained prompt). Fall
+    // back to the old memory-reliant prompt only if the tree isn't deployed.
+    let docs = app_card_docs(domain);
+    if docs.is_empty() {
+        format!(
+            "{APP_SPLASH_ROUTER}\n\nThe AMA routed this request to the {domain} app — \
 generate a {domain} card: follow the apps/{domain}/app.md spec in \
 your memory, and bind live data with the matching sys.* helper. Do NOT generate any \
 other app type.\n\nUser request: {intent}"
-    )
+        )
+    } else {
+        splash_gen_prompt(domain, intent, &docs)
+    }
 }
 
 fn app_splash_prompt(request: &str) -> String {
@@ -430,6 +839,11 @@ fn force_fullbleed_image_fit(body: &str) -> String {
 /// background image — sized to fill this device's viewport. Root and image share
 /// it so the Overlay image covers the card exactly (no offset, no letterbox).
 const FULLBLEED_CARD_HEIGHT: u32 = 1200;
+/// Height forced onto a full-bleed card ROOT that the model made `height: Fill`.
+/// Matches the immersive weather template's `height: 1500`, so after the rewrite
+/// `card_root_height` finds it and `force_fullbleed_image_fit` pins the
+/// background image to the same value (root == image, nothing letterboxes).
+const FULLBLEED_FALLBACK_HEIGHT: u32 = 1500;
 fn rewrite_image_fit_crop(inner: &str, full_h: u32) -> String {
     let mut s = inner.to_string();
     for v in ["Biggest", "Smallest", "Vertical", "Horizontal", "Stretch", "Size"] {
@@ -465,6 +879,51 @@ fn card_root_height(body: &str) -> Option<u32> {
         i = s;
     }
     None
+}
+
+/// A card whose ROOT container is `height: Fill` collapses to a blank slot: the
+/// immersive card system sizes each card from its intrinsic height
+/// (`card_root_height`), and a `Fill` root has none, so the Overlay root resolves
+/// to zero. Layout still runs and images still decode — the card looks
+/// "generated but invisible" — but nothing paints. The immersive template pins
+/// the root to a fixed `height: 1500`; a model that reaches for `height: Fill` on
+/// the root instead ships a blank card. Enforce the fixed height at render time
+/// rather than trusting the DSL (same philosophy as `force_fullbleed_image_fit`,
+/// and ordered BEFORE it so the background image pins to the now-fixed root
+/// height: root == image, no letterbox).
+///
+/// Only the ROOT's own `height: Fill` is rewritten — the search is confined to
+/// the root's attribute span (before its first nested `{`), so a child's
+/// `height: Fill` is never touched — and only when the card declares NO fixed
+/// height >= 700 anywhere. A card that already pins its root renders fine and is
+/// left alone, as are small `height: Fit` cards (whose first `height: Fill`, if
+/// any, belongs to a child this never reaches).
+fn pin_fullbleed_root_height(body: &str) -> String {
+    // Already has a fixed root height (>= 700) → it renders; don't touch it.
+    if card_root_height(body).is_some() {
+        return body.to_string();
+    }
+    let Some(root_open) = body.find('{') else {
+        return body.to_string();
+    };
+    // Root's own attributes run from its `{` to the first nested `{` (a child
+    // widget, or a brace-valued attr like `Inset{…}`). Confining the rewrite
+    // there guarantees a child's `height: Fill` is never rewritten; the worst
+    // case (a brace-valued attr ahead of `height`) is a no-op, not a misedit.
+    let attr_end = body[root_open + 1..]
+        .find('{')
+        .map(|r| root_open + 1 + r)
+        .unwrap_or(body.len());
+    let attrs = &body[root_open + 1..attr_end];
+    let fixed = format!("height: {FULLBLEED_FALLBACK_HEIGHT}");
+    let new_attrs = if attrs.contains("height: Fill") {
+        attrs.replacen("height: Fill", &fixed, 1)
+    } else if attrs.contains("height:Fill") {
+        attrs.replacen("height:Fill", &fixed, 1)
+    } else {
+        return body.to_string();
+    };
+    format!("{}{}{}", &body[..root_open + 1], new_attrs, &body[attr_end..])
 }
 
 /// Substitute `{{state.<key>}}` tokens with this card's live values. Missing
@@ -592,7 +1051,10 @@ fn substitute_card_state(body: &str, item_id: usize, state: &CardState) -> Strin
     let named = strip_card_name_line(body);
     let subst = substitute_state_keys(&named, state);
     let safe = neutralize_bare_view(&subst);
-    let fitted = force_fullbleed_image_fit(&safe);
+    // Pin a `height: Fill` root to a fixed height BEFORE the image fit, so the
+    // background image (`force_fullbleed_image_fit`) pins to the same height.
+    let rooted = pin_fullbleed_root_height(&safe);
+    let fitted = force_fullbleed_image_fit(&rooted);
     tag_notify_calls(&fitted, item_id)
 }
 
@@ -1252,6 +1714,14 @@ script_mod! {
                             height: Fit
                         }
                     }
+                    web_block := View {
+                        width: Fill
+                        height: 560
+                        web_view := WebCard {
+                            width: Fill
+                            height: Fill
+                        }
+                    }
                     // Diagram block — rendered by makepad-diagram-kit's
                     // DiagramView. The inner `diagram_view` id matches what
                     // the markdown widget's `ids!(diagram_view).set_text`
@@ -1394,7 +1864,10 @@ script_mod! {
                         // offscreen turtle with `end_texture_turtle_with_area`, an un-clipped
                         // pass turtle that clips only to the card's OWN bounds, so the FULL
                         // card always lands in the texture (see aichat/draw/src/turtle.rs).
-                        splash_block := CachedView{
+                        // LOCAL DEBUG: CachedView's offscreen pass never sizes on the
+                        // emulator (setup_render_pass rect < 0.5 → skipped, paint_dirty
+                        // already cleared → never retried). Un-cache to prove the theory.
+                        splash_block := View{
                             flow: Overlay
                             width: Fill
                             height: Fit
@@ -1414,6 +1887,14 @@ script_mod! {
                                     width: Fill
                                     height: Fit
                                 }
+                            }
+                        }
+                        web_block := View{
+                            width: Fill
+                            height: 720
+                            web_view := WebCard{
+                                width: Fill
+                                height: Fill
                             }
                         }
                         // Diagram block — see User-side comment.
@@ -3422,6 +3903,14 @@ impl Widget for ChatList {
                             markdown.stop_streaming_animation();
                         }
                         item_widget.draw_all_unscoped(cx);
+                        // LOCAL DEBUG: where did this item actually land?
+                        if std::env::var_os("MAKEPAD_GL_DRAW_TRACE").is_some() {
+                            let r = item_widget.area().rect(cx);
+                            log::info!(
+                                "[CHATLIST] item {item_id} rect pos=({:.1},{:.1}) size=({:.1},{:.1})",
+                                r.pos.x, r.pos.y, r.size.x, r.size.y
+                            );
+                        }
                         if is_animating && markdown.is_streaming_animation_done() {
                             self.animating_msg = None;
                         }
@@ -3670,6 +4159,39 @@ impl App {
         log::info!("AMA → activate '{app_id}' app agent (idx {idx}) | {decision}");
         // This domain agent takes the screen.
         self.foreground = idx;
+        // A non-web app taking the screen must not leave a web card's native
+        // WebView overlay floating above its Splash card.
+        if app_id != "web" && app_id != "youtube" {
+            cx.system_browser(web_card_browser_id()).detach();
+        }
+        if app_id == "youtube" {
+            // Resolve ground-truth live ids, then serve the COMPLETE hand-authored
+            // youtube app DIRECTLY (no LLM — the on-device model under-generates the
+            // 14 KB app to a bare player) with the fresh ids substituted in.
+            refresh_youtube_live_ids();
+            for _ in 0..20 {
+                if youtube_live_cache().lock().unwrap().len() >= 3 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(150));
+            }
+            let card = youtube_reference_card();
+            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut data) = CHAT_DATA.write() {
+                data.messages.push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    text: format!("```runhtml\n{card}\n```"),
+                });
+                data.is_streaming = false;
+            }
+            let chat_list = self.ui.widget(cx, ids!(chat_list));
+            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
+            self.apps[idx].repair_attempted = false;
+            self.update_empty_state_visibility(cx);
+            self.sync_app_tabs(cx);
+            cx.redraw_all();
+            return;
+        }
         // New foreground → drop ChatList's render cache so the card re-parses.
         CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Dispatch the domain-specialised generation prompt to the chosen agent.
@@ -4340,6 +4862,12 @@ impl App {
     }
 
     fn clear_chat(&mut self, cx: &mut Cx) {
+        // A previous web app card floats as a native overlay — hide it with the
+        // chat it belonged to.
+        cx.system_browser(web_card_browser_id()).detach();
+        // Warm the youtube live-id cache so a routed youtube intent can inject
+        // ground-truth live ids into its generation prompt.
+        refresh_youtube_live_ids();
         {
             let mut data = CHAT_DATA.write().unwrap();
             data.messages.clear();
@@ -4367,10 +4895,14 @@ impl App {
             let weather = agent.create_session(cx, app_cfg());
             let stock = agent.create_session(cx, app_cfg());
             let news = agent.create_session(cx, app_cfg());
+            let web = agent.create_session(cx, app_cfg());
+            let youtube = agent.create_session(cx, app_cfg());
             self.apps = vec![
                 AppRecord::with_domain(weather, "Weather", "weather"),
                 AppRecord::with_domain(stock, "Stock", "stock"),
                 AppRecord::with_domain(news, "News", "news"),
+                AppRecord::with_domain(web, "Web", "web"),
+                AppRecord::with_domain(youtube, "YouTube", "youtube"),
             ];
             self.foreground = 0;
             self.pending_intent = None;
@@ -4389,7 +4921,7 @@ impl App {
                 ..Default::default()
             };
             self.ama_session = Some(agent.create_session(cx, ama_config));
-            log::info!("AMA + 3 domain app agents (weather/stock/news) created concurrently");
+            log::info!("AMA + 5 domain app agents (weather/stock/news/web/youtube) created concurrently");
         }
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -4596,6 +5128,9 @@ impl App {
     }
 
     fn submit_prompt(&mut self, cx: &mut Cx, text: String) {
+        // Start (or top up) the live-id resolution now: by the time the AMA
+        // routes a youtube intent (~5-10s), the cache is warm.
+        refresh_youtube_live_ids();
         if text.trim().is_empty() {
             return;
         }
@@ -5585,6 +6120,29 @@ impl MatchEvent for App {
                 // no per-tap LLM round-trip, no separate render path.
                 let key = pj.get("key").and_then(|v| v.as_str()).unwrap_or("count").to_owned();
                 let value = pj.get("value").and_then(|v| v.as_str()).map(str::to_owned);
+                // Navigation: a weather-list row fires agent.notify("city",
+                // {value:"<name>|<lat>|<lon>|<cond>"}). Render that city's REAL-glass
+                // detail card directly (no LLM) and tail to it.
+                if ev.contains("city") {
+                    if let Some(v) = value.as_deref() {
+                        let p: Vec<&str> = v.split('|').collect();
+                        if p.len() == 4 {
+                            let dsl = glass_detail_card(p[0], p[1], p[2], p[3]);
+                            if let Ok(mut data) = CHAT_DATA.write() {
+                                data.messages.push(ChatMessage {
+                                    role: ChatRole::Assistant,
+                                    text: format!("```runsplash\n{dsl}\n```"),
+                                });
+                            }
+                            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let chat_list = self.ui.widget(cx, ids!(chat_list));
+                            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
+                            self.update_empty_state_visibility(cx);
+                            cx.redraw_all();
+                        }
+                    }
+                    // fall through: ev "city" matches none of the counter ops below.
+                }
                 let mut changed = false;
                 if let Some(card_id) = card_id {
                     if let Ok(mut data) = CHAT_DATA.write() {
@@ -6377,10 +6935,21 @@ impl MatchEvent for App {
         if let Ok(path) = std::env::var("MAKEPAD_SEED_CARD_FILE") {
             match std::fs::read_to_string(&path) {
                 Ok(body) => {
+                    let body_trim = body.trim();
+                    // An HTML document seeds a runhtml web app card; anything
+                    // else is a Splash card as before.
+                    let fence = if body_trim.starts_with("<!DOCTYPE")
+                        || body_trim.starts_with("<!--")
+                        || body_trim.starts_with("<html")
+                    {
+                        "runhtml"
+                    } else {
+                        "runsplash"
+                    };
                     if let Ok(mut data) = CHAT_DATA.write() {
                         data.messages.push(ChatMessage {
                             role: ChatRole::Assistant,
-                            text: format!("```runsplash\n{}\n```", body.trim()),
+                            text: format!("```{}\n{}\n```", fence, body_trim),
                         });
                     }
                     self.update_empty_state_visibility(cx);
@@ -6916,8 +7485,9 @@ mod tests {
 
     use super::{
         assistant_message_is_safe_for_history, assistant_message_is_safe_to_store,
-        glass_opacity_values, should_start_window_drag, DEFAULT_GLASS_OPACITY,
-        MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
+        card_root_height, glass_opacity_values, pin_fullbleed_root_height,
+        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
+        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
     };
 
     #[test]
@@ -6977,6 +7547,63 @@ mod tests {
             DVec2 { x: 700.0, y: 24.0 },
             size
         ));
+    }
+
+    #[test]
+    fn splash_gen_prompt_is_self_contained() {
+        // The routed generation prompt must inline the spec + manual and forbid
+        // the invented pseudo-DSL, since octos no longer injects app-cards.
+        let docs = "\n----- apps/weather/app.md — THIS IS YOUR SPEC -----\nmandatory: 7-day forecast via sys.weather\n";
+        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
+        assert!(p.contains("weather in tokyo"), "carries the user intent");
+        assert!(p.contains("apps/weather/app.md"), "inlines the routed spec");
+        assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
+        assert!(p.contains("```runsplash"), "demands one runsplash block");
+        // Directly targets the GLM-5.2 failure mode.
+        assert!(p.contains("Card {"), "names the forbidden pseudo-DSL");
+        assert!(p.contains("layout:"), "names the forbidden pseudo-DSL");
+        assert!(
+            !p.contains("in your memory"),
+            "must NOT rely on the dead memory injection"
+        );
+    }
+
+    #[test]
+    fn fullbleed_root_height_fill_root_is_pinned() {
+        // A model that made the immersive root `height: Fill` (instead of the
+        // template's `height: 1500`) ships a card that lays out but paints blank.
+        // The root must be pinned to a fixed height, and ONLY the root's own
+        // `height: Fill` — the child image's `height: Fill` is left for the image
+        // fit to handle.
+        let card = "SolidView{ width: Fill height: Fill flow: Overlay new_batch: true\n\
+             Image{ src: http_resource(sys.photo(\"tokyo\")) width: Fill height: Fill }\n\
+             View{ width: Fill height: Fit flow: Down } }";
+        assert!(card_root_height(card).is_none(), "Fill root has no fixed height");
+        let out = pin_fullbleed_root_height(card);
+        assert_eq!(
+            card_root_height(&out),
+            Some(FULLBLEED_FALLBACK_HEIGHT),
+            "root pinned so the image fit finds root == image"
+        );
+        // Exactly one `height: Fill` rewritten: the child Image's remains for the
+        // image-fit pass.
+        assert_eq!(out.matches("height: Fill").count(), 1);
+        assert!(out.contains(&format!("height: {FULLBLEED_FALLBACK_HEIGHT} flow: Overlay")));
+    }
+
+    #[test]
+    fn fullbleed_root_height_leaves_fixed_and_fit_cards_alone() {
+        // Already pins its root (>= 700): untouched.
+        let fixed = "SolidView{ width: Fill height: 1500 flow: Overlay\n\
+             Image{ width: Fill height: Fill } }";
+        assert_eq!(pin_fullbleed_root_height(fixed), fixed);
+        // A small `height: Fit` list card whose only `height: Fill` is a CHILD
+        // must not have that child rewritten (would blow up a small card to
+        // full-screen). Root attr span ends at the first child `{`, so the
+        // child's Fill is out of reach.
+        let fit = "RoundedView{ width: Fill height: Fit flow: Down\n\
+             Image{ width: Fill height: Fill } }";
+        assert_eq!(pin_fullbleed_root_height(fit), fit);
     }
 
     // (W02 strip) — `aichat_backend_type_includes_claude_code`,

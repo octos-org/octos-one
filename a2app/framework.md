@@ -17,6 +17,13 @@ request, then follow THAT app's `apps/<type>/app.md` spec:
   "这个天气适合做什么" request where weather or air quality decides the
   answer. Route composed weather+activity intents HERE (not to weather or
   activity alone), never to `none`.
+- **youtube** — ANY video / music / live-stream request ("play X", "lofi music",
+  "watch the news"). YouTube cards are HTML (```runhtml) per `apps/youtube/app.md`
+  (contract only, no exemplar) — the Splash rules below do NOT apply to them.
+- **web** — ANY other actionable app/tool/game/utility ("make me a todo app",
+  "pomodoro timer"). Web cards are HTML, not Splash: they emit ONE ```runhtml block
+  per `apps/web/app.md` (contract only, no exemplar) — every OTHER rule in this file
+  is Splash-specific and does NOT apply to web cards.
 A request that COMPOSES domains with a decision/recommendation ("what should
 I do given X") routes to the EXISTING composed app that covers it —
 **weather-activity** is the existing composed app. When NO app (the composed

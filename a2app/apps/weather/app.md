@@ -20,6 +20,35 @@ Composed "what should I DO in this weather" intents are NOT this card — they
 route to `apps/weather-activity/app.md`, a composed app that reuses this
 spec's `BLOCK: CURRENT`.
 
+## STYLE CHOICES — pick the skin, keep the data
+
+The weather card has **selectable visual styles** (same live `sys.weather` data,
+different skin). Choose ONE per request; the data bindings are identical across
+all of them. Selection order:
+
+1. **Explicit style keyword in the request** (any language) wins:
+   - `dark` / 深色 → **dark** — dark `#0f0f0f` cards, thin Roboto temps, multi-city
+     list, rounded day chips. Reproduce `exemplars/style-dark.splash`.
+   - `minimal` / `light` / `clean` / 简约 / 浅色 → **light** — light `#f2f2f7` bg,
+     white cards, hairline dividers. Reproduce `exemplars/style-light.splash`.
+   - `glass` / `vibrant` / `gradient` / 毛玻璃 → **glass** — blue→indigo gradient
+     sky, frosted translucent cards, a feels/humidity/wind/UV stat grid + 7-day
+     strip. Reproduce `exemplars/style-glass.splash`.
+   - `photo` / `immersive` / 大图 → **immersive** — the full-screen photo card.
+     Reproduce `exemplars/style-immersive.splash` (a lean photo hero + 7-day
+     panel) OR the full `exemplars/weather-canonical.splash` (adds the satellite /
+     air-quality map panes + detail grid) when the request wants the rich version.
+2. **Default** (no style keyword): **immersive** for a single named city; **dark**
+   for a bare "weather" with no city (its multi-city list reads better).
+
+Whatever the style, **adapt the city name + real lat/lon** to the request and keep
+EVERY temperature a `sys.weather(...)` call (the style files are hardcoded demos —
+Shanghai/Tokyo/SF — you MUST swap in the requested city and its lat/lon). All
+styles load the bundled Roboto weights via
+`crate_resource("makepad_widgets:resources/Roboto-*.ttf")` and show whole-degree
+temps (the helper rounds temperature paths automatically). Full catalog +
+previews: `docs/weather-styles/README.md`.
+
 ## LIVE DATA — MANDATORY (never hardcode weather numbers)
 
 Every weather/air number in this card MUST come from a live data helper — you do

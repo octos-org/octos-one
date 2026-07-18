@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- A thin WEB stock card. The whole card is `octos.stock(t)` per ticker — the
+     data-bound component fetches its own live quote and renders. No inlined kit:
+     the framework injects octos.core + octos.finance into every runhtml card.
+     This is the web-substrate twin of the native sys.stock() stock card. -->
+<html>
+<head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"></head>
+<body>
+  <div style="padding:14px 14px 2px;font-size:22px;font-weight:700;letter-spacing:-.5px">Markets</div>
+  <div style="padding:1px 14px 8px;color:var(--o-mut);font-size:12.5px">Live · composed from octos.stock()</div>
+  <div id="app"></div>
+  <script>
+    octos.ns("stk.");
+    var TICKERS = ["AAPL", "MSFT", "NVDA", "TSLA", "GOOGL", "AMZN", "BTC-USD"];
+    document.getElementById("app").innerHTML =
+      TICKERS.map(function (t) { return octos.stock(t); }).join("");
+  </script>
+</body>
+</html>
