@@ -9,9 +9,6 @@ app/target/
 *.apk
 *.unaligned.apk
 
-# Generated (run scripts/build_memory.py)
-/MEMORY.md
-
 # Python / misc
 __pycache__/
 *.pyc

@@ -1,0 +1,54 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: stock-app`",
+      "pattern": "// name: stock-app",
+      "min": 1
+    },
+    {
+      "desc": "read the selected state (`let sel = \"{{state.selected}}\"`)",
+      "pattern": "{{state.selected}}",
+      "min": 1
+    },
+    {
+      "desc": "read the range state (`let rng = \"{{state.range}}\"`)",
+      "pattern": "{{state.range}}",
+      "min": 1
+    },
+    {
+      "desc": "all 10 list rows + the back button must write key `selected` via agent.notify",
+      "pattern": "key: \"selected\"",
+      "min": 11
+    },
+    {
+      "desc": "all five range chips must write key `range` via agent.notify",
+      "pattern": "key: \"range\"",
+      "min": 5
+    },
+    {
+      "desc": "every list row binds sys.movers fields (10 rows x fields)",
+      "pattern": "sys.movers(",
+      "min": 30
+    },
+    {
+      "desc": "Y-axis + change line use range-aware sys.stockrange",
+      "pattern": "sys.stockrange(",
+      "min": 2
+    },
+    {
+      "desc": "rows and chips need tap overlays (flow: Overlay containers)",
+      "pattern": "flow: Overlay",
+      "min": 12
+    },
+    {
+      "desc": "tap handlers: 10 rows + 5 chips + back button",
+      "pattern": "on_click",
+      "min": 15
+    },
+    {
+      "desc": "the DETAIL view must bind the live quote via sys.stock",
+      "pattern": "sys.stock(",
+      "min": 6
+    }
+  ]
+}

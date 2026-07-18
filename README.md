@@ -1,28 +1,36 @@
 # octos-one
 
 An **agent-OS phone client**: a native Android app where a routing brain (the
-**AMA**) dispatches every request to one of several concurrent **app agents**
-(weather, stock, news, youtube, web), each of which generates a live, full-screen
-interactive card. Cards come in **two substrates** — native **Splash DSL** cards
-and **webview** (HTML/JS) cards — and both bind **real data at render time**
-(open-meteo, Yahoo Finance, Hacker News, the YouTube IFrame API) — the LLM writes
-the *layout and the data bindings*, never the numbers.
+**AMA**) dispatches every request to a concurrent **app agent** that generates a
+live, full-screen interactive card. Cards come in **two substrates** — native
+**Splash DSL** cards and **webview** (HTML/JS) cards — both binding **real data at
+render time** (open-meteo, Yahoo Finance, Hacker News, OpenStreetMap, the YouTube
+IFrame API) — the LLM writes the *layout and the data bindings*, never the numbers.
+When a request spans domains that no app covers, the AMA **composes a new app on
+the fly** — writing its spec into memory and spinning up a fresh peer agent to
+build it.
 
 <p align="center"><em>You type "TSLA" → the AMA routes <code>stock</code> → the stock
-agent takes the screen with a live quote. You type "Shanghai" → the weather agent
-takes over. One OS, many app agents, one routing brain.</em></p>
+agent takes the screen with a live quote + chart. You type "Shanghai" → the weather
+agent takes over. You ask for "weather plus today's headlines in one card" → no app
+covers that, so the AMA <b>writes</b> a <code>weather-news</code> app and a peer agent
+builds it. One OS, many app agents, one routing brain that can grow the app set.</em></p>
 
 ## What's here
 
 ```
 octos-one/
-  app/          The Android client (Makepad + Rust). The AMA, the multi-agent
-                routing (decision → activation), the Splash card renderer, and the
-                shared WebView overlay that hosts webview (runhtml) cards.
-  a2app/        The "app-card memory": the framework rules, widget docs, and one
-                spec + exemplar per app (weather / stock / news / youtube / web).
-                Assembled into the MEMORY.md that octos injects into each agent.
-  scripts/      build_memory.py — assemble a2app/ → MEMORY.md (reproducible).
+  app/          The Android client (Makepad + Rust). The AMA (router + composer),
+                the multi-agent routing (decision → activation → composition), the
+                Splash card renderer + post-generation validator, and the shared
+                WebView overlay that hosts webview (runhtml) cards.
+  a2app/        The "app-card memory" — the ONLY thing that teaches an agent an app.
+                Requirements-only specs, reusable widget patterns, live-data helper
+                docs, a global design system, and per-app lint rules. NO exemplars:
+                every app is ASSEMBLED from the widget patterns, not copied from a
+                template. octos assembles this tree at inject time (deployed as
+                `app-cards/` under the profile memory dir) — no build step, no artifact.
+  tools/        llm-qr/ — Rust dev tool: encode an LLM config as a QR to scan.
   docs/
     ARCHITECTURE.md            How it all fits together (read this first).
     ADDING-AN-APP-CARD.md      Add a new app type end-to-end (e.g. crypto, sports).
@@ -41,7 +49,7 @@ tool. These are large and live in their own repos:
 
 | Dependency | Repo / branch | Why |
 |---|---|---|
-| **Framework fork** (the Splash engine + `sys.*` live-data helpers, Android JNI) | [`octos-org/makepad`](https://github.com/octos-org/makepad) branch **`octos-one-framework`** | `app/` path-deps `../aichat` — this is that crate tree. |
+| **Framework fork** (the Splash engine + `sys.*` live-data helpers, the vendored plot widget, Android JNI) | [`octos-org/makepad`](https://github.com/octos-org/makepad) branch **`octos-one-framework`** | `app/` path-deps `../aichat` — this is that crate tree. |
 | **Build tool** (`cargo-makepad`, native composer Java) | [`octos-org/makepad`](https://github.com/octos-org/makepad) branch **`octos-one-buildtool`** | Builds/signs the APK; bakes the Android SDK/NDK. |
 | **octos kernel** (`liboctos.so serve --stdio`) | [`octos-org/octos`](https://github.com/octos-org/octos) | The agent runtime, bundled into the APK. |
 
@@ -51,21 +59,30 @@ clone each and how to build.
 ## The idea in one diagram
 
 ```
- user intent ─▶ AMA (router)  ── classifies domain ──▶  route_to_app()
-                                                            │ activate + foreground
-                        ┌───────────────┬───────────────────┴──────────┐
-                        ▼               ▼                              ▼
-                  weather agent    stock agent                    news agent
-                  (own session)    (own session)                  (own session)
-                        │               │                              │
-                  runsplash DSL ── sys.weather/stock/news ─▶ live fetch at render
-                        └───────────────┴──────────────────────────────┘
-                                         ▼
-                              full-screen live card
+ user intent ─▶ AMA (router + composer)
+                    │  reads the injected routing list of apps
+                    │
+        ┌───────────┴────────── does an app cover this intent? ──────────┐
+        ▼ yes                                                            ▼ no (multi-domain)
+   route_to_app(id)                                          AMA COMPOSES a new app:
+        │ activate + foreground                              writes apps/<a>-<b>/app.md
+        ▼                                                     + lint.json into memory,
+  ┌─────────────┬─────────────┬──────────┬──────────────┐    replies `compose <a>-<b>`
+  ▼             ▼             ▼          ▼              ▼           │
+weather      stock          news     activity   weather-activity  ▼
+agent        agent          agent    agent      agent      spawn a NEW peer agent
+  │            │              │         │           │       (fresh session injects
+  └── runsplash DSL ── sys.weather / sys.stock / sys.news / sys.places ─┘  the new spec)
+                              │                                            │
+                   live fetch at render                                   ▼
+                              ▼                                    it builds the app
+                    full-screen live card  ◀── card validator (lint → one-shot repair)
 ```
 
 Each app agent is its own octos session (dedicated context); the AMA's decision
-picks which one takes the screen. See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+picks which one takes the screen — or authors a new one. A composed app persists
+as ordinary app-card memory, so the next matching request routes to it directly.
+See **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Two card substrates
 
@@ -137,17 +154,38 @@ same live `sys.weather` data, different skin. The **glass** style uses real
 clear, slate = rain …), and a city list taps through to an instant, LLM-free glass
 detail. See **[docs/weather-styles/](docs/weather-styles/README.md)**.
 
-## Status
+## What works (verified on-device, OnePlus 6/6T)
 
-**Splash app cards** — weather, stock, and news are implemented and verified
-on-device (OnePlus 6/6T); data is live (values match the source APIs to the
-cent/point). Weather has 4 selectable styles + real-glass detail cards with
-condition-matched tints and tap-to-detail navigation.
+- **Built-in apps** — weather (immersive photo card: conditions, 7-day forecast,
+  satellite + air-quality maps, detail grid), stock (top-movers list → tap →
+  detail with a real line/area **chart** and client-side range switching), news
+  (Hacker News list → tap → detail), activity (nearby places), the composed
+  **weather-activity**, plus the webview **YouTube** app. Data is live and matches
+  the source APIs to the cent/point.
+- **Two substrates.** Native **Splash** cards (GPU, shader weather icons, real
+  `glass.Panel` blur, bundled fonts) and **webview** (runhtml) cards in a shared
+  WebView overlay + the auto-injected `octos.*` kit — see *Two card substrates*
+  and *Building the YouTube card* above.
+- **Weather styles.** Four selectable styles (dark / immersive / light / glass)
+  chosen by request keyword; real-glass detail cards with the tint matched to the
+  sky, and a city list that taps through to an instant, LLM-free glass detail.
+- **Assembled, not templated.** Every card is generated by the on-device model
+  (glm-5.2) from a requirements spec + shared widget patterns — no full-card
+  exemplars in memory. The model composes novel apps from the same pieces.
+- **Dynamic composition.** A multi-domain intent no app covers makes the AMA
+  author a new app spec (merging the parents' named design blocks, inheriting the
+  primary parent's visual identity) into the app-cards tree; a fresh peer agent
+  then builds it, and it persists for future requests.
+- **A self-correcting pipeline.** Each app ships machine-checkable `lint.json`
+  rules; a completed card that violates them triggers one automatic repair turn.
+- **Live-data plane.** `sys.weather`/`sys.airquality`/`sys.stock`/`sys.stockbar`/
+  `sys.stockrange`/`sys.movers`/`sys.news`/`sys.places` (+ numeric `sys.weathernum`/
+  `sys.aqinum` so cards can *branch* on live values), plus a vendored **StockPlot**
+  chart widget — all sharing one deduped fetch cache with bounded retries.
+- **Guardrails.** A security gate refuses cards that use the low-level `net.*`
+  API (cards may only read via `sys.*` + image `http_resource`); the AMA's
+  spec-authoring is confined to the `apps/` subtree.
 
-**Webview app cards** — the runhtml pipeline (WebCard widget + cross-platform
-`SystemBrowser` `set_html` + shared WebView overlay + auto-injected `octos.*` kit)
-is implemented; the **YouTube** agent runs a full IFrame-API player card on-device.
-
-The AMA routes weather / stock / news / youtube / web correctly in English and
-Chinese (including `<style> weather <place>` → weather) and activates the matching
-agent.
+The AMA routes weather / stock / news / activity / youtube / web correctly in
+English and Chinese (including `<style> weather <place>` → weather) and composes
+new apps for combined requests.

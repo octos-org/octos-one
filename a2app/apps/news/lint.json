@@ -1,0 +1,49 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: news-app`",
+      "pattern": "// name: news-app",
+      "min": 1
+    },
+    {
+      "desc": "open with the Splash-local state object `let news_app = { detail: false selected: 0 }`",
+      "pattern": "let news_app",
+      "min": 1
+    },
+    {
+      "desc": "define fn show_story(i) for detail navigation",
+      "pattern": "fn show_story(",
+      "min": 1
+    },
+    {
+      "desc": "define fn show_list() to return to the feed",
+      "pattern": "fn show_list(",
+      "min": 1
+    },
+    {
+      "desc": "define and instantiate the StoryRow template for all seven feed rows",
+      "pattern": "StoryRow{",
+      "min": 7
+    },
+    {
+      "desc": "the feed rows live in a ScrollYView",
+      "pattern": "ScrollYView",
+      "min": 1
+    },
+    {
+      "desc": "bind live stories via sys.news across lead + 7 rows",
+      "pattern": "sys.news(",
+      "min": 20
+    },
+    {
+      "desc": "the fixed shell is the 780-tall Overlay root",
+      "pattern": "height: 780",
+      "min": 1
+    },
+    {
+      "desc": "every row + masthead + lead needs a tap handler (>=9 on_click)",
+      "pattern": "on_click",
+      "min": 9
+    }
+  ]
+}

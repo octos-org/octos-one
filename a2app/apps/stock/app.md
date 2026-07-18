@@ -1,73 +1,110 @@
-# Stock app
+# Stock app — requirements spec (assemble from widgets; no exemplar)
 
-The stock app renders **two** kinds of dark, iOS-Stocks-style FULL-SCREEN card.
-Pick the one that matches the request:
+**One** dark, iOS-Stocks-style splash app that holds BOTH a top-gainers **list**
+and a per-ticker **detail** view, with **client-side navigation** between them
+and **client-side chart range switching** — no LLM round-trips. Use it for any
+stock/market request ("top 10 stocks", "movers", "AAPL", "Tesla stock",
+"英伟达股价").
 
-1. **MOVERS LIST** — a top-10 "day gainers" list. Use when the request is about the
-   market's best/top/most-performant stocks, movers, gainers, a watchlist, or "top
-   N stocks" (e.g. "top 10 stocks", "best performing stocks", "today's movers",
-   "涨幅榜"). Reproduce `exemplars/stock-movers.splash`.
-2. **DETAIL QUOTE** — the single-ticker quote page. Use when the request names ONE
-   specific ticker or company (e.g. "AAPL", "Tesla stock", "英伟达股价"), OR when a
-   movers-list row is tapped (the app hands you the tapped ticker). Reproduce
-   `exemplars/stock-canonical.splash`.
+**YOU generate this card by ASSEMBLING the fine-grained widget patterns** —
+there is no stock exemplar to copy. Build it from `widgets/interaction.md`
+(tappable rows, chip row, state reads/writes), `widgets/containers.md`
+(views/pills/gradients), and `widgets/sys-helpers.md` (live data bindings).
+`framework/splash-manual.md` has the full DSL if you need it. Requirements
+below are MANDATORY; layout details not specified here are yours to design
+well within the visual language.
 
-## LIVE DATA — MANDATORY (never hardcode a number)
+## State model (full-script body)
 
-- MOVERS LIST: every field is `sys.movers(i, "field")` — `i` = 0..9, 0 = the biggest
-  % gainer today. Fields: `symbol`, `name`, `price`, `change` (signed), `changepct`
-  (signed %), `high`, `low`, `marketcap`, `vol`, `52wh`, `52wl`, `currency`,
-  `exchange`. ONE fetch serves all rows.
-- DETAIL QUOTE: every number is `sys.stock("<TICKER>", "key")` and the chart is
-  `sys.stockbar("<TICKER>", i, count, maxh)`. Keys: `symbol`, `name`, `exchange`,
-  `currency`, `price`, `prev`, `high`, `low`, `52wh`, `52wl`, `vol`, `change`,
-  `changepct`. **Do NOT use `open`** (Yahoo often omits it → `$—`).
+The VERY FIRST line of the block is `// name: stock-app` — the name line is a
+hard rule; a card without it cannot be saved or refined. Then:
 
-Values show `—` briefly, then auto-refresh. You only choose labels and colors.
+```
+let sel = "{{state.selected}}"
+let rng = "{{state.range}}"
+if sel == "0" || sel == "" { /* LIST */ } else { /* DETAIL for `sel` */ }
+```
 
-## MOVERS LIST structure (top to bottom) — `exemplars/stock-movers.splash`
+- `selected`: `""`/`"0"` → LIST; a ticker symbol → DETAIL for it. Every list
+  row writes it (row overlay pattern) with `sys.movers(i, "symbol")`; the
+  detail back button writes `""`.
+- `range`: the DETAIL chart range; `""` ≡ `"1d"`. The five chips write it.
 
-Root = a `flow: Overlay` SolidView `height: 858` + `GradientYView` fill, then a
-`flow: Down` column, padding `Inset{left: 22 top: 54 right: 22 bottom: 96}`:
+## Visual language (both views)
 
-1. **Masthead** — a small `"TODAY · TOP GAINERS"` kicker (font 11, accent #30d158)
-   over `"Movers"` (font 30). A thin divider under it.
-2. **10 TAPPABLE rows**, one per `i = 0..9`, each a **fixed-height** (60)
-   `flow: Overlay` holding TWO children:
-   - the **visual** row (`flow: Right align: Align{y: 0.5}`): a rank `Label{width:26}`
-     (dim), a `flow: Down width: Fill` column with `sys.movers(i,"symbol")` (font 18)
-     over `sys.movers(i,"name")` (font 12, dim), then a right `flow: Down` column with
-     `"$"+sys.movers(i,"price")` (font 17) over a small green pill (RoundedView,
-     `#30d15826`) showing `sys.movers(i,"changepct")`.
-   - a **transparent tap target** LAST (so it sits on top): `Button{ width: Fill
-     height: Fill draw_bg.color: #00000000 text: "" on_click: || agent.notify("open",
-     {ticker: sys.movers(i, "symbol")}) }`. This is what makes the whole row tappable
-     and opens that ticker's detail card — **do NOT omit it, and keep the `ticker`
-     payload keyed to the SAME `i`**. A hairline `SolidView` divider sits between rows.
+Follow `widgets/design-system.md` for ALL tokens: colors, the type scale,
+spacing, radii, layering (`new_batch`), separators, and emphasis rules. The
+root/screen frame is the design system's standard 858-tall gradient screen.
 
-Gainers are all positive → the pill is green. Fixed row height (not `Fit`) is
-required so the `Fill` tap-Button resolves inside the `Overlay`.
+## LIST view — MANDATORY contents
 
-## DETAIL QUOTE structure (top to bottom) — `exemplars/stock-canonical.splash`
+- Eyebrow `"TODAY · TOP GAINERS"` (green, 13) and title `"Movers"` (white, 34).
+- ALL 10 rows (`i` = 0..9), hairline-separated; EVERY row shows: rank `i+1`
+  (dim), `sys.movers(i, "symbol")` (white ~22) with `sys.movers(i, "name")`
+  (dim 13) under it, and right-aligned `"$" + sys.movers(i, "price")` (white
+  ~22) over green `sys.movers(i, "changepct")` (15). No row may drop a field.
+- Each row is `height: Fit` with `padding: Inset{top: 10 bottom: 10}` — the
+  name/changepct line must NEVER be clipped by the next row.
+- EVERY row is tappable (interaction.md overlay) →
+  `agent.notify("set", {key: "selected", value: sys.movers(i, "symbol")})`.
 
-Root = `flow: Overlay` SolidView `height: 858` + `GradientYView`, then `flow: Down`,
-padding `Inset{left: 22 top: 50 right: 22 bottom: 118}`:
+## DETAIL view — MANDATORY sections, top to bottom
 
-1. **Header** — `symbol` (font 32); below it `name + "  ·  " + exchange + "  ·  " +
-   currency` (font 13, dim).
-2. **Hero price** — `"$" + price` (font 42); **change row** `change + "  (" +
-   changepct + ")"` (accent green up / red down) + a dim `"Today"`.
-3. **INTRADAY CHART** — `View{ height: 116 flow: Right }`: a LEFT y-axis
-   (`width: 58` `flow: Down`: `"$"+high` top, `"$"+low` bottom) + a plot
-   (`flow: Overlay`) with three faint full-width gridlines BEHIND and, in FRONT, the
-   area = `flow: Right align: Align{y: 1.0}` of ~68 `SolidView{ height:
-   sys.stockbar("<TICKER>", i, 68, 108) draw_bg.color: #34c759d9 }` (translucent so
-   gridlines show through). A time axis `09:30 … 12:45 … 16:00` and a range-selector
-   row of pill chips `1D 1W 1M 6M 1Y` (first active, spread with `Filler`s).
-4. **STAT GRID** — one frosted inset RoundedView (`#ffffff0a`, radius 22) with THREE
-   `height: Fill` rows of two `flow: Down` cells (caption font 11 dim over value font
-   20) split by hairline dividers: PREV CLOSE, VOLUME, DAY HIGH, DAY LOW, 52W HIGH,
-   52W LOW. All money values already come 2-decimal from `sys.stock`.
+1. Back button `"‹  Movers"` (green, transparent Button) →
+   `agent.notify("set", {key: "selected", value: ""})`.
+2. Header: `sys.stock(sel, "symbol")` (32); under it
+   `sys.stock(sel, "name") · exchange · currency` (dim 13).
+3. Price: `"$" + sys.stock(sel, "price")` (42).
+4. Change line — RANGE-AWARE: `sys.stockrange(sel, rng, "change") + "  (" +
+   sys.stockrange(sel, rng, "changepct") + ")"`, colored green when
+   `sys.stockrange(sel, rng, "up") == "1"` else red; beside it a dim caption
+   per range: `""`/`1d` → "Today", `1w` → "Past week", `1m` → "Past month",
+   `6m` → "Past 6 months", `1y` → "Past year".
+5. Chart — PREFERRED: `StockPlot{ width: Fill height: 160 symbol: sel
+   range: rng }` (see `widgets/sys-helpers.md`). It draws the full chart
+   itself — line + area auto-colored by the range direction, dashed baseline,
+   gridlines, price labels in the right margin, and time labels under the
+   plot — so add NOTHING around it: no manual Y-axis labels, no gridline
+   stack, no time-label row.
+   FALLBACK (only if `StockPlot` is unavailable, ~116 tall): LEFT Y-axis
+   labels `"$" + sys.stockrange(sel, rng, "high")` (top) and `…"low"`
+   (bottom), dim 10; the plot is 68 bottom-aligned bars
+   `SolidView{ height: sys.stockbar(sel, i, 68, 114, rng) }` (i = 0..67,
+   Overlay above 3 hairline gridlines); bars green when
+   `sys.stockrange(sel, rng, "up") == "1"`, red otherwise.
+6. Time labels (FALLBACK bars only — `StockPlot` draws its own): UNDER the
+   plot ONLY when `rng` is `""` or `"1d"`: `09:30 · 12:45 · 16:00`. Other
+   ranges show NO time labels.
+7. Range chips — ALL FIVE (`1D 1W 1M 6M 1Y`) ALWAYS visible in one row, per
+   the interaction.md chip pattern (label + underline + overlay Button); every
+   chip writes `{key: "range", value: …}` with values `"1d" "1w" "1m" "6m"
+   "1y"`; the ACTIVE chip (matching `rng`, `""` ≡ `"1d"`) is bright `#30d158`
+   text with the 2dp accent underline; inactive chips `#ffffff66` text with the
+   transparent spacer. No filled pills.
+8. Stat grid: a frosted `RoundedView` (`#ffffff0d`) with 3 rows × 2 columns —
+   `PREV CLOSE  $prev`, `VOLUME  vol`, `DAY HIGH  $high`, `DAY LOW  $low`,
+   `52W HIGH  $52wh`, `52W LOW  $52wl` (labels dim 12, values white ~22),
+   hairline row separators.
 
-Muted gradient (`#0a0e14 → #0e1826`). Widgets: GradientYView, SolidView, RoundedView,
-View, Label, Filler, Button.
+## LIVE DATA — MANDATORY (never write a number)
+
+- LIST: `sys.movers(i, "field")` — one fetch serves all 10 rows.
+- DETAIL header/price/stat grid: `sys.stock(sel, "key")` (`symbol`, `name`,
+  `exchange`, `currency`, `price`, `prev`, `high`, `low`, `52wh`, `52wl`,
+  `vol`). **Do NOT use `open`** (Yahoo omits it → `$—`).
+- DETAIL chart: `StockPlot{ symbol: sel range: rng }` (preferred; live by
+  itself) or, on the fallback path, `sys.stockbar(sel, i, 68, 114, rng)`.
+- DETAIL change line (and fallback Y-axis labels):
+  `sys.stockrange(sel, rng, "high"/"low"/"change"/"changepct"/"up")`.
+
+## Failure conditions
+
+A missing `// name: stock-app` first line, a missing branch, fewer than 10
+list rows, a missing detail section, static (non-Button) range chips, chips
+writing any state key other than `range`, any hardcoded market number, a
+change line whose color contradicts `sys.stockrange(sel, rng, "up")`, or any
+dropped field = FAILURE. A `StockPlot` chart wrapped in manual Y-axis labels
+or a manual time-label row = FAILURE (the widget draws its own). On the
+FALLBACK bar chart only: a missing Y-axis label (BOTH high and low are
+required) or time labels on a non-1d range = FAILURE. Length is expected
+(~25–35 KB); do not abbreviate or "simplify".

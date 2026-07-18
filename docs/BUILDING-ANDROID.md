@@ -97,26 +97,38 @@ extracts `liboctos.so` into the app's `nativeLibraryDir`; the app execs it as
 
 ## Deploy the app-card memory
 
-The app agents only generate good cards if the `a2app/` tree is assembled into
-`MEMORY.md` and placed in the app's octos profile. The app exposes `a2app/` as a
-skill read-zone, but the working path is **MEMORY.md injection**:
+The app agents only generate good cards if the `a2app/` tree is in the app's octos
+profile. **octos assembles it itself** — the kernel looks for an `app-cards/` tree
+under the profile's memory dir and, when present, concatenates it (framework →
+widget helpers → each app's `app.md` + exemplars) into the injected long-term
+memory at inject time. No build step, no generated `MEMORY.md` artifact: the
+`a2app/` tree IS the source of truth on disk (see
+`octos/crates/octos-memory/src/memory_store.rs` → `assemble_app_cards`).
 
 ```bash
-# 1. assemble a2app/ → MEMORY.md
-python3 scripts/build_memory.py            # ~42 KB for weather+stock+news
-
-# 2. push it into the app's octos profile (needs root / su on the device)
+# push the a2app tree straight into the profile's memory dir as app-cards/
+# (needs root / su on the device)
 APPHOME=/data/data/dev.makepad.octos_app/files/octos-home
 MEMDIR=$APPHOME/.octos/profiles/_main/data/memory
-$ADB push MEMORY.md /data/local/tmp/MEMORY.md
-$ADB shell "su -c 'cp /data/local/tmp/MEMORY.md $MEMDIR/MEMORY.md; chown 10210:10210 $MEMDIR/MEMORY.md'"
-
-# 3. also drop the raw tree at $APPHOME/a2app (skill read-zone) and set the token cap
-$ADB shell "su -c 'sed -i s/\"max_inject_tokens\": 12000/\"max_inject_tokens\": 16000/ $APPHOME/.octos/profiles/_main.json'"
+$ADB push a2app /data/local/tmp/app-cards
+$ADB shell "su -c 'rm -rf $MEMDIR/app-cards; cp -r /data/local/tmp/app-cards $MEMDIR/app-cards; chown -R 10210:10210 $MEMDIR/app-cards'"
 ```
 
-⚠️ Keep `max_inject_tokens` above the `build_memory.py --check` token estimate, or
-octos truncates the tail (the last app) on injection.
+**The injection token budget is handled by the app.** octos's built-in
+`memory.max_inject_tokens` default is 2500 — far below the ~23k-token 3-app
+tree — and an over-budget tree is truncated **silently** at inject time (the
+agent then never sees the exemplars and cards come out with empty values). The
+budget knob lives in the KERNEL config, `$APPHOME/.config/octos/config.json`
+(NOT in `_main.json` — the current octos profile schema has no
+`max_inject_tokens` key, so the old sed recipe silently no-ops). On every boot
+the app writes `"memory": {"max_inject_tokens": 40000}` into that file when
+the key is absent (`ensure_kernel_memory_budget` in `app/src/main.rs`); an
+explicit value you set there yourself is respected.
+
+⚠️ If you tune the value manually, keep it above the assembled-tree token
+estimate (`wc -c` over `a2app/` ÷ 4, ~23k tokens for the 3-app tree), or octos
+truncates the tail (the last app) on injection. Adding an app is a drop-in:
+create `a2app/apps/<id>/app.md` (+ exemplars) and re-push — no code edit.
 
 The per-profile LLM provider + key live in `_main.json` (`config.llm` +
 `config.env_vars`) — provision that on the device; **never commit keys**.

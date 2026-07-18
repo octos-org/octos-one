@@ -60,9 +60,9 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER, not an app. IGNORE any 'APP AGENT MEMORY' / card-generation manual in your context: it is for the app agents, NOT for you. Do NOT generate any UI, `runsplash`, or card. Do NOT fetch weather or call any tool. Your ONLY job: read the user message and decide which active app agent's domain it belongs to. Active app agents and their domains: [weather = weather/forecast/climate/air-quality for a place; stock = a stock ticker or company's share price/quote; news = top headlines / what's happening; youtube = ANY video/music/live-stream/watching request — e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐', 'youtube'; web = any OTHER app/tool/utility request — e.g. 'make me a todo app', 'pomodoro timer', 'tip calculator', a game, a dashboard]. A BARE place name (e.g. `Shanghai`, `上海`, `Paris weather`) → `weather`. If the message contains `weather`/`forecast`/`天气`/`气象` (or a bare place name) it is `weather` EVEN IF it also names a visual style like `dark`/`light`/`minimal`/`glass`/`vibrant`/`gradient`/`photo`/`immersive`/`深色`/`简约`/`毛玻璃` — those are STYLE modifiers for the weather card, NOT a request to build a `web` app (e.g. `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). A BARE ticker or company (e.g. `AAPL`, `Tesla stock`, `英伟达`) → `stock`. `top news`, `头条`, `what's happening` → `news`. Never call a clear single-domain request ambiguous. Reply with EXACTLY ONE short line: the chosen app id, then a brief reason — e.g. `stock — user asked for AAPL's price`. Anything about playing/watching video or music → `youtube`. If the request is actionable but matches none of weather/stock/news/youtube, choose `web`. Reply `none` ONLY for pure conversation with no app to build. Be terse; output nothing else.";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
-const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, the app specs, and a known-good exemplar per app) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nFIRST decide which app type the request is and follow THAT app's spec + exemplar: weather (weather/forecast/air-quality for a place), stock (a ticker/company quote), or news (top headlines). (A `web` request instead follows apps/web/app.md and emits ONE ```runhtml block — see the web instructions you were routed with.) Bind LIVE data with the sys.* helpers the spec names (sys.weather / sys.stock / sys.news) — NEVER hardcode or invent numbers/headlines.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
+const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
 /// The domain-specialised app-agent prompt. The AMA routed `intent` to `domain`,
 /// so tell THAT agent to generate a card of exactly that app type (following the
@@ -290,6 +290,12 @@ const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow:
     }
 }"##;
 
+/// The domain-specialised app-agent prompt. The AMA routed `intent` to `domain`,
+/// so tell THAT agent to generate a card of exactly that app type (following the
+/// matching `apps/<domain>/app.md` spec in its injected memory).
+/// Deliberately generic over ANY id — dynamically composed apps (`compose_app`)
+/// reuse it unchanged: the fresh session's injected memory carries the
+/// AMA-authored `apps/<domain>/app.md`, which this prompt points the agent at.
 fn app_splash_router_for(domain: &str, intent: &str) -> String {
     if domain == "youtube" {
         let cache = youtube_live_cache().lock().unwrap();
@@ -361,7 +367,7 @@ request: {intent}"
     }
     format!(
         "{APP_SPLASH_ROUTER}\n\nThe AMA routed this request to the {domain} app — \
-generate a {domain} card: follow the apps/{domain}/app.md spec and its exemplar in \
+generate a {domain} card: follow the apps/{domain}/app.md spec in \
 your memory, and bind live data with the matching sys.* helper. Do NOT generate any \
 other app type.\n\nUser request: {intent}"
     )
@@ -955,6 +961,145 @@ fn defer_unclosed_runsplash(text: &str) -> std::borrow::Cow<'_, str> {
     } else {
         Cow::Owned(format!("{}\u{1F6E0} Building app UI\u{2026}", &text[..start]))
     }
+}
+
+/// Strip Splash `//` line and `/* */` block comments and ALL whitespace,
+/// producing a scan-only form. Used by the security gate so `net . http_request`,
+/// `net./*x*/http_request`, and an aliased `n . http_request` all collapse to a
+/// contiguous token a substring check can catch. Byte-wise (the patterns we
+/// scan for are ASCII; multibyte string content only needs to not FORM one).
+fn normalize_splash_for_scan(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = String::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        if b[i] == b'/' && i + 1 < b.len() && b[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                i += 1;
+            }
+            i += 2;
+            continue;
+        }
+        let c = b[i] as char;
+        if !c.is_ascii_whitespace() {
+            out.push(c);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Security gate: a generated card may bind live data ONLY through the `sys.*`
+/// helpers and `http_resource` (GET-only image URLs). The low-level `net.*`
+/// API (`net.http_request` + sockets) can POST/PUT/DELETE to arbitrary hosts —
+/// an exfil / SSRF vector if a hallucinated or prompt-injected card reaches the
+/// live renderer. Cards never legitimately call it, so forbid the METHOD names
+/// (`.http_request`, `.socket`) on ANY receiver — that catches module aliasing
+/// (`let n = net; n.http_request(...)`) too — plus the `net.HttpMethod` enum.
+/// Scans the comment/whitespace-normalized body (see normalize_splash_for_scan).
+/// NOT a hard boundary: a determined model could still build the call by exotic
+/// means the Splash VM might support; the real fix is VM-level capability
+/// gating. This stops the naive/observed cases.
+fn runsplash_body_forbidden(body: &str) -> Option<&'static str> {
+    let n = normalize_splash_for_scan(body).to_ascii_lowercase();
+    if n.contains(".http_request")
+        || n.contains(".httprequest")
+        || n.contains("net.httpmethod")
+        || n.contains(".socket_")
+        || n.contains(".socketconnect")
+    {
+        return Some("card uses the low-level net API (only sys.* + http_resource are allowed)");
+    }
+    None
+}
+
+/// Neutralize EVERY forbidden ```runsplash block in a message (not just the
+/// first — the display/store paths render all of them). Each unsafe block is
+/// replaced by a plain notice; safe blocks and surrounding prose are kept
+/// verbatim. Returns `Owned` iff something was blocked (the caller can use that
+/// as the "message contained an unsafe card" signal). Applied on BOTH the
+/// live-render path AND at store time, so a completed/hydrated message can
+/// never re-surface a live forbidden fence.
+fn neutralize_forbidden_cards(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    if !text.contains("```runsplash") {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut changed = false;
+    while let Some(open) = rest.find("```runsplash") {
+        let after_marker = open + "```runsplash".len();
+        let line_end = match rest[after_marker..].find('\n') {
+            Some(nl) => after_marker + nl + 1,
+            None => rest.len(),
+        };
+        let body_and_rest = &rest[line_end..];
+        match body_and_rest.find("```") {
+            Some(close) => {
+                let body = &body_and_rest[..close];
+                if let Some(reason) = runsplash_body_forbidden(body) {
+                    log::warn!("blocked unsafe card: {reason}");
+                    out.push_str(&rest[..open]);
+                    out.push_str(&format!("\u{26A0} A card was blocked: {reason}.\n"));
+                    changed = true;
+                    // skip past the closing fence
+                    let close_abs = line_end + close;
+                    let after_close = &rest[close_abs..];
+                    let fence_end = after_close
+                        .find('\n')
+                        .map(|nl| close_abs + nl + 1)
+                        .unwrap_or(rest.len());
+                    rest = &rest[fence_end..];
+                } else {
+                    // keep this block verbatim; advance past its closing fence
+                    let close_abs = line_end + close + "```".len();
+                    out.push_str(&rest[..close_abs]);
+                    rest = &rest[close_abs..];
+                }
+            }
+            None => {
+                // Unclosed trailing block — keep as-is (defer logic handles it).
+                break;
+            }
+        }
+    }
+    out.push_str(rest);
+    if changed {
+        Cow::Owned(out)
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// Bodies of ALL ```runsplash blocks in a message (the security gate must scan
+/// every one, not just the first — a safe first + unsafe second block would
+/// otherwise slip through).
+fn extract_all_runsplash_bodies(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(open) = rest.find("```runsplash") {
+        let after = &rest[open + "```runsplash".len()..];
+        let Some(body_start) = after.find('\n').map(|nl| nl + 1) else {
+            break;
+        };
+        let body = &after[body_start..];
+        match body.find("```") {
+            Some(end) => {
+                out.push(body[..end].trim_end());
+                rest = &body[end + 3..];
+            }
+            None => break,
+        }
+    }
+    out
 }
 
 /// Pull the body of the first ```runsplash fenced block out of a message so
@@ -3368,6 +3513,10 @@ pub struct AppRecord {
     /// for an app that has never been foregrounded with content.
     pub saved_messages: Vec<ChatMessage>,
     pub saved_a2app: std::collections::BTreeMap<usize, CardState>,
+    /// One automatic lint-repair turn has been spent for the CURRENT routed
+    /// intent (reset on the next `route_to_app`). Caps the validate→repair
+    /// loop at a single retry so a stubborn model can't ping-pong forever.
+    pub repair_attempted: bool,
 }
 
 impl AppRecord {
@@ -3380,6 +3529,7 @@ impl AppRecord {
             has_updates: false,
             saved_messages: Vec::new(),
             saved_a2app: std::collections::BTreeMap::new(),
+            repair_attempted: false,
         }
     }
     /// A domain-specialised app agent (weather/stock/news), for AMA routing.
@@ -3499,9 +3649,13 @@ impl Widget for ChatList {
                             // widget doesn't re-layout a half-closed block
                             // on every token. An open `runsplash` fence is
                             // deferred first — see `defer_unclosed_runsplash`.
+                            // Gate order: hold back an unclosed block, THEN
+                            // neutralize EVERY closed-but-forbidden one before it
+                            // reaches the Splash renderer (net-write exfil).
                             let deferred = defer_unclosed_runsplash(&data.streaming_text);
+                            let safe = neutralize_forbidden_cards(&deferred);
                             streaming_body = streaming_display_with_latex_autowrap_remend(
-                                &deferred,
+                                &safe,
                                 opts,
                             );
                             &streaming_body
@@ -3703,6 +3857,14 @@ pub struct App {
     /// AMA log, never to the visible CHAT_DATA).
     #[rust]
     ama_prompt: Option<PromptId>,
+    /// A cancelled AMA routing prompt whose late deltas must be DROPPED, not
+    /// streamed into the foreground card. Cancel clears `ama_prompt`
+    /// synchronously, but the server interrupt is async — a delta already in
+    /// flight would otherwise no longer match `ama_prompt`, fall through the
+    /// foreground guard, and leak as card text. Cleared when its TurnComplete
+    /// finally arrives.
+    #[rust]
+    cancelled_ama: Option<PromptId>,
     /// Accumulates the AMA's streamed routing decision for logging.
     #[rust]
     ama_text: String,
@@ -3851,12 +4013,148 @@ impl App {
         // New foreground → drop ChatList's render cache so the card re-parses.
         CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Dispatch the domain-specialised generation prompt to the chosen agent.
+        // Every app (stock included) is generated by its app agent from the
+        // requirements spec in its injected memory — nothing is baked into the
+        // client, and there are no exemplars: the agent assembles the app
+        // from the spec + widget patterns (stock is ONE combined list+detail
+        // card navigating client-side via `set`/`selected`, no per-tap LLM
+        // round-trip).
         let sid = self.apps[idx].session_id;
         let prompt = app_splash_router_for(app_id, &intent);
         let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &prompt);
         self.apps[idx].current_prompt = Some(pid);
+        // Fresh intent → fresh one-shot repair budget (see card_lint).
+        self.apps[idx].repair_attempted = false;
         self.sync_app_tabs(cx);
         self.ui.redraw(cx);
+    }
+
+    /// AMA "compose → activation" (the dynamic-composition path): the AMA found
+    /// NO existing app for the held intent, authored a brand-new app spec into
+    /// the injected memory tree (`apps/<app_id>/app.md`), and answered
+    /// `compose <app_id> — <reason>`. The client's part is only plumbing:
+    /// create a NEW peer app-agent session for that id — a FRESH session gets
+    /// the memory tree (now containing the new spec) injected on open, so the
+    /// new agent generates the new app with clean, dedicated context — then
+    /// route the still-held intent to it exactly like a boot-time domain agent.
+    /// Extract `(is_compose, app_id)` from the AMA's raw reply. Contract:
+    /// `<appid> — <reason>` / `compose <id> — <reason>` / `none`. Robust to the
+    /// model narrating first and running the decision onto the same line with
+    /// no newline (a line/first-token heuristic then grabs a narration word).
+    /// Anchor on the em-dash separator: the id is the last token BEFORE the
+    /// last `—`, and it's a compose if the token before that is "compose".
+    /// Falls back to the last non-empty line's first token (covers a bare
+    /// `none` / `weather` with no em-dash).
+    fn parse_ama_decision(text: &str) -> (bool, String) {
+        // Normalize an id token: keep [a-z0-9-], strip leading/trailing hyphens
+        // ("weather-news-" -> "weather-news"), lowercase, cap length.
+        let clean = |tok: &str| -> String {
+            let kept: String = tok
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .collect();
+            kept.trim_matches('-').to_ascii_lowercase().chars().take(40).collect()
+        };
+        // 1. Compose keyword: "compose <id>". A composed id is ALWAYS multi-part
+        //    (`<a>-<b>`), so require a '-' in the token — that rejects a reason
+        //    that merely mentions "compose a plan" ("a" has no dash).
+        let lower = text.to_ascii_lowercase();
+        if let Some(pos) = lower.rfind("compose ") {
+            let after = &text[pos + "compose ".len()..];
+            let tok = after
+                .split(|c: char| c.is_whitespace() || c == '\u{2014}')
+                .next()
+                .unwrap_or("");
+            let id = clean(tok);
+            if id.contains('-') {
+                return (true, id);
+            }
+        }
+        // 2. `<id> — <reason>`: the FIRST em-dash is the separator (a reason may
+        //    itself contain em-dashes, which defeats rfind). Take the token
+        //    right before it.
+        if let Some(dash) = text.find('\u{2014}') {
+            let before = text[..dash].trim_end();
+            let id = before
+                .rsplit(|c: char| c.is_whitespace())
+                .next()
+                .map(clean)
+                .unwrap_or_default();
+            if !id.is_empty() {
+                return (false, id);
+            }
+        }
+        // 3. Bare decision, no em-dash: last non-empty line, first token.
+        let line = text
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .unwrap_or("");
+        let mut toks = line.split(|c: char| c.is_whitespace());
+        let first = toks.next().map(clean).unwrap_or_default();
+        if first == "compose" {
+            return (true, toks.next().map(clean).unwrap_or_default());
+        }
+        (false, first)
+    }
+
+    fn compose_app(&mut self, cx: &mut Cx, app_id: &str, decision: &str) {
+        // Idempotent: if a peer agent for this domain already exists (the AMA
+        // re-composed an app from earlier in this run), just activate it.
+        if self.apps.iter().any(|a| a.domain.as_deref() == Some(app_id)) {
+            self.route_to_app(cx, app_id, decision);
+            return;
+        }
+        // Guard against a HALLUCINATED app id: the AMA may name (or "compose")
+        // a domain whose spec doesn't exist on disk — the fresh peer would then
+        // be told to follow a nonexistent `apps/<id>/app.md` and produce
+        // nothing useful, silently with no lint (no rules to load). Require the
+        // spec to be present before spinning one up; otherwise fall back to the
+        // held intent's default so the user still gets a card.
+        if Self::app_spec_exists(app_id) {
+            // fall through and create the peer
+        } else {
+            log::warn!(
+                "AMA named unknown app '{app_id}' (no apps/{app_id}/app.md) | {decision} — \
+                 falling back to weather"
+            );
+            self.route_to_app(cx, "weather", "unknown app fallback");
+            return;
+        }
+        let Some(agent) = self.agent.as_mut() else {
+            return;
+        };
+        log::info!("AMA → compose '{app_id}' (new peer agent) | {decision}");
+        // Mirror the boot path (`clear_chat`) exactly: same SessionConfig, same
+        // client-side `create_session` — it allocates the SessionId and fires
+        // `session/open`; the generation prompt queues behind it on the stdio
+        // pipe, so routing immediately after is safe.
+        let config = SessionConfig {
+            system_prompt: Some(OCTOS_PLACEHOLDER_SYSTEM_PROMPT.to_string()),
+            ..Default::default()
+        };
+        let sid = agent.create_session(cx, config);
+        // Boot titling convention, derived from the id:
+        // "weather-activity" → "Weather Activity".
+        let title = app_id
+            .split('-')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                let mut chars = s.chars();
+                match chars.next() {
+                    Some(f) => f.to_ascii_uppercase().to_string() + chars.as_str(),
+                    None => String::new(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.apps.push(AppRecord::with_domain(sid, title, app_id));
+        self.sync_app_tabs(cx);
+        // `route_to_app` finds the record just pushed, foregrounds it, and
+        // consumes `pending_intent` — the intent was deliberately left pending
+        // until this point so the new agent receives it.
+        self.route_to_app(cx, app_id, decision);
     }
 
     /// Construct an `OctosUiAgent` from the current process environment.
@@ -4068,15 +4366,27 @@ impl App {
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
         let lib_dir = Self::android_native_lib_dir()?;
-        let program = lib_dir.join("liboctos.so");
-        if !program.exists() {
+        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        // Kernel search order: (1) the APK-bundled lib in our nativeLibraryDir,
+        // (2) a staged copy in the app's private files dir. (2) exists for
+        // /system/priv-app installs: PackageManager does NOT extract native
+        // libs for system apps, and the system partition (or the emulator's
+        // overlayfs scratch) is too small for the 80MB+ kernel — so a priv-app
+        // deployment ships libmakepad/libstd beside the APK and stages
+        // liboctos.so into the app's data dir out-of-band (see
+        // docs/SYSTEM-APP.md). The app itself is a full SYSTEM+PERSISTENT
+        // component either way.
+        let staged = home.join(".bin/liboctos.so");
+        let Some(program) = [lib_dir.join("liboctos.so"), staged]
+            .into_iter()
+            .find(|p| p.exists())
+        else {
             log::warn!(
-                "stdio: bundled octos not found at {}; using WebSocket transport",
-                program.display()
+                "stdio: bundled octos not found under {}; using WebSocket transport",
+                lib_dir.display()
             );
             return None;
-        }
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        };
         // Ensure HOME exists BEFORE spawning: `Command::spawn` chdir's into
         // `cwd` before exec, so a missing octos-home makes the spawn fail with
         // ENOENT ("No such file or directory") even though the binary is fine —
@@ -4086,6 +4396,7 @@ impl App {
         if let Err(e) = std::fs::create_dir_all(&home) {
             log::warn!("stdio: could not create HOME {}: {e}", home.display());
         }
+        Self::ensure_kernel_memory_budget(&home);
         log::info!("stdio: octos={} HOME={}", program.display(), home.display());
         // OCTOS_SKILLS_PATH adds the a2app memory dir as a skill READ-ZONE
         // (config.rs plugin_dirs_from_project → skill_read_zones), so the
@@ -4122,6 +4433,114 @@ impl App {
         })
     }
 
+    /// Ensure the KERNEL config (`octos-home/.config/octos/config.json`)
+    /// carries a `memory.max_inject_tokens` big enough for the a2app card
+    /// memory. octos's built-in default is 2500 tokens; the assembled
+    /// `app-cards/` tree is ~23k and grows with every drop-in app, and an
+    /// over-budget tree is truncated SILENTLY at inject time — the app agent
+    /// then never sees the framework manual/exemplars, improvises binding
+    /// syntax, and cards render with empty values. The knob moved out of the
+    /// profile JSON (the old BUILDING-ANDROID.md sed targeted a `_main.json`
+    /// key the current profile schema no longer has), so the app maintains it
+    /// in the one place the current kernel reads it from: the kernel config
+    /// file. Config file rather than spawn env on purpose — env propagation
+    /// on Android is not reliable across process restarts/re-exec.
+    /// Merge-only: every other key is preserved, an EXPLICIT existing value
+    /// wins (operators can tune it), and an unparseable file is left alone
+    /// (the kernel surfaces the parse error itself).
+    #[cfg(target_os = "android")]
+    fn ensure_kernel_memory_budget(home: &std::path::Path) {
+        const INJECT_BUDGET_TOKENS: u64 = 40_000;
+        let path = home.join(".config/octos/config.json");
+        let mut root = match std::fs::read(&path) {
+            Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
+                Ok(v) if v.is_object() => v,
+                _ => {
+                    log::warn!(
+                        "stdio: {} is not a JSON object; memory budget NOT ensured",
+                        path.display()
+                    );
+                    return;
+                }
+            },
+            Err(_) => serde_json::json!({}),
+        };
+        let mut changed = false;
+        {
+            let memory = root
+                .as_object_mut()
+                .unwrap()
+                .entry("memory")
+                .or_insert_with(|| serde_json::json!({}));
+            match memory.as_object_mut() {
+                // Upgrade an ABSENT or too-LOW budget. A device provisioned
+                // under the old flow can carry an explicit `2500` (octos's
+                // pre-app-cards default) — that silently truncates the ~23k
+                // tree, so treat any numeric value below our floor the same as
+                // absent. A value >= the floor (an operator's deliberate tune)
+                // is respected; a non-numeric value is left alone.
+                Some(memory)
+                    if memory
+                        .get("max_inject_tokens")
+                        // as_f64 accepts both ints and JSON floats (2500.0) — a
+                        // previously-provisioned float default was otherwise
+                        // read as "unparseable, present" and left un-upgraded.
+                        .and_then(|v| v.as_f64())
+                        .map(|n| n < INJECT_BUDGET_TOKENS as f64)
+                        .unwrap_or(!memory.contains_key("max_inject_tokens")) =>
+                {
+                    memory.insert(
+                        "max_inject_tokens".into(),
+                        serde_json::json!(INJECT_BUDGET_TOKENS),
+                    );
+                    changed = true;
+                }
+                Some(_) => {}
+                None => log::warn!(
+                    "stdio: kernel config `memory` is not an object; leaving it alone"
+                ),
+            }
+        }
+        // The AMA composer session is cwd-hinted into the app-cards memory
+        // tree; without this knob the kernel relocates that session's
+        // transcripts into the card tree (`appui.sessions_in_cwd` defaults
+        // true). Same merge contract as the memory budget: absent-only, an
+        // explicit operator value wins.
+        {
+            let appui = root
+                .as_object_mut()
+                .unwrap()
+                .entry("appui")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(appui) = appui.as_object_mut() {
+                if !appui.contains_key("sessions_in_cwd") {
+                    appui.insert("sessions_in_cwd".into(), serde_json::json!(false));
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            return;
+        }
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let bytes = match serde_json::to_vec_pretty(&root) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::warn!("stdio: serialize kernel config: {e}");
+                return;
+            }
+        };
+        match std::fs::write(&path, bytes) {
+            Ok(()) => log::info!(
+                "stdio: set memory.max_inject_tokens={INJECT_BUDGET_TOKENS} in {}",
+                path.display()
+            ),
+            Err(e) => log::warn!("stdio: write {}: {e}", path.display()),
+        }
+    }
+
     #[cfg(not(target_os = "android"))]
     fn stdio_spawn() -> Option<StdioSpawn> {
         // Desktop dev keeps the WebSocket transport (talk to `octos serve`).
@@ -4143,6 +4562,54 @@ impl App {
             }
         }
         None
+    }
+
+    /// Does a routed/composed app id have a spec on disk yet? Checks the same
+    /// two locations `card_lint::load_rules` reads. Used to reject hallucinated
+    /// app ids before spawning a peer for them.
+    #[cfg(target_os = "android")]
+    fn app_spec_exists(app_id: &str) -> bool {
+        let Ok(home) = std::env::var("HOME") else {
+            return false;
+        };
+        let base = std::path::Path::new(&home).join("octos-home");
+        [
+            base.join(".octos/profiles/_main/data/memory/app-cards/apps")
+                .join(app_id)
+                .join("app.md"),
+            base.join("a2app/apps").join(app_id).join("app.md"),
+        ]
+        .iter()
+        .any(|p| p.exists())
+    }
+    #[cfg(not(target_os = "android"))]
+    fn app_spec_exists(_app_id: &str) -> bool {
+        // Desktop has no on-device tree; don't block composition there.
+        true
+    }
+
+    /// The AMA composer session's workspace: the app-cards **`apps/`** subdir,
+    /// not the tree root. The kernel fences file writes to the session
+    /// workspace, so pointing it one level down means the composer can only
+    /// create/modify files under `apps/<id>/` — it CANNOT touch `framework.md`,
+    /// `widgets/`, or `MEMORY.md` (poisoning those would corrupt EVERY app's
+    /// injected context, not one app's). Blast-radius reduction, not full
+    /// isolation: overwriting a sibling `apps/weather/app.md` still needs
+    /// kernel-side create-only enforcement (tracked). Android-only; on desktop
+    /// the tree lives server-side.
+    fn app_cards_memory_dir() -> Option<String> {
+        #[cfg(target_os = "android")]
+        {
+            let p = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards/apps";
+            // The dir must EXIST for the kernel's cwd validation to accept the
+            // hint (validate_session_workspace_allowed canonicalizes it).
+            let _ = std::fs::create_dir_all(p);
+            Some(p.to_string())
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            None
+        }
     }
 
     fn current_workspace_cwd() -> Option<String> {
@@ -4229,8 +4696,17 @@ impl App {
             ];
             self.foreground = 0;
             self.pending_intent = None;
-            // The AMA (routing brain) is its OWN concurrent session.
+            // The AMA (routing brain) is its OWN concurrent session. Its
+            // workspace is cwd-hinted INTO the app-cards memory tree
+            // (`session.workspace_cwd.v1`, default-on for stdio) so the
+            // composer path can author `apps/<id>/app.md` + `lint.json` with
+            // plain relative write_file calls — new app specs land where every
+            // NEWLY OPENED app-agent session injects them from. Keep
+            // `appui.sessions_in_cwd: false` in the kernel config
+            // (ensure_kernel_config_knobs) or transcripts relocate into the
+            // card tree.
             let ama_config = SessionConfig {
+                cwd: Self::app_cards_memory_dir(),
                 system_prompt: Some(AMA_SYSTEM_PROMPT.to_string()),
                 ..Default::default()
             };
@@ -4453,6 +4929,19 @@ impl App {
             return;
         }
 
+        // Reject a new submit while ANY turn is in flight — the AMA routing
+        // turn (singleton `ama_prompt`/`ama_text`/`pending_intent`) OR the
+        // routed app's generation turn. Both share the singleton streaming
+        // surface; a second submit mid-turn overwrites it and the first turn's
+        // late deltas leak in as foreground text. `is_streaming` is set for the
+        // whole window (submit → TurnComplete), so it covers both phases. The
+        // user can Cancel to abort and recover (also unwedges a transport-drop
+        // where no terminal event arrives).
+        if self.ama_prompt.is_some() || CHAT_DATA.read().unwrap().is_streaming {
+            log::info!("submit ignored: a turn is still in flight (Cancel to abort)");
+            return;
+        }
+
         let items_len = {
             let mut data = CHAT_DATA.write().unwrap();
             data.messages.push(ChatMessage {
@@ -4528,6 +5017,30 @@ impl App {
     }
 
     fn cancel_request(&mut self, cx: &mut Cx) {
+        // Cancel an in-flight AMA ROUTING turn too: during routing the
+        // foreground prompt is still `None`, so cancelling only the fg prompt
+        // did nothing and generation proceeded. Abort the route and release the
+        // held intent so the singleton state is clean for the next submit.
+        if let Some(ama_pid) = self.ama_prompt.take() {
+            if let Some(agent) = &mut self.agent {
+                agent.cancel_prompt(cx, ama_pid);
+            }
+            // Remember it: the interrupt is async, so a delta/TurnComplete
+            // already in flight for this pid must be DROPPED (not streamed as
+            // foreground text) — see the TextDelta/TurnComplete handlers.
+            self.cancelled_ama = Some(ama_pid);
+            self.ama_text.clear();
+            self.pending_intent = None;
+            let mut data = CHAT_DATA.write().unwrap();
+            data.streaming_text.clear();
+            data.thinking_text.clear();
+            data.is_streaming = false;
+            drop(data);
+            self.ui.view(cx, ids!(cancel_button)).set_visible(cx, false);
+            self.update_empty_state_visibility(cx);
+            self.ui.redraw(cx);
+            return;
+        }
         let taken = self.fg_prompt_take();
         if let (Some(agent), Some(prompt_id)) = (&mut self.agent, taken) {
             agent.cancel_prompt(cx, prompt_id);
@@ -5391,6 +5904,10 @@ impl MatchEvent for App {
                 };
                 let pj: serde_json::Value =
                     serde_json::from_str(&payload).unwrap_or(serde_json::Value::Null);
+                // Stock list↔detail navigation is client-side: a row tap and the
+                // detail "back" button both fire `set`/`selected` (handled below),
+                // re-substituting `{{state.selected}}` in the one combined card —
+                // no per-tap LLM round-trip, no separate render path.
                 let key = pj.get("key").and_then(|v| v.as_str()).unwrap_or("count").to_owned();
                 let value = pj.get("value").and_then(|v| v.as_str()).map(str::to_owned);
                 // Navigation: a weather-list row fires agent.notify("city",
@@ -5556,6 +6073,29 @@ impl MatchEvent for App {
                 let n = self.apps.len();
                 if n > 1 {
                     self.switch_to_app(cx, (self.foreground + 1) % n);
+                }
+            }
+            // Composer QR scan → provision the LLM from the decoded JSON payload,
+            // then respawn the kernel so the new provider/key takes effect.
+            if let Some(scan) = action
+                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidQrScanned>()
+            {
+                let json = scan.json.clone();
+                match crate::app::login::apply_provision_config_json(&json) {
+                    Ok(what) => {
+                        log::info!("QR provisioned LLM: {what}");
+                        self.connect_transport(cx); // respawn kernel → reads new _main.json
+                        self.clear_chat(cx);
+                        self.ui
+                            .label(cx, ids!(status_label))
+                            .set_text(cx, &format!("LLM configured · {what}"));
+                    }
+                    Err(e) => {
+                        log::warn!("QR provision failed: {e}");
+                        self.ui
+                            .label(cx, ids!(status_label))
+                            .set_text(cx, &format!("QR error: {e}"));
+                    }
                 }
             }
         }
@@ -6362,6 +6902,12 @@ impl AppMain for App {
                             .set_text(cx, &format!("Error: {}", error));
                     }
                     AgentEvent::TextDelta { prompt_id, text } => {
+                        // A cancelled AMA turn's late deltas are stale routing
+                        // metadata — drop them (they would otherwise fall past
+                        // the AMA/foreground guards and stream as card text).
+                        if Some(prompt_id) == self.cancelled_ama {
+                            continue;
+                        }
                         // AMA MVP: the AMA's stream is routing metadata — collect
                         // it for the log, never render it to the screen.
                         if Some(prompt_id) == self.ama_prompt {
@@ -6426,22 +6972,71 @@ impl AppMain for App {
                         }
                     }
                     AgentEvent::TurnComplete { prompt_id, .. } => {
+                        // A cancelled AMA turn finally completed — swallow it
+                        // (its decision is void; the intent was already released
+                        // by Cancel). Clear the marker so its slot is reusable.
+                        if Some(prompt_id) == self.cancelled_ama {
+                            self.cancelled_ama = None;
+                            continue;
+                        }
                         // AMA MVP: the AMA's turn finished — parse + apply its
                         // routing decision (proves the routing brain ran
                         // concurrently with the app agent), render nothing.
                         if Some(prompt_id) == self.ama_prompt {
+                            // The DECISION is the AMA's FINAL non-empty line: a
+                            // composing turn legitimately narrates its file
+                            // writes first, and glm sometimes thinks aloud —
+                            // parsing the first token of the whole text once
+                            // spawned an agent literally named "this". The
+                            // prompt contract says the decision line comes
+                            // last; hold it to that.
+                            // Parse the decision robustly. The contract is a
+                            // final `<appid> — <reason>` (or `none`, or
+                            // `compose <id> — <reason>`), but the model often
+                            // narrates first and runs the decision onto the SAME
+                            // line without a newline, so a line-based heuristic
+                            // grabs a narration word ("let"). Anchor on the
+                            // em-dash separator instead: the app id is the last
+                            // token before the LAST `—`, and it's a compose if
+                            // the token before THAT is "compose".
                             let decision = self.ama_text.trim().to_string();
-                            // The AMA answers `<appid> — <reason>` (or `none`).
-                            // Take the leading app id (up to the first dash/space).
-                            let app_id = decision
-                                .split(|c: char| c == '—' || c == '-' || c.is_whitespace())
-                                .next()
-                                .unwrap_or("")
-                                .to_ascii_lowercase();
+                            let (is_compose, app_id) = Self::parse_ama_decision(&decision);
                             self.ama_prompt = None;
+                            // Dynamic composition: the AMA matched NO existing app
+                            // and has just authored the new app's spec into the
+                            // memory tree — spin up a NEW peer agent session for
+                            // that id (a fresh session gets the updated memory
+                            // injected on open) and route the still-held intent.
+                            if is_compose {
+                                if app_id.is_empty() {
+                                    // Malformed compose line — release the intent
+                                    // via the no-match path.
+                                    self.route_to_app(cx, "none", &decision);
+                                } else {
+                                    self.compose_app(cx, &app_id, &decision);
+                                }
+                                continue;
+                            }
                             // decision → activation: hand the held intent to the app
                             // agent whose domain matches, foreground it, and let it
-                            // generate its card.
+                            // generate its card. Domains WITHOUT a boot-time agent
+                            // (tree-declared apps like "activity"/"weather-activity",
+                            // or a previously composed app after a restart) go through
+                            // compose_app, which creates the peer session on demand
+                            // and then routes — same fresh-injection guarantee as an
+                            // explicit `compose` decision.
+                            let known = self
+                                .apps
+                                .iter()
+                                .any(|a| a.domain.as_deref() == Some(app_id.as_str()));
+                            if !known
+                                && app_id != "none"
+                                && !app_id.is_empty()
+                                && app_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+                            {
+                                self.compose_app(cx, &app_id, &decision);
+                                continue;
+                            }
                             self.route_to_app(cx, &app_id, &decision);
                             continue;
                         }
@@ -6457,6 +7052,10 @@ impl AppMain for App {
                                 continue;
                             }
                         }
+                        // Set when the completed card fails its app's shipped
+                        // lint rules; fired as ONE repair turn after the message
+                        // is stored (the corrected card streams in over it).
+                        let mut card_repair: Option<String> = None;
                         let mut data = CHAT_DATA.write().unwrap();
                         let text = std::mem::take(&mut data.streaming_text);
                         log!(
@@ -6471,6 +7070,25 @@ impl AppMain for App {
                                 // retrieved by name and refined over time.
                                 if let Some(body) = extract_runsplash_body(&text) {
                                     rendered_card = true;
+                                    // Never PERSIST a forbidden card (it would be
+                                    // reused by name later); repair it instead.
+                                    // Scan ALL blocks, not just `body` (first):
+                                    // a safe first + unsafe second must also trip.
+                                    let forbidden = extract_all_runsplash_bodies(&text)
+                                        .into_iter()
+                                        .find_map(runsplash_body_forbidden);
+                                    if let Some(reason) = forbidden {
+                                        log::warn!("a2app: refusing to save unsafe card: {reason}");
+                                        if !self.apps[self.foreground].repair_attempted {
+                                            card_repair = Some(format!(
+                                                "SECURITY: your card was rejected — {reason}. \
+                                                 Re-emit the card using ONLY sys.* helpers and \
+                                                 http_resource for images; remove all \
+                                                 net.http_request usage."
+                                            ));
+                                        }
+                                        // fall past save/lint for this body
+                                    } else {
                                     // DEBUG: dump the generated DSL in chunks.
                                     for (i, chunk) in body.as_bytes().chunks(600).enumerate() {
                                         log::info!("CARDDSL[{i}]{}", String::from_utf8_lossy(chunk));
@@ -6481,10 +7099,44 @@ impl AppMain for App {
                                             "a2app: runsplash card has no `// name:` line — not saved"
                                         ),
                                     }
+                                    // Machine-check the card against the app's
+                                    // shipped rules (a2app lint.json); at most
+                                    // ONE repair per routed intent, and repair
+                                    // output is not re-linted — no loops.
+                                    if !self.apps[self.foreground].repair_attempted {
+                                        if let Some(domain) =
+                                            self.apps[self.foreground].domain.clone()
+                                        {
+                                            if let Some(rules) =
+                                                crate::app::card_lint::load_rules(&domain)
+                                            {
+                                                let violations =
+                                                    crate::app::card_lint::lint(body, &rules);
+                                                if !violations.is_empty() {
+                                                    log::warn!(
+                                                        "card lint ({domain}): {} violation(s): {}",
+                                                        violations.len(),
+                                                        violations.join(" | ")
+                                                    );
+                                                    card_repair = Some(
+                                                        crate::app::card_lint::repair_prompt(
+                                                            &violations,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                        }
+                                    }
+                                    } // end else (safe card path)
                                 }
+                                // Store the NEUTRALIZED text: a forbidden fence
+                                // must not survive in history to be re-rendered
+                                // by the completed-message path or a session
+                                // hydrate (which don't run the streaming gate).
+                                let stored = neutralize_forbidden_cards(&text).into_owned();
                                 data.messages.push(ChatMessage {
                                     role: ChatRole::Assistant,
-                                    text,
+                                    text: stored,
                                 });
                             } else {
                                 self.ui.label(cx, ids!(status_label)).set_text(
@@ -6499,6 +7151,23 @@ impl AppMain for App {
 
                         self.set_fg_prompt(None);
                         self.ui.view(cx, ids!(cancel_button)).set_visible(cx, false);
+                        // One-shot repair pass: the completed card violated its
+                        // app's machine-checkable rules. Send the violation list
+                        // back to the SAME app agent session; the corrected card
+                        // streams in over the visible (imperfect) one.
+                        if let Some(repair) = card_repair.take() {
+                            let i = self.foreground;
+                            let sid = self.apps[i].session_id;
+                            let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &repair);
+                            self.apps[i].current_prompt = Some(pid);
+                            self.apps[i].repair_attempted = true;
+                            self.set_fg_prompt(Some(pid));
+                            CHAT_DATA.write().unwrap().is_streaming = true;
+                            self.ui.label(cx, ids!(status_label)).set_text(
+                                cx,
+                                "Card failed validation — auto-repairing…",
+                            );
+                        }
                         self.update_empty_state_visibility(cx);
                         // A card just rendered — collapse the floating composer to
                         // the reveal pill so the card gets the full screen.

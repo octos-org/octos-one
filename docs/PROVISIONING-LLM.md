@@ -20,9 +20,8 @@ written into the on-device octos profile config and read by the embedded kernel.
 
 1. **Encode** the config into a QR on a trusted machine:
    ```bash
-   python3 scripts/llm_qr.py --family zai --model glm-5.2 --key sk-XXXX
-   # prints the JSON payload + an ASCII QR (pip install 'qrcode[pil]' for PNG/ASCII);
-   # --out llm.png writes an image. Optional --base-url/--profile/--token add server auth.
+   cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family zai --model glm-5.2 --key sk-XXXX
+   # prints the JSON payload + a Unicode QR you scan straight off the terminal.
    ```
    The QR payload is a single self-contained JSON object (no URL) — **all the
    info is in the QR**:
@@ -45,4 +44,5 @@ adb shell am start -S -n dev.makepad.octos_app/.MakepadApp \
     --es makepad.PROVISION_CONFIG '{"llm_family":"zai","llm_model":"glm-5.2","llm_key":"sk-XXXX"}'
 ```
 Server auth (`base_url|profile|token`) still has its own `makepad.APP_CONFIG`
-entry point — see [BUILDING-ANDROID.md](BUILDING-ANDROID.md).
+entry point and is never accepted from an LLM QR — see
+[BUILDING-ANDROID.md](BUILDING-ANDROID.md).

@@ -1,0 +1,24 @@
+# Dev/ops tool — NOT part of the app build. Encodes an octos LLM config as a QR
+# the app composer scans to provision a key on-device. Rust replacement for the
+# former scripts/llm_qr.py (this repo is Rust — no Python).
+#   cargo run --manifest-path tools/llm-qr/Cargo.toml -- --family zai --model glm-5.2 --prompt-key --svg /tmp/zai.svg
+[package]
+name = "llm-qr"
+version = "0.1.0"
+edition = "2021"
+description = "Encode an octos LLM config as a QR the app composer scans to provision itself"
+publish = false
+
+[[bin]]
+name = "llm-qr"
+path = "src/main.rs"
+
+[dependencies]
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
+rpassword = "7"
+serde_json = "1"
+
+[dev-dependencies]
+# The Android scanner uses rqrr too. This round-trip test guarantees the QR
+# modules emitted by this tool remain decodable by the phone-side decoder.
+rqrr = { version = "0.10", default-features = false }

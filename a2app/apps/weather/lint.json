@@ -1,0 +1,54 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: weather-app`",
+      "pattern": "// name: weather-app",
+      "min": 1
+    },
+    {
+      "desc": "the backdrop photo comes from sys.photo (BLOCK: PHOTO-BACKDROP)",
+      "pattern": "sys.photo(",
+      "min": 1
+    },
+    {
+      "desc": "photo/map images must CropToFill (photo + satellite + basemap + airmap)",
+      "pattern": "ImageFit.CropToFill",
+      "min": 4
+    },
+    {
+      "desc": "an animated WeatherIcon shows the current condition",
+      "pattern": "WeatherIcon{",
+      "min": 1
+    },
+    {
+      "desc": "hero temp, H/L/feels, 7-day rows, and tiles all bind sys.weather",
+      "pattern": "sys.weather(",
+      "min": 22
+    },
+    {
+      "desc": "the AIR QUALITY tile binds sys.airquality",
+      "pattern": "sys.airquality(",
+      "min": 1
+    },
+    {
+      "desc": "the satellite pane binds sys.satellite",
+      "pattern": "sys.satellite(",
+      "min": 1
+    },
+    {
+      "desc": "the air map stacks sys.airmap over sys.basemap",
+      "pattern": "sys.airmap(",
+      "min": 1
+    },
+    {
+      "desc": "the air map stacks sys.airmap over sys.basemap",
+      "pattern": "sys.basemap(",
+      "min": 1
+    },
+    {
+      "desc": "seven fixed-height forecast rows (height: 40 each)",
+      "pattern": "height: 40",
+      "min": 7
+    }
+  ]
+}

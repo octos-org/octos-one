@@ -560,7 +560,7 @@ impl OctosUiAgent {
 }
 
 impl Agent for OctosUiAgent {
-    fn create_session(&mut self, _cx: &mut Cx, _config: SessionConfig) -> SessionId {
+    fn create_session(&mut self, _cx: &mut Cx, config: SessionConfig) -> SessionId {
         let session_id = SessionId::new();
         let key = self.make_session_key(session_id);
         log::info!("octos-ui-agent: create_session → session/open {}", key.0);
@@ -573,7 +573,12 @@ impl Agent for OctosUiAgent {
             // per-session sandbox override — both server-defaulted when None.
             topic: None,
             profile_id,
-            cwd: self.workspace_cwd.clone(),
+            // Per-session cwd override first (the AMA composer session hints
+            // its workspace INTO the app-cards memory tree so its file tools
+            // can author new app specs — `session.workspace_cwd.v1` is
+            // default-enabled on the stdio transport), else the agent-wide
+            // workspace.
+            cwd: config.cwd.or_else(|| self.workspace_cwd.clone()),
             sandbox: None,
             after: None,
         }));

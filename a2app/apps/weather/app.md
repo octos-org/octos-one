@@ -8,9 +8,17 @@ then a LIVE 空气质量图 (air-quality map) — each on its own row so the map
 large, then a frosted 6-TILE DETAIL GRID (air quality, UV, sunrise, sunset,
 humidity, wind) — like a refined iOS Weather app.
 
-Reproduce this EXACT structure (a full-screen Overlay: photo, dark scrim, then a
-Down column = current block, the 7-day forecast, the two map panes, then the detail
-grid). See the known-good reference card at `exemplars/weather-canonical.splash`.
+**YOU generate this card by ASSEMBLING the widget patterns** — there is no
+exemplar to copy. Build it from THIS spec + `widgets/weather-icon.md`,
+`widgets/containers.md`, `widgets/sys-helpers.md` (the image + data helpers),
+and `widgets/interaction.md`. Reproduce EXACTLY this structure: a full-screen
+Overlay (BLOCK: PHOTO-BACKDROP below — photo, dark scrim), then a Down column
+= BLOCK: CURRENT, the 7-day forecast, the two map panes, then
+BLOCK: DETAIL-TILES. `// name: weather-app` is the first line.
+
+Composed "what should I DO in this weather" intents are NOT this card — they
+route to `apps/weather-activity/app.md`, a composed app that reuses this
+spec's `BLOCK: CURRENT`.
 
 ## STYLE CHOICES — pick the skin, keep the data
 
@@ -53,6 +61,19 @@ A value shows "—" for a moment while it loads, then the card auto-refreshes wi
 the real reading. The ONLY things you choose yourself are labels, the photo query,
 the `WeatherIcon`/emoji condition, and the color categories.
 
+## BLOCK: PHOTO-BACKDROP (the weather app's visual identity — reusable)
+
+The immersive frame every weather-family card sits in: a full-screen Overlay
+whose FIRST child is a REAL city photo matching the current conditions
+(`Image{ src: http_resource(sys.photo("<city> <scene/weather>")) fit:
+ImageFit.CropToFill width: Fill height: Fill }`), a dark scrim
+(`SolidView{ width: Fill height: Fill draw_bg.color: #00000066 }`) over it for
+legibility, then the inner `flow: Down` content column. Composed apps that
+reuse BLOCK: CURRENT MUST reproduce THIS backdrop too — the plain gradient
+screen is NOT the weather look. Content sections over the photo sit on
+translucent panels (`RoundedView` `#00000055`, border_radius 20) like the
+forecast panel below.
+
 ## Background-Image rules
 
 - The background Image MUST use `fit: ImageFit.CropToFill` (fills the whole box,
@@ -63,7 +84,7 @@ the `WeatherIcon`/emoji condition, and the color categories.
   an Overlay child's Fill height = parent height MINUS parent padding MINUS its own
   margin, so ANY inset there SHRINKS the photo and exposes bare background. Put ALL
   insets (the top status-bar clearance, side and bottom padding) ONLY on the inner
-  `flow: Down` column, exactly as in the template. The inner column MUST use
+  `flow: Down` column, exactly as specified here. The inner column MUST use
   `padding: Inset{left: 22 top: 54 right: 22 bottom: 8}` — the `top: 54` clears the
   phone's status bar so the CITY NAME sits comfortably below it (NEVER use a small
   top like 6 — the city name ends up jammed under the status bar / clock).
@@ -71,7 +92,13 @@ the `WeatherIcon`/emoji condition, and the color categories.
 
 ## Structure, top to bottom
 
-**(1) CURRENT block**
+The two `### BLOCK:` headings below are NAMED REUSABLE BLOCKS: other app specs
+(composed apps like `apps/weather-activity`) may reference these blocks by name
+and must reproduce them per THIS spec — same content, same live bindings.
+
+### BLOCK: CURRENT
+
+(1) The current-conditions block, at the top:
 - City (font 30).
 - The hero temperature ALONE on its line (font 60, `margin: Inset{top: 6 bottom: 0}`
   so its tall glyphs are not clipped) — its text is LIVE:
@@ -116,7 +143,9 @@ is its own row so the maps read large), each a `width: Fill` RoundedView
   take the SAME lat/lon) — + a `空气质量图` caption (font 11, #ffffffcc). (See
   `widgets/sys-helpers.md`.)
 
-**(4) DETAIL GRID** — below the map panes. A `flow: Down` View of THREE `flow: Right`
+### BLOCK: DETAIL-TILES
+
+(4) The detail grid — below the map panes. A `flow: Down` View of THREE `flow: Right`
 rows, each holding TWO equal frosted tiles (`width: Fill`). Every tile is a
 RoundedView (draw_bg.color #ffffff1f, border_radius 18) stacking an UPPERCASE
 caption (font 11, #ffffff99), a big value (font 20), and a sub-line (font 12,

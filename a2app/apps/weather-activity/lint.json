@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: weather-activity`",
+      "pattern": "// name: weather-activity",
+      "min": 1
+    },
+    {
+      "desc": "both branches bind venue name + distance via sys.places (4-6 rows x 2 each)",
+      "pattern": "sys.places(",
+      "min": 8
+    },
+    {
+      "desc": "the loading guard + outdoor gate branch on live numeric weather (temp, rain)",
+      "pattern": "sys.weathernum(",
+      "min": 2
+    },
+    {
+      "desc": "the outdoor gate checks live AQI via sys.aqinum",
+      "pattern": "sys.aqinum(",
+      "min": 1
+    },
+    {
+      "desc": "content is chosen by branching on live sys numbers (loading guard, weather gate, places guards)",
+      "pattern": "if sys",
+      "min": 3
+    }
+  ]
+}

@@ -8,6 +8,7 @@
 //! per-screen Rust glue.
 
 pub mod approvals;
+pub mod card_lint;
 pub mod coding;
 pub mod content_browser;
 pub mod diagram_safety;

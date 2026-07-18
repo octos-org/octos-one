@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {"desc": "the first line must be `// name: activity`", "pattern": "// name: activity", "min": 1},
+    {"desc": "every place row binds venue name + distance via sys.places (5-8 rows x 2)", "pattern": "sys.places(", "min": 10},
+    {"desc": "the list is wrapped in a sys.placesnum loading/empty guard", "pattern": "sys.placesnum(", "min": 1},
+    {"desc": "place rows are plain flow: Right rows (5+)", "pattern": "flow: Right", "min": 5}
+  ]
+}
