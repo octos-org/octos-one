@@ -62,6 +62,42 @@ WebView's video surface and Makepad's GL `SurfaceView`.
    over adb (DevTools UI taps don't register via `input tap`), and its efficacy
    this build is UNVERIFIED.
 
+## ROOT CAUSE (confirmed by the SurfaceFlinger layer stack)
+
+`adb shell dumpsys SurfaceFlinger` while the youtube card plays (audio) shows, for
+`dev.makepad.octos_app`, three composited layers, z bottom→top:
+1. `Background for -SurfaceView …MakepadApp` (black backdrop)
+2. **`SurfaceView - …MakepadApp`** — Makepad's GL surface: `isOpaque=true`,
+   `alpha=1.0`, `blend=NONE`, `transparentRegionHint=[0,0,0,0]` (fully opaque),
+   `geomBufferSize=[0 0 1080 2215]`, `composition type=DEVICE`.
+3. `…MakepadApp#0` — the activity **window** (holds the WebView + overlays), above
+   the GL surface.
+
+There is **no video/chromium surface anywhere in the composited stack.** The
+WebView's hardware `<video>` renders to a **separate SurfaceView/SurfaceControl
+surface** (proven: CDP `Page.captureScreenshot`, i.e. the WebView's own compositor,
+shows the video black too — so it is NOT drawn into the WebView layer). That video
+surface is a *below-window* surface in the same activity as Makepad's GL surface,
+and it is **occluded by / not composited above Makepad's opaque GL SurfaceView** —
+so the frames never reach the screen. Decode still runs → **audio only**. Attaching
+CDP forces WebView onto a fallback compositing path, which is the only time the
+frames appear on-device.
+
+**Not the lever:** `--disable-features=WebViewSurfaceControl` AND
+`UseSurfaceLayerForVideoDefault,UseSurfaceLayerForVideo,OverlayFullscreenVideo` were
+all set via the command-line file, with a **confirmed-debuggable** app
+(`flags=[ DEBUGGABLE … ]`) and a world-readable flag file — video stayed black and
+the CDP compositor shot stayed black. So the fix is a **surface z-order / opacity**
+problem, not a WebView feature toggle.
+
+**Strong lead for the fix:** the fullscreen path (`onShowCustomView`) adds the video
+view to `mRootLayout` — the **window** layer, which IS above Makepad's GL surface —
+so fullscreen video should composite and show. If it does, the inline fix is to make
+the inline video surface composite at the window level too (or make Makepad's GL
+SurfaceView non-occluding: `setZOrderMediaOverlay`/`setZOrderOnTop` experiments, a
+transparent hole under the video, or hosting the WebView so its video surface
+z-orders above the GL surface).
+
 ## Hypotheses for Codex (in rough priority)
 
 1. **Z-order between two SurfaceViews.** The WebView's video SurfaceView is likely
