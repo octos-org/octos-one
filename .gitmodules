@@ -1,0 +1,7 @@
+[submodule "octos"]
+	path = octos
+	url = https://github.com/octos-org/octos.git
+[submodule "aichat"]
+	path = aichat
+	url = https://github.com/octos-org/makepad.git
+	branch = octos-one-framework
