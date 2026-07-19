@@ -290,6 +290,8 @@ document.getElementById("topbar").innerHTML=O.topbar({onHome:"go('home')",onBell
 if(!st.hist.length||st.hist[0].id!==st.cur.id){st.hist.unshift({id:st.cur.id,t:st.cur.t,ch:st.cur.ch,live:1});st.hist=st.hist.slice(0,20);O.set("hist",st.hist)}
 renderWatch();
 refreshAvatar();
+/* native→card event: a YouTube URL shared/opened into octos → play it here */
+if(O.on)O.on("deeplink",function(url){var id=O.ytId(url);if(id){O.toast("Opening shared video");playById(id);}});
 document.addEventListener("touchmove",function(){if(st.view==="search"){var i=document.getElementById("sin");if(i&&i===document.activeElement)i.blur()}},{passive:true});
 CAT.forEach(function(v){O.oembed(v.id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch();else{renderUpnext();if(st.view==="home")renderHome()}})});
 </script>
