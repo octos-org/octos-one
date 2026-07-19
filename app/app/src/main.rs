@@ -1726,7 +1726,7 @@ script_mod! {
                     }
                     web_block := View {
                         width: Fill
-                        height: 560
+                        height: 1900
                         web_view := WebCard {
                             width: Fill
                             height: Fill
@@ -1901,7 +1901,7 @@ script_mod! {
                         }
                         web_block := View{
                             width: Fill
-                            height: 720
+                            height: 1900
                             web_view := WebCard{
                                 width: Fill
                                 height: Fill
@@ -6278,6 +6278,17 @@ impl MatchEvent for App {
                 let text = sub.text.clone();
                 self.submit_prompt(cx, text);
             }
+            // Deep link / share (e.g. a YouTube URL shared from another app): emit a
+            // `deeplink` event to the web card, which plays it (octos.on("deeplink")).
+            if let Some(dl) = action
+                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidDeepLink>()
+            {
+                let payload = format!(
+                    "\"{}\"",
+                    dl.url.replace('\\', "\\\\").replace('"', "\\\"")
+                );
+                cx.system_browser(web_card_browser_id()).emit("deeplink", &payload);
+            }
             // Layer 3 — native composer "＋" / "⟳" controls (app management lives
             // in the composer now; the screen is otherwise just the a2app card).
             if action
@@ -7464,6 +7475,8 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                     AgentEvent::ToolRequest { .. } => {}
+                    AgentEvent::TextAuthoritative { .. } => {}
+                    _ => {}
                 }
             }
         }

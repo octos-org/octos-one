@@ -1,7 +1,5 @@
 # Referenced dependency clones (see docs/BUILDING-ANDROID.md) — NOT vendored
-/aichat/
 /makepad/
-/octos/
 
 # Build artifacts
 target/
