@@ -64,6 +64,14 @@ The APK bundles the octos kernel as `liboctos.so`. Build it for Android from
 ```bash
 cd octos-one/app
 export MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/ABS/PATH/TO/octos/target/aarch64-linux-android/release/octos"
+# Optional: enable real Google/YouTube sign-in in the youtube card. These are read
+# at BUILD time (via option_env! in main.rs) and injected into the card, so the
+# OAuth client id/secret never live in committed source. Omit them and sign-in is
+# simply disabled (the card shows "Sign-in isn't enabled in this build"). Use an
+# OAuth "TVs and Limited Input devices" client (device-code flow); its secret is
+# non-confidential per Google and ships in the APK by design.
+export OCTOS_GOOGLE_CLIENT_ID="<id>.apps.googleusercontent.com"
+export OCTOS_GOOGLE_CLIENT_SECRET="<secret>"
 cargo makepad android build -p octos-app --release
 ```
 
