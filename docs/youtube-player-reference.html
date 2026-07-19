@@ -146,7 +146,14 @@ function renderWatch(){var v=st.cur;
   +O.comments(v.id,st.cmts[v.id]||[],st.cexp,{expand:"cExpand",post:"cPost"})
   +O.sec("Up next")+'<div id="upnext"></div>';
  renderUpnext();}
-function renderUpnext(){document.getElementById("upnext").innerHTML=CATV().filter(function(v){return v.id!==st.cur.id}).map(function(v){return O.tile(v,"playById")}).join("")}
+function renderUpnext(){var el=document.getElementById("upnext");if(!el)return;var cur=st.cur,vid=cur.id;
+ var fallback=CATV().filter(function(v){return v.id!==vid}).map(function(v){return O.tile(v,"playById")}).join("");
+ var cached=st.related&&st.related[vid];
+ if(cached){el.innerHTML=cached.length?cached.map(function(v){return O.tile(v,"playById")}).join(""):fallback;return;}
+ el.innerHTML=fallback;                                   /* placeholder while related loads */
+ if(!O.ytRelated)return;
+ O.ytRelated(cur).then(function(res){st.related=st.related||{};st.related[vid]=res;res.forEach(function(v){if(!findV(v.id))CAT.push(v)});
+  if(st.cur.id!==vid)return;var e2=document.getElementById("upnext");if(e2&&res.length)e2.innerHTML=res.map(function(v){return O.tile(v,"playById")}).join("");}).catch(function(){});}
 
 /* ===== home view ===== */
 function renderHome(){document.getElementById("home").innerHTML=
