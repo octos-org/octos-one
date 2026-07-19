@@ -135,7 +135,7 @@ function renderWatch(){var v=st.cur;
     O.playerHtml({onMin:"goBack()",onMax:"go('watch')",onToggle:"pipToggle",onClose:"pipClose"})+'<div id="wmeta"></div>';
   O.player.mount("o-yt");O.player._mounted=true;O.player.load(v);
   O.player.onState(function(s){if(document.body.classList.contains("o-pip"))pipIcon(s!==2)});
-  O.player.gestures(function(){go("home")});
+  O.player.gestures(function(){goBack()});
  }
  document.getElementById("wmeta").innerHTML=
    '<div class="o-title">'+O.esc(v.t)+'</div>'
