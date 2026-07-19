@@ -302,6 +302,13 @@ const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow:
 /// down to a bare player, so youtube is a deterministic card, not a generation.
 const YOUTUBE_REFERENCE_CARD: &str = include_str!("../../../docs/youtube-player-reference.html");
 
+/// Google OAuth (device-code) client for YouTube sign-in, injected at BUILD time from
+/// env vars so the client id/secret never live in committed source. Build with
+/// `OCTOS_GOOGLE_CLIENT_ID=… OCTOS_GOOGLE_CLIENT_SECRET=… cargo makepad android build …`.
+/// Unset → the placeholders stay and the card disables sign-in gracefully.
+const GOOGLE_CLIENT_ID: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_ID");
+const GOOGLE_CLIENT_SECRET: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_SECRET");
+
 /// (live-channel handle, the video id it occupies in the reference card). The
 /// freshest ids from `youtube_live_cache` replace these so the card always opens
 /// on a currently-live stream (live ids rotate).
@@ -323,6 +330,9 @@ fn youtube_reference_card() -> String {
             }
         }
     }
+    // Build-time Google OAuth creds (empty when unset → card disables sign-in).
+    html = html.replace("__GOOGLE_CLIENT_ID__", GOOGLE_CLIENT_ID.unwrap_or(""));
+    html = html.replace("__GOOGLE_CLIENT_SECRET__", GOOGLE_CLIENT_SECRET.unwrap_or(""));
     html
 }
 

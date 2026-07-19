@@ -30,6 +30,34 @@ body.o-pip #watch>*:not(.o-player){display:none!important}
 #sbar svg{width:22px;height:22px;fill:#f1f1f1}
 #sin{flex:1;height:40px;background:#121212;border:1px solid #333;border-radius:20px;color:#f1f1f1;font-size:15px;padding:0 16px;outline:none}
 #sresults{padding-bottom:92px}
+.ybtn{width:100%;height:44px;border:0;border-radius:22px;background:#f1f1f1;color:#0f0f0f;font-size:15px;font-weight:600;margin:2px 0 8px}
+.ybtn2{height:38px;padding:0 18px;border:1px solid #333;border-radius:19px;background:transparent;color:#f1f1f1;font-size:14px}
+.sipanel{padding:8px 16px 20px;line-height:1.5}
+.siurl{font-size:19px;font-weight:600;color:#3ea6ff}
+.plrow{display:flex;gap:12px;align-items:center;padding:8px 14px}
+.plrow img{width:100px;height:56px;border-radius:8px;object-fit:cover;background:#222}
+.plrow .t{font-size:14px;color:#f1f1f1}.plrow .c{font-size:12px;color:#aaa}
+.acbadge{margin-left:auto;font-size:12px;color:#3ea6ff}
+.subrail{display:flex;gap:14px;overflow-x:auto;padding:6px 14px 12px;scrollbar-width:none}
+.subrail::-webkit-scrollbar{display:none}
+.subite{flex:0 0 auto;width:72px;text-align:center;cursor:pointer}
+.subav{width:64px;height:64px;border-radius:50%;object-fit:cover;background:#2a2a2a;display:block;margin:0 auto}
+.subnm{font-size:12px;color:#f1f1f1;margin-top:6px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lrow{display:flex;gap:10px;padding:8px 14px;cursor:pointer}
+.lthumb{position:relative;flex:0 0 auto}
+.lthumb img{width:140px;height:79px;border-radius:8px;object-fit:cover;background:#222;display:block}
+.durpill{position:absolute;right:5px;bottom:5px;background:rgba(0,0,0,.8);color:#fff;font-size:11px;font-weight:600;padding:1px 4px;border-radius:4px;line-height:1.3}
+.ltx{min-width:0;flex:1}
+.lt{font-size:14px;color:#f1f1f1;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lc{font-size:12px;color:#aaa;margin-top:4px;display:flex;white-space:nowrap;overflow:hidden}
+.lch{overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0}
+.lcm{flex:0 0 auto}
+.sispin{display:inline-block;width:15px;height:15px;border:2px solid #555;border-top-color:#3ea6ff;border-radius:50%;animation:sispin .8s linear infinite;vertical-align:-2px;margin-right:9px}
+@keyframes sispin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.sispin{animation:none}}
+.siwait{color:#aaa;margin-top:2px;font-size:14px}
+.sicopy{margin-top:14px;height:38px;padding:0 18px;border:1px solid #3f3f3f;border-radius:19px;background:#222;color:#f1f1f1;font-size:14px;font-weight:600}
+.sicode{font-size:32px;font-weight:700;letter-spacing:5px;color:#fff;margin:10px 0 2px;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -59,6 +87,11 @@ var CHIPS=["All","Music","Live","News"];
 /* ===== app state ===== */
 var O=octos, st={cur:CAT[0],view:"watch",chip:"All",cexp:false,histAll:false,hidden:{},
  subs:O.get("subs",{}),liked:O.get("liked",{}),disliked:O.get("disliked",{}),saved:O.get("saved",{}),hist:O.get("hist",[]),cmts:O.get("cmts",{})};
+/* Real Google/YouTube sign-in (OAuth device-code). The client id + secret are injected
+   at BUILD time (main.rs, from OCTOS_GOOGLE_CLIENT_ID/SECRET env vars) so they never live
+   in committed source. If not injected, sign-in is simply disabled. */
+var _GID="__GOOGLE_CLIENT_ID__";
+if(_GID.indexOf(".apps.googleusercontent.com")>0)O.auth.configure({clientId:_GID,clientSecret:"__GOOGLE_CLIENT_SECRET__"});
 function findV(id){return CAT.filter(function(x){return x.id===id})[0]||st.hist.filter(function(x){return x.id===id})[0]}
 function CATV(){return CAT.filter(function(v){return !st.hidden[v.id]})}
 
@@ -111,16 +144,77 @@ function renderHome(){document.getElementById("home").innerHTML=
 function setChip(c){st.chip=c;renderHome()}
 
 /* ===== you view ===== */
-function renderYou(){var el=document.getElementById("you");
- el.innerHTML='<div class="prof">'+O.avatar("You",56,24).replace("You","Y")+'<div><div class="pn">You</div><div class="ps">Library on this device</div></div></div>'
-  +O.sec("History","viewAllHist")+'<div id="yhist"></div>'
-  +O.sec("Liked videos")+'<div id="yliked"></div>'+O.sec("Watch later")+'<div id="ysaved"></div>'+O.sec("Subscriptions")+'<div id="ysubs"></div>';
+function localLibrary(inclLiked){return O.sec("History · on this device","viewAllHist")+'<div id="yhist"></div>'
+  +(inclLiked?O.sec("Liked · on this device")+'<div id="yliked"></div>':"")+O.sec("Watch later · on this device")+'<div id="ysaved"></div>';}
+function fillLocal(){var e;
  var hc=function(v){return '<div class="hc" onclick="playById(\''+v.id+'\')"><img src="'+O.thumb(v.id)+'"><div class="t">'+O.esc(v.t)+'</div><div class="c">'+O.esc(v.ch)+'</div></div>'};
  var yr=function(v){return '<div class="yrow" onclick="playById(\''+v.id+'\')"><img src="'+O.thumb(v.id)+'"><div class="tx" style="flex:1;min-width:0"><div class="t">'+O.esc(v.t)+'</div><div class="c">'+O.esc(v.ch)+'</div></div></div>'};
- document.getElementById("yhist").innerHTML=st.hist.length?(st.histAll?st.hist.slice(0,20).map(yr).join(""):st.hist.slice(0,10).map(hc).join("")):'<div class="o-empty">Videos you watch will show up here</div>';
- var lk=Object.keys(st.liked).map(function(k){return st.liked[k]});document.getElementById("yliked").innerHTML=lk.length?lk.map(yr).join(""):'<div class="o-empty">Tap Like to see it here</div>';
- var sv=Object.keys(st.saved).map(function(k){return st.saved[k]});document.getElementById("ysaved").innerHTML=sv.length?sv.map(yr).join(""):'<div class="o-empty">Tap Save on a video</div>';
- var sb=Object.keys(st.subs);document.getElementById("ysubs").innerHTML=sb.length?sb.map(function(n){return '<div class="sc">'+O.avatar(n,56,22)+'<div class="n">'+O.esc(n)+'</div></div>'}).join(""):'<div class="o-empty">Channels you subscribe to appear here</div>'}
+ if(e=document.getElementById("yhist"))e.innerHTML=st.hist.length?(st.histAll?st.hist.slice(0,20).map(yr).join(""):st.hist.slice(0,10).map(hc).join("")):'<div class="o-empty">Videos you watch will show up here</div>';
+ var lk=Object.keys(st.liked).map(function(k){return st.liked[k]});if(e=document.getElementById("yliked"))e.innerHTML=lk.length?lk.map(yr).join(""):'<div class="o-empty">Tap Like to see it here</div>';
+ var sv=Object.keys(st.saved).map(function(k){return st.saved[k]});if(e=document.getElementById("ysaved"))e.innerHTML=sv.length?sv.map(yr).join(""):'<div class="o-empty">Tap Save on a video</div>';}
+function renderYou(){var el=document.getElementById("you");var acct=O.auth.active();
+ if(!acct){
+  var cta=O.auth.configured()?'<div style="padding:2px 14px 6px"><button class="ybtn" onclick="startSignIn()">Sign in with Google</button></div>':'<div class="o-empty" style="padding:2px 14px 10px">Sign-in isn’t enabled in this build.</div>';
+  el.innerHTML='<div class="prof"><div class="o-ava" style="width:56px;height:56px;font-size:24px;background:linear-gradient(135deg,#3ea6ff,#265f94)">Y</div><div><div class="pn">Sign in to YouTube</div><div class="ps">Get your subscriptions, playlists &amp; more</div></div></div>'
+   +cta+localLibrary(true);
+  fillLocal();return;
+ }
+ var av=acct.avatar?'<div class="o-ava" style="width:56px;height:56px;overflow:hidden"><img src="'+acct.avatar+'" style="width:100%;height:100%;object-fit:cover"></div>':'<div class="o-ava" style="width:56px;height:56px;font-size:24px">'+O.esc((acct.name||"Y")[0])+'</div>';
+ el.innerHTML='<div class="prof" onclick="acctSheet()">'+av+'<div style="min-width:0"><div class="pn">'+O.esc(acct.name)+'</div><div class="ps">Google account · tap to switch</div></div><div style="margin-left:auto;opacity:.45;display:flex">'+O.ic("chev")+'</div></div>'
+  +O.sec("Subscriptions")+'<div id="ysubsreal"><div class="o-empty">Loading…</div></div>'
+  +O.sec("Playlists")+'<div id="yplreal"><div class="o-empty">Loading…</div></div>'
+  +O.sec("Liked videos")+'<div id="ylikedreal"><div class="o-empty">Loading…</div></div>'+localLibrary(false);
+ fillLocal();
+ O.auth.liked().then(function(j){var el2=document.getElementById("ylikedreal");if(!el2)return;
+  var vids=(j.items||[]).map(function(it){var s=it.snippet||{},stt=it.statistics||{},cd=it.contentDetails||{};return {id:it.id,t:O.strip(s.title||""),ch:s.channelTitle||"",live:0,views:fmtViews(stt.viewCount),age:fmtAge(s.publishedAt),dur:fmtDur(cd.duration)};}).filter(function(v){return v.id;});
+  vids.forEach(function(v){if(!findV(v.id))CAT.push(v);});
+  el2.innerHTML=vids.length?vids.map(likedRow).join(""):'<div class="o-empty">No liked videos yet</div>';
+ }).catch(function(e){var el2=document.getElementById("ylikedreal");if(el2)el2.innerHTML='<div class="o-empty">Couldn\'t load liked videos</div>';});
+ O.auth.subscriptions().then(function(j){var el2=document.getElementById("ysubsreal");if(!el2)return;
+  var subs=(j.items||[]).map(function(it){var s=it.snippet||{},t=(s.thumbnails&&(s.thumbnails.default||s.thumbnails.medium))||{};return {name:s.title||"",thumb:t.url||"",cid:((s.resourceId||{}).channelId||"")};}).filter(function(x){return x.name;});
+  if(!subs.length){el2.innerHTML='<div class="o-empty">No subscriptions</div>';return;}
+  var total=(j.pageInfo&&j.pageInfo.totalResults)||subs.length;
+  el2.innerHTML='<div class="o-empty" style="padding:0 14px 2px">'+total+' channels</div><div class="subrail">'+subs.map(function(x){var img=x.thumb?'<img class="subav" src="'+x.thumb+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{className:\'subav\',style:\''+O.avaStyle(x.name)+';display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff\',textContent:\''+O.esc((x.name[0]||"?").toUpperCase())+'\'}))">':'<div class="subav" style="'+O.avaStyle(x.name)+';display:flex;align-items:center;justify-content:center;font-size:24px;color:#fff">'+O.esc((x.name[0]||"?").toUpperCase())+'</div>';return '<div class="subite" onclick="subClick(\''+encodeURIComponent(x.name)+'\')">'+img+'<div class="subnm">'+O.esc(x.name)+'</div></div>';}).join("")+'</div>';
+ }).catch(function(e){var el2=document.getElementById("ysubsreal");if(el2)el2.innerHTML='<div class="o-empty">Couldn\'t load subscriptions: '+O.esc(String(e))+'</div>';});
+ O.auth.playlists().then(function(j){var el2=document.getElementById("yplreal");if(!el2)return;var pls=j.items||[];
+  el2.innerHTML=pls.length?pls.map(function(p){var s=p.snippet||{},th=((s.thumbnails&&(s.thumbnails.medium||s.thumbnails.default))||{}).url||"",n=(p.contentDetails||{}).itemCount;return '<div class="plrow" onclick="openPlaylist(\''+p.id+'\',\''+encodeURIComponent(s.title||"Playlist")+'\')"><img src="'+th+'"><div style="min-width:0"><div class="t">'+O.esc(s.title||"")+'</div><div class="c">'+(n!=null?(n===1?"1 video":n+" videos"):"")+'</div></div></div>';}).join(""):'<div class="o-empty">No playlists</div>';
+ }).catch(function(e){var el2=document.getElementById("yplreal");if(el2)el2.innerHTML='<div class="o-empty">Couldn\'t load playlists</div>';});
+}
+function fmtViews(n){n=+n;if(!n)return"";if(n>=1e6)return(n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,"")+"M views";if(n>=1e3)return(n/1e3).toFixed(n>=1e4?0:1).replace(/\.0$/,"")+"K views";return n+(n===1?" view":" views");}
+function fmtAge(iso){if(!iso)return"";var d=(Date.now()-new Date(iso).getTime())/1000;var u=[["year",31536000],["month",2592000],["week",604800],["day",86400],["hour",3600],["minute",60]];for(var i=0;i<u.length;i++){var q=Math.floor(d/u[i][1]);if(q>=1)return q+" "+u[i][0]+(q>1?"s":"")+" ago";}return"just now";}
+function fmtDur(iso){if(!iso)return"";var m=iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);if(!m)return"";var h=+(m[1]||0),mn=+(m[2]||0),s=+(m[3]||0),p=function(x){return(x<10?"0":"")+x;};return h?h+":"+p(mn)+":"+p(s):mn+":"+p(s);}
+function likedRow(v){var dur=v.dur?'<span class="durpill">'+v.dur+'</span>':'';var right=[v.views,v.age].filter(Boolean).join(" · ");var meta='<span class="lch">'+O.esc(v.ch)+'</span>'+(right?'<span class="lcm">&nbsp;· '+O.esc(right)+'</span>':'');return '<div class="lrow" onclick="playById(\''+v.id+'\')"><div class="lthumb"><img src="'+O.thumb(v.id)+'" loading="lazy">'+dur+'</div><div class="ltx"><div class="lt">'+O.esc(v.t)+'</div><div class="lc">'+meta+'</div></div></div>';}
+function copyCode(c){try{var t=document.createElement("textarea");t.value=c;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);O.toast("Code copied");}catch(e){O.toast(c);}}
+function subClick(nEnc){var n=decodeURIComponent(nEnc);openSearch();var i=document.getElementById("sin");if(i)i.value=n;renderSearch(n);}
+function openPlaylist(id,titleEnc){var title=decodeURIComponent(titleEnc);openSearch();var i=document.getElementById("sin");if(i)i.value="";st.searchQ="playlist";
+ var el=document.getElementById("sresults");el.innerHTML='<div class="o-empty" style="padding:12px 14px">Loading '+O.esc(title)+'…</div>';
+ O.auth.playlistItems(id).then(function(j){
+  var vids=(j.items||[]).map(function(it){var s=it.snippet||{};return {id:((s.resourceId||{}).videoId||""),t:O.strip(s.title||""),ch:s.videoOwnerChannelTitle||"",live:0};}).filter(function(v){return v.id&&v.t!=="Deleted video"&&v.t!=="Private video";});
+  vids.forEach(function(v){if(!findV(v.id))CAT.push(v);});
+  el.innerHTML='<div class="o-sec">'+O.esc(title)+'</div>'+(vids.length?vids.map(function(v){return O.tile(v,"playById");}).join(""):'<div class="o-empty" style="padding:12px 14px">Empty playlist</div>');
+ }).catch(function(){el.innerHTML='<div class="o-empty" style="padding:12px 14px">Couldn\'t load playlist</div>';});
+}
+function startSignIn(){var el=document.getElementById("you");go("you");
+ el.innerHTML='<div class="prof"><div class="o-ava" style="width:56px;height:56px;font-size:24px;background:linear-gradient(135deg,#3ea6ff,#265f94)">Y</div><div><div class="pn">Sign in to YouTube</div><div class="ps">Follow the steps below</div></div></div><div id="sipanel" class="sipanel"><div class="o-empty">Getting a code…</div></div>';
+ O.auth.start(function(evt){var p=document.getElementById("sipanel");
+  if(evt.phase==="code"){if(!p)return;p.innerHTML='<div>1&nbsp; On any device, open<br><span class="siurl">'+O.esc(evt.verification_url.replace(/^https?:\/\//,""))+'</span></div>'
+   +'<div style="margin-top:16px">2&nbsp; Enter this code</div><div class="sicode">'+O.esc(evt.user_code)+'</div>'
+   +'<button class="sicopy" onclick="copyCode(\''+O.esc(evt.user_code)+'\')">Copy code</button>'
+   +'<div class="siwait"><span class="sispin"></span>Waiting for approval…</div>'
+   +'<div style="margin-top:22px"><button class="ybtn2" onclick="renderYou()">Cancel</button></div>';}
+  else if(evt.phase==="done"){O.toast("Signed in as "+evt.account.name);refreshAvatar();go("you");renderYou();}
+  else if(evt.phase==="error"){if(p)p.innerHTML='<div class="o-empty">Sign-in failed: '+O.esc(evt.error)+'</div><div style="margin-top:16px"><button class="ybtn2" onclick="startSignIn()">Try again</button></div>';O.toast("Sign-in failed");}
+ });
+}
+function acctSheet(){var accts=O.auth.accounts(),active=O.auth.active();
+ var items=accts.map(function(a){return {icon:a.avatar||"person",label:a.name+(active&&a.id===active.id?"   ✓":""),on:function(){O.auth.setActive(a.id);refreshAvatar();renderYou();O.toast("Switched to "+a.name);}};});
+ items.push({icon:"plus",label:"Add another account",on:startSignIn});
+ if(active)items.push({icon:"close",label:"Sign out of "+active.name,on:function(){O.auth.signOut(active.id);refreshAvatar();renderYou();O.toast("Signed out");}});
+ O.sheet("Accounts",items);
+}
+function refreshAvatar(){var acct=O.auth.active(),b=document.getElementById("o-you");if(!b)return;
+ if(acct&&acct.avatar){b.innerHTML='<img src="'+acct.avatar+'" style="width:100%;height:100%;object-fit:cover;border-radius:50%">';b.style.background="none";}
+ else{b.innerHTML="Y";b.style.background="linear-gradient(135deg,#3ea6ff,#265f94)";}}
 function viewAllHist(){st.histAll=!st.histAll;renderYou()}
 
 /* ===== search view ===== */
@@ -174,6 +268,7 @@ function pipClose(){st.miniClosed=true;O.player.mini(false);O.player.stop();O.to
 document.getElementById("topbar").innerHTML=O.topbar({onHome:"go('home')",onBell:"function(){octos.toast('Notifications aren\\'t available')}()",onSearch:"openSearch()",onYou:"go('you')"});
 if(!st.hist.length||st.hist[0].id!==st.cur.id){st.hist.unshift({id:st.cur.id,t:st.cur.t,ch:st.cur.ch,live:1});st.hist=st.hist.slice(0,20);O.set("hist",st.hist)}
 renderWatch();
+refreshAvatar();
 document.addEventListener("touchmove",function(){if(st.view==="search"){var i=document.getElementById("sin");if(i&&i===document.activeElement)i.blur()}},{passive:true});
 CAT.forEach(function(v){O.oembed(v.id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch();else{renderUpnext();if(st.view==="home")renderHome()}})});
 </script>
