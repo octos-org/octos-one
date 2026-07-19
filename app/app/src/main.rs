@@ -1726,7 +1726,7 @@ script_mod! {
                     }
                     web_block := View {
                         width: Fill
-                        height: 560
+                        height: 1900
                         web_view := WebCard {
                             width: Fill
                             height: Fill
@@ -1901,7 +1901,7 @@ script_mod! {
                         }
                         web_block := View{
                             width: Fill
-                            height: 720
+                            height: 1900
                             web_view := WebCard{
                                 width: Fill
                                 height: Fill
@@ -7437,6 +7437,8 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                     AgentEvent::ToolRequest { .. } => {}
+                    AgentEvent::TextAuthoritative { .. } => {}
+                    _ => {}
                 }
             }
         }
