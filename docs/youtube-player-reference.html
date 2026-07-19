@@ -105,7 +105,8 @@ function go(v){O.closeSheet();
  document.getElementById("topbar").classList.toggle("o-hidden",v==="watch");
  var yb=document.getElementById("o-you"); if(yb)yb.classList.toggle("on",v==="you");
  if(isMini)pipIcon(O.player.state()!==2);
- var prev=st.view;st.view=v; if(v==="you")renderYou(); if(v==="home")renderHome(); if(prev!==v)window.scrollTo(0,0)}
+ var prev=st.view;st.view=v; if(v==="watch"&&prev&&prev!=="watch")st.lastList=prev; if(v==="you")renderYou(); if(v==="home")renderHome(); if(prev!==v)window.scrollTo(0,0)}
+function goBack(){go(st.lastList||"home")}
 function pipIcon(playing){var b=document.querySelector(".o-pipov .tog");if(b)b.innerHTML=O.ic(playing?"pause":"play")}
 
 /* ===== play ===== */
@@ -113,14 +114,25 @@ function play(v,stay){st.cur=v;st.miniClosed=false;st.cexp=false;
  document.getElementById("o-player").style.backgroundImage="url("+O.thumb(v.id)+")";
  O.player.load(v);
  st.hist=st.hist.filter(function(x){return x.id!==v.id});st.hist.unshift({id:v.id,t:v.t,ch:v.ch,live:v.live});st.hist=st.hist.slice(0,20);O.set("hist",st.hist);
- renderWatch();go(stay||"watch");if((stay||"watch")==="watch")setTimeout(function(){window.scrollTo(0,0)},150)}
-function playById(id){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();var fromSearch=st.view==="search";var v=findV(id);if(!v){v={id:id,t:"YouTube video",ch:"",live:0,sub:"",tags:[]};CAT.push(v);O.oembed(id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch()})}play(v,fromSearch?"search":null)}
+ renderWatch();
+ if(stay&&stay!=="watch"){
+  // Keep the list you played from — dock the mini in place, no rebuild of the list.
+  st.view=stay;O.player.mini(true);
+  document.getElementById("watch").classList.remove("o-hidden");
+  ["home","you","search"].forEach(function(x){document.getElementById(x).classList.toggle("o-hidden",x!==stay)});
+  document.getElementById("topbar").classList.remove("o-hidden");
+  var yb=document.getElementById("o-you");if(yb)yb.classList.toggle("on",stay==="you");
+  setTimeout(function(){if(O.player.state)pipIcon(O.player.state()!==2)},60);
+ }else{
+  go("watch");setTimeout(function(){window.scrollTo(0,0)},150);
+ }}
+function playById(id){if(document.activeElement&&document.activeElement.blur)document.activeElement.blur();var stay=(st.view&&st.view!=="watch")?st.view:null;var v=findV(id);if(!v){v={id:id,t:"YouTube video",ch:"",live:0,sub:"",tags:[]};CAT.push(v);O.oembed(id,function(m){v.t=m.title;if(m.author)v.ch=m.author;if(st.cur.id===v.id)renderWatch()})}play(v,stay)}
 
 /* ===== watch view ===== */
 function renderWatch(){var v=st.cur;
  if(!O.player._mounted){
   document.getElementById("watch").innerHTML=
-    O.playerHtml({onMin:"go('home')",onMax:"go('watch')",onToggle:"pipToggle",onClose:"pipClose"})+'<div id="wmeta"></div>';
+    O.playerHtml({onMin:"goBack()",onMax:"go('watch')",onToggle:"pipToggle",onClose:"pipClose"})+'<div id="wmeta"></div>';
   O.player.mount("o-yt");O.player._mounted=true;O.player.load(v);
   O.player.onState(function(s){if(document.body.classList.contains("o-pip"))pipIcon(s!==2)});
   O.player.gestures(function(){go("home")});
@@ -243,7 +255,9 @@ function doLike(){var v=st.cur;if(st.liked[v.id])delete st.liked[v.id];else{st.l
 function doDislike(){var v=st.cur;if(st.disliked[v.id])delete st.disliked[v.id];else{st.disliked[v.id]=1;delete st.liked[v.id];O.toast("You disliked this")}O.set("liked",st.liked);O.set("disliked",st.disliked);renderWatch()}
 function doSave(){var v=st.cur;if(st.saved[v.id]){delete st.saved[v.id];O.toast("Removed from Watch later")}else{st.saved[v.id]={id:v.id,t:v.t,ch:v.ch,live:v.live};O.toast("Saved to Watch later","VIEW")}O.set("saved",st.saved);renderWatch()}
 function doSub(){var v=st.cur;if(st.subs[v.ch]){delete st.subs[v.ch];O.toast("Unsubscribed")}else{st.subs[v.ch]=1;O.toast("Subscribed to "+v.ch)}O.set("subs",st.subs);renderWatch()}
-function doShare(){var v=st.cur,u="https://youtu.be/"+v.id;try{var t=document.createElement("textarea");t.value=u;document.body.appendChild(t);t.select();document.execCommand("copy");document.body.removeChild(t);O.toast("Link copied")}catch(e){O.toast(u)}}
+function doShare(){var v=st.cur,u="https://youtu.be/"+v.id;
+ if(O.hasNative&&O.hasNative()){O.share(u);}          /* native OS share sheet */
+ else{O.clipboard(u).then(function(){O.toast("Link copied")}).catch(function(){O.toast(u)});}}
 function doRemix(){O.toast("Remix isn't available for this video")}
 function doReport(){O.toast("Thanks — feedback noted")}
 function doCC(){O.player.captions({on:!O.player.cc});renderWatch();O.toast(O.player.cc?"Captions on":"Captions off")}
