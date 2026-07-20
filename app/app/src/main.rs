@@ -357,15 +357,50 @@ fn app_cards_root_dir() -> Option<std::path::PathBuf> {
     }
 }
 
+/// The shared widget doc `name`, compiled into the binary. This is the SAME
+/// file that gets deployed to the on-device app-cards tree — baked in so a plain
+/// `git clone → build → install` renders cards even when the on-device
+/// app-cards dir was never provisioned (nothing in the normal build deploys it
+/// there). Returns None for an unknown widget name.
+fn baked_widget_md(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "design-system" => include_str!("../../../a2app/widgets/design-system.md"),
+        "containers" => include_str!("../../../a2app/widgets/containers.md"),
+        "interaction" => include_str!("../../../a2app/widgets/interaction.md"),
+        "sys-helpers" => include_str!("../../../a2app/widgets/sys-helpers.md"),
+        "weather-icon" => include_str!("../../../a2app/widgets/weather-icon.md"),
+        _ => return None,
+    })
+}
+
+/// A built-in app's `app.md` spec, compiled into the binary — the baked-in
+/// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
+/// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
+/// they have no baked copy and rely on the deployed tree.
+fn baked_app_md(domain: &str) -> Option<&'static str> {
+    Some(match domain {
+        "weather" => include_str!("../../../a2app/apps/weather/app.md"),
+        "stock" => include_str!("../../../a2app/apps/stock/app.md"),
+        "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "activity" => include_str!("../../../a2app/apps/activity/app.md"),
+        "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
+        "web" => include_str!("../../../a2app/apps/web/app.md"),
+        "youtube" => YOUTUBE_CARD_CONTRACT,
+        _ => return None,
+    })
+}
+
 /// Read the docs an app agent needs to generate a `domain` card — the shared
-/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec — from
-/// the deployed app-cards tree, formatted for inlining into the prompt. Empty
-/// string if the tree isn't present (caller then falls back to the older
-/// memory-reliant prompt). The spec goes LAST so it's the freshest context.
+/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec,
+/// formatted for inlining into the prompt. Each doc is taken from the DEPLOYED
+/// on-device app-cards tree when present (so a device can override with newer
+/// specs), otherwise from the copy baked into the binary
+/// (`baked_widget_md`/`baked_app_md`) — so a plain build+install works with an
+/// empty on-device app-cards dir. The spec goes LAST so it's the freshest
+/// context. Empty string only for a runtime-composed `domain` with nothing
+/// deployed (caller then falls back to the older memory-reliant prompt).
 fn app_card_docs(domain: &str) -> String {
-    let Some(root) = app_cards_root_dir() else {
-        return String::new();
-    };
+    let root = app_cards_root_dir();
     let mut out = String::new();
     for w in [
         "design-system",
@@ -374,11 +409,19 @@ fn app_card_docs(domain: &str) -> String {
         "sys-helpers",
         "weather-icon",
     ] {
-        if let Ok(s) = std::fs::read_to_string(root.join("widgets").join(format!("{w}.md"))) {
+        let body = root
+            .as_ref()
+            .and_then(|r| std::fs::read_to_string(r.join("widgets").join(format!("{w}.md"))).ok())
+            .or_else(|| baked_widget_md(w).map(|s| s.to_string()));
+        if let Some(s) = body {
             out.push_str(&format!("\n----- widgets/{w}.md -----\n{}\n", s.trim_end()));
         }
     }
-    if let Ok(s) = std::fs::read_to_string(root.join("apps").join(domain).join("app.md")) {
+    let app_md = root
+        .as_ref()
+        .and_then(|r| std::fs::read_to_string(r.join("apps").join(domain).join("app.md")).ok())
+        .or_else(|| baked_app_md(domain).map(|s| s.to_string()));
+    if let Some(s) = app_md {
         out.push_str(&format!(
             "\n----- apps/{domain}/app.md — THIS IS YOUR SPEC, follow it EXACTLY -----\n{}\n",
             s.trim_end()
@@ -7556,10 +7599,11 @@ mod tests {
     use makepad_widgets::DVec2;
 
     use super::{
-        assistant_message_is_safe_for_history, assistant_message_is_safe_to_store,
-        card_root_height, glass_opacity_values, pin_fullbleed_root_height,
-        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
-        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
+        app_card_docs, assistant_message_is_safe_for_history,
+        assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
+        glass_opacity_values, pin_fullbleed_root_height, should_start_window_drag,
+        splash_gen_prompt, DEFAULT_GLASS_OPACITY, FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY,
+        MIN_GLASS_OPACITY,
     };
 
     #[test]
@@ -7637,6 +7681,53 @@ mod tests {
         assert!(
             !p.contains("in your memory"),
             "must NOT rely on the dead memory injection"
+        );
+    }
+
+    #[test]
+    fn app_card_docs_baked_fallback_covers_builtin_apps() {
+        // The fix for "other party: missing weather md files". Every built-in
+        // app's spec + the shared widget docs are compiled INTO the binary, so a
+        // plain `git clone → build → install` renders cards even when the
+        // on-device app-cards dir was never provisioned (nothing in the normal
+        // build deploys it there).
+        for domain in [
+            "weather",
+            "stock",
+            "news",
+            "activity",
+            "weather-activity",
+            "web",
+            "youtube",
+        ] {
+            let md = baked_app_md(domain)
+                .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
+            assert!(md.len() > 200, "baked spec for '{domain}' looks empty");
+        }
+        for w in [
+            "design-system",
+            "containers",
+            "interaction",
+            "sys-helpers",
+            "weather-icon",
+        ] {
+            assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
+        }
+        // Runtime-composed apps (`<a>-<b>`) live only on-device — no baked copy.
+        assert!(baked_app_md("some-composed-app").is_none());
+        assert!(baked_widget_md("unknown-widget").is_none());
+
+        // The assembled docs for a built-in domain are non-empty and inline BOTH
+        // the routed spec and the shared widget docs — even with no deployed
+        // tree, since the baked fallback supplies them.
+        let docs = app_card_docs("weather");
+        assert!(
+            docs.contains("apps/weather/app.md"),
+            "inlines the routed weather spec"
+        );
+        assert!(
+            docs.contains("widgets/weather-icon.md"),
+            "inlines the shared widget docs"
         );
     }
 
