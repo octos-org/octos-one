@@ -4941,8 +4941,10 @@ impl App {
         }
         // New session — the Splash manual must be re-primed into it.
         self.splash_primed = false;
-        // Back to the compose state (no card on screen).
-        self.composer_shown = true;
+        // Composer stays FOLDED (only the "+" FAB) — it never auto-expands, so
+        // it never covers a card. The user taps "+" to unfold when they want to
+        // type. (Was: expand into "compose state".)
+        self.composer_shown = false;
         self.sync_composer(cx);
 
         if let Some(agent) = &mut self.agent {
@@ -5064,7 +5066,9 @@ impl App {
         // Fresh foreground app → clear the shared surface; re-prime the manual.
         self.wipe_chat_surface();
         self.splash_primed = false;
-        self.composer_shown = true;
+        // Stay folded to the "+" FAB; the user taps "+" to unfold and type the
+        // new app's first request. (Was: auto-expand.)
+        self.composer_shown = false;
         self.sync_composer(cx);
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -5098,10 +5102,10 @@ impl App {
         }
         self.restore_from(i);
         self.splash_primed = false;
-        // A restored app with content shows its card full-screen (composer
-        // collapsed to the pill); an empty app opens in compose mode.
         let count = { CHAT_DATA.read().unwrap().messages.len() };
-        self.composer_shown = count == 0;
+        // Composer stays folded to the "+" FAB regardless of content; the user
+        // taps "+" to unfold. (Was: expand when the app is empty — `count == 0`.)
+        self.composer_shown = false;
         self.sync_composer(cx);
         self.ui.view(cx, ids!(cancel_button)).set_visible(cx, false);
         self.update_empty_state_visibility(cx);
@@ -6362,6 +6366,15 @@ impl MatchEvent for App {
                     self.switch_to_app(cx, (self.foreground + 1) % n);
                 }
             }
+            // Native composer "+" FAB tapped to UNFOLD. Java already expanded the
+            // pill + raised the keyboard; mark composer_shown so the app state
+            // matches and a later sync_composer won't re-fold it mid-typing.
+            if action
+                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerExpand>()
+                .is_some()
+            {
+                self.composer_shown = true;
+            }
             // Composer QR scan → provision the LLM from the decoded JSON payload,
             // then respawn the kernel so the new provider/key takes effect.
             if let Some(scan) = action
@@ -6889,9 +6902,11 @@ impl MatchEvent for App {
         octos_app_transport::install_android_logger();
 
         // This app is a full-screen A2App card generator: A2App mode is always
-        // on (the toggle was removed), and the floating composer starts expanded.
+        // on (the toggle was removed). The floating composer starts FOLDED —
+        // only the "+" FAB shows until the user taps it to unfold (keeps the
+        // card full-screen; matches the native overlay's folded-by-default).
         self.splash_mode = true;
-        self.composer_shown = true;
+        self.composer_shown = false;
 
         // DEBUG: enable the fork's image decode tracing (decode_start/done,
         // gpu_commit) — diagnosing the first-image-of-a-fresh-process black
@@ -7108,6 +7123,23 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                 }
+            }
+        }
+        // Composer folds the moment its soft keyboard is dismissed. The
+        // composer is "unfolded" ONLY while actively being typed into, so
+        // dismissing the keyboard (BACK, or the IME "down" chevron) tucks the
+        // pill back to the "+" FAB — otherwise unfolding via "+" and then
+        // hiding the keyboard left the pill stuck open, covering the card.
+        // Submit already folds first, so this is a harmless no-op there.
+        // Android only (desktop has no soft keyboard / uses the reveal pill).
+        #[cfg(target_os = "android")]
+        if let Event::VirtualKeyboard(
+            makepad_widgets::makepad_platform::event::VirtualKeyboardEvent::DidHide { .. },
+        ) = event
+        {
+            if self.composer_shown {
+                self.composer_shown = false;
+                self.sync_composer(cx);
             }
         }
         // Streaming repaint tick — see `stream_tick` field docs.
