@@ -24,11 +24,12 @@ device. Default ABI is **aarch64** (arm64-v8a).
 git clone https://github.com/octos-org/octos-one.git
 cd octos-one
 
-# the framework fork (Splash engine + sys.* helpers) → ./aichat  (== app/../aichat)
-git clone -b octos-one-framework https://github.com/octos-org/makepad.git aichat
-
-# the build tool (cargo-makepad + native composer Java) → ./makepad
-git clone -b octos-one-buildtool https://github.com/octos-org/makepad.git makepad
+# aichat (Splash engine + sys.* helpers) → ./aichat  (== app/../aichat) and
+# makepad (cargo-makepad + the Android Java/JNI packaged into the APK) → ./makepad
+# are pinned git SUBMODULES. Fetch both at their pinned commits. Pinning keeps the
+# framework's JNI in lockstep with the packaged Java — a stale buildtool builds
+# fine but panics at boot (issue #17).
+git submodule update --init aichat makepad
 
 # the octos kernel SOURCE → ./octos  (app/ path-deps octos-core = ../octos/crates/octos-core,
 # which uses workspace inheritance, so the whole octos workspace must be present —
@@ -36,9 +37,11 @@ git clone -b octos-one-buildtool https://github.com/octos-org/makepad.git makepa
 git clone https://github.com/octos-org/octos.git octos
 ```
 
-(`aichat/` and `makepad/` are git-ignored by this repo — they're referenced deps,
-not vendored. Both live in the [`octos-org/makepad`](https://github.com/octos-org/makepad)
-fork.)
+(`aichat/` and `makepad/` are git submodules pinned to exact commits in the
+[`octos-org/makepad`](https://github.com/octos-org/makepad) fork — referenced deps,
+not vendored. **Bumping the `makepad` pin means reinstalling `cargo-makepad`**
+(next step) so the packaged Java matches the pinned aichat JNI — otherwise the app
+panics at boot naming the missing JNI method.)
 
 ## 2. Install `cargo-makepad`
 

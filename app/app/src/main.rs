@@ -2914,6 +2914,12 @@ script_mod! {
                                 }
 
                                 Label {
+                                    // Fill width lets the text wrap instead of
+                                    // hard-clipping at the screen edge (seen on
+                                    // the 480px watch); stays one line where it
+                                    // already fits.
+                                    width: Fill
+                                    align: Align{x: 0.5}
                                     text: "输入自然语言，生成可交互的 Makepad diagram。"
                                     draw_text.color: #xCDBF9FAA
                                     draw_text.text_style.font_size: 12
@@ -7390,7 +7396,8 @@ impl AppMain for App {
                         // steal the foreground's streaming_text or render into
                         // CHAT_DATA. Clear that app's prompt, badge it, skip —
                         // its card is on the server ledger and hydrates on switch.
-                        if let Some(i) = self.app_of_prompt(prompt_id) {
+                        let prompt_owner = self.app_of_prompt(prompt_id);
+                        if let Some(i) = prompt_owner {
                             if i != self.foreground {
                                 self.apps[i].current_prompt = None;
                                 self.apps[i].has_updates = true;
@@ -7444,7 +7451,10 @@ impl AppMain for App {
                                         .find_map(runsplash_body_forbidden);
                                     if let Some(reason) = forbidden {
                                         log::warn!("a2app: refusing to save unsafe card: {reason}");
-                                        if !self.apps[self.foreground].repair_attempted {
+                                        if prompt_owner
+                                            .map(|i| !self.apps[i].repair_attempted)
+                                            .unwrap_or(false)
+                                        {
                                             card_repair = Some(format!(
                                                 "SECURITY: your card was rejected — {reason}. \
                                                  Re-emit the card using ONLY sys.* helpers and \
@@ -7464,30 +7474,35 @@ impl AppMain for App {
                                             "a2app: runsplash card has no `// name:` line — not saved"
                                         ),
                                     }
-                                    // Machine-check the card against the app's
-                                    // shipped rules (a2app lint.json); at most
-                                    // ONE repair per routed intent, and repair
-                                    // output is not re-linted — no loops.
-                                    if !self.apps[self.foreground].repair_attempted {
-                                        if let Some(domain) =
-                                            self.apps[self.foreground].domain.clone()
-                                        {
-                                            if let Some(rules) =
-                                                crate::app::card_lint::load_rules(&domain)
+                                    // Machine-check the card against the rules
+                                    // of the app that OWNS this prompt — never
+                                    // the foreground app's lint.json, which may
+                                    // belong to a different domain (a stock
+                                    // card must not be checked by weather
+                                    // rules). Orphan prompts (no owner) skip
+                                    // lint rather than guess.
+                                    if let Some(owner_idx) = prompt_owner {
+                                        if !self.apps[owner_idx].repair_attempted {
+                                            if let Some(domain) =
+                                                self.apps[owner_idx].domain.clone()
                                             {
-                                                let violations =
-                                                    crate::app::card_lint::lint(body, &rules);
-                                                if !violations.is_empty() {
-                                                    log::warn!(
-                                                        "card lint ({domain}): {} violation(s): {}",
-                                                        violations.len(),
-                                                        violations.join(" | ")
-                                                    );
-                                                    card_repair = Some(
-                                                        crate::app::card_lint::repair_prompt(
-                                                            &violations,
-                                                        ),
-                                                    );
+                                                if let Some(rules) =
+                                                    crate::app::card_lint::load_rules(&domain)
+                                                {
+                                                    let violations =
+                                                        crate::app::card_lint::lint(body, &rules);
+                                                    if !violations.is_empty() {
+                                                        log::warn!(
+                                                            "card lint ({domain}): {} violation(s): {}",
+                                                            violations.len(),
+                                                            violations.join(" | ")
+                                                        );
+                                                        card_repair = Some(
+                                                            crate::app::card_lint::repair_prompt(
+                                                                &violations,
+                                                            ),
+                                                        );
+                                                    }
                                                 }
                                             }
                                         }
@@ -7521,7 +7536,10 @@ impl AppMain for App {
                         // back to the SAME app agent session; the corrected card
                         // streams in over the visible (imperfect) one.
                         if let Some(repair) = card_repair.take() {
-                            let i = self.foreground;
+                            // card_repair is only set when the prompt's owner
+                            // was identified — route the repair back to THAT
+                            // app, not whatever happens to be foreground.
+                            let i = prompt_owner.unwrap_or(self.foreground);
                             let sid = self.apps[i].session_id;
                             let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &repair);
                             self.apps[i].current_prompt = Some(pid);

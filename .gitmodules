@@ -5,3 +5,7 @@
 	path = aichat
 	url = https://github.com/octos-org/makepad.git
 	branch = octos-one-framework
+[submodule "makepad"]
+	path = makepad
+	url = https://github.com/octos-org/makepad.git
+	branch = octos-one-buildtool

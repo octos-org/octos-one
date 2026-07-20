@@ -1,6 +1,3 @@
-# Referenced dependency clones (see docs/BUILDING-ANDROID.md) — NOT vendored
-/makepad/
-
 # Build artifacts
 target/
 app/target/
