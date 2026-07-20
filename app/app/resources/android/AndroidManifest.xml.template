@@ -14,6 +14,7 @@
         android:hardwareAccelerated="true"
         android:debuggable="{debuggable}"
         android:largeHeap="true"
+        android:usesCleartextTraffic="true"
         android:persistent="true"
         tools:targetApi="{target_sdk_version}">
         <meta-data android:name="android.max_aspect" android:value="2.1" />
