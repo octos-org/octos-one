@@ -3161,6 +3161,7 @@ script_mod! {
 pub static CHAT_DATA: std::sync::RwLock<ChatData> = std::sync::RwLock::new(ChatData {
     messages: Vec::new(),
     streaming_text: String::new(),
+    authoritative_text: String::new(),
     thinking_text: String::new(),
     is_streaming: false,
     a2app_state: std::collections::BTreeMap::new(),
@@ -3635,6 +3636,13 @@ pub enum ChatRole {
 pub struct ChatData {
     pub messages: Vec<ChatMessage>,
     pub streaming_text: String,
+    /// The kernel's durably-stored text for the in-flight turn, when it has
+    /// sent one (`message/persisted`). Preferred over `streaming_text` at turn
+    /// end: a `message/delta` lost in transit leaves `streaming_text` short by
+    /// that chunk with its edges spliced mid-token, which turns a valid card
+    /// DSL into one that cannot parse. Empty when the backend sends no
+    /// authoritative copy, in which case the accumulation stands.
+    pub authoritative_text: String,
     pub thinking_text: String,
     pub is_streaming: bool,
     /// Per-card A2App/Splash state: card (message index) → `CardState`. Each
@@ -4882,6 +4890,7 @@ impl App {
             let mut data = CHAT_DATA.write().unwrap();
             data.messages.clear();
             data.streaming_text.clear();
+            data.authoritative_text.clear();
             data.thinking_text.clear();
             data.is_streaming = false;
             data.a2app_state.clear();
@@ -4944,6 +4953,7 @@ impl App {
         let mut data = CHAT_DATA.write().unwrap();
         data.messages.clear();
         data.streaming_text.clear();
+            data.authoritative_text.clear();
         data.thinking_text.clear();
         data.is_streaming = false;
         data.a2app_state.clear();
@@ -4974,6 +4984,7 @@ impl App {
             data.messages = a.saved_messages.clone();
             data.a2app_state = a.saved_a2app.clone();
             data.streaming_text.clear();
+            data.authoritative_text.clear();
             data.thinking_text.clear();
             data.is_streaming = false;
             data.save_to_disk();
@@ -5169,6 +5180,7 @@ impl App {
                 text: text.clone(),
             });
             data.streaming_text.clear();
+            data.authoritative_text.clear();
             data.thinking_text.clear();
             data.is_streaming = true;
             data.messages.len() + 1
@@ -5253,6 +5265,7 @@ impl App {
             self.pending_intent = None;
             let mut data = CHAT_DATA.write().unwrap();
             data.streaming_text.clear();
+            data.authoritative_text.clear();
             data.thinking_text.clear();
             data.is_streaming = false;
             drop(data);
@@ -6533,6 +6546,7 @@ impl MatchEvent for App {
                             let mut data = CHAT_DATA.write().unwrap();
                             data.messages.clear();
                             data.streaming_text.clear();
+            data.authoritative_text.clear();
                             data.thinking_text.clear();
                             data.is_streaming = false;
                             data.a2app_state.clear();
@@ -7142,6 +7156,22 @@ impl AppMain for App {
                             .label(cx, ids!(status_label))
                             .set_text(cx, &format!("Error: {}", error));
                     }
+                    AgentEvent::TextAuthoritative { prompt_id, text } => {
+                        // Same guards as TextDelta: the AMA's stream is routing
+                        // metadata and a background app must not touch the
+                        // shared surface.
+                        if Some(prompt_id) == self.cancelled_ama
+                            || Some(prompt_id) == self.ama_prompt
+                        {
+                            continue;
+                        }
+                        if let Some(i) = self.app_of_prompt(prompt_id) {
+                            if i != self.foreground {
+                                continue;
+                            }
+                        }
+                        CHAT_DATA.write().unwrap().authoritative_text = text;
+                    }
                     AgentEvent::TextDelta { prompt_id, text } => {
                         // A cancelled AMA turn's late deltas are stale routing
                         // metadata — drop them (they would otherwise fall past
@@ -7298,7 +7328,26 @@ impl AppMain for App {
                         // is stored (the corrected card streams in over it).
                         let mut card_repair: Option<String> = None;
                         let mut data = CHAT_DATA.write().unwrap();
-                        let text = std::mem::take(&mut data.streaming_text);
+                        let streamed = std::mem::take(&mut data.streaming_text);
+                        let authoritative = std::mem::take(&mut data.authoritative_text);
+                        // Prefer what the kernel durably stored. The deltas we
+                        // accumulated are a best-effort mirror of it; one lost
+                        // in transit leaves `streamed` short by that chunk with
+                        // its edges spliced together mid-token, which silently
+                        // turns a valid card DSL into one that cannot parse.
+                        let text = if authoritative.is_empty() {
+                            streamed
+                        } else {
+                            if authoritative != streamed {
+                                log!(
+                                    "aichat UI stream/persisted MISMATCH — streamed={} persisted={} chars; \
+                                     using persisted (a delta was lost or reordered)",
+                                    streamed.chars().count(),
+                                    authoritative.chars().count()
+                                );
+                            }
+                            authoritative
+                        };
                         log!(
                             "aichat UI turn complete content_chars={}",
                             text.chars().count()
