@@ -357,15 +357,50 @@ fn app_cards_root_dir() -> Option<std::path::PathBuf> {
     }
 }
 
+/// The shared widget doc `name`, compiled into the binary. This is the SAME
+/// file that gets deployed to the on-device app-cards tree — baked in so a plain
+/// `git clone → build → install` renders cards even when the on-device
+/// app-cards dir was never provisioned (nothing in the normal build deploys it
+/// there). Returns None for an unknown widget name.
+fn baked_widget_md(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "design-system" => include_str!("../../../a2app/widgets/design-system.md"),
+        "containers" => include_str!("../../../a2app/widgets/containers.md"),
+        "interaction" => include_str!("../../../a2app/widgets/interaction.md"),
+        "sys-helpers" => include_str!("../../../a2app/widgets/sys-helpers.md"),
+        "weather-icon" => include_str!("../../../a2app/widgets/weather-icon.md"),
+        _ => return None,
+    })
+}
+
+/// A built-in app's `app.md` spec, compiled into the binary — the baked-in
+/// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
+/// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
+/// they have no baked copy and rely on the deployed tree.
+fn baked_app_md(domain: &str) -> Option<&'static str> {
+    Some(match domain {
+        "weather" => include_str!("../../../a2app/apps/weather/app.md"),
+        "stock" => include_str!("../../../a2app/apps/stock/app.md"),
+        "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "activity" => include_str!("../../../a2app/apps/activity/app.md"),
+        "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
+        "web" => include_str!("../../../a2app/apps/web/app.md"),
+        "youtube" => YOUTUBE_CARD_CONTRACT,
+        _ => return None,
+    })
+}
+
 /// Read the docs an app agent needs to generate a `domain` card — the shared
-/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec — from
-/// the deployed app-cards tree, formatted for inlining into the prompt. Empty
-/// string if the tree isn't present (caller then falls back to the older
-/// memory-reliant prompt). The spec goes LAST so it's the freshest context.
+/// widget pattern docs plus the routed app's `apps/<domain>/app.md` spec,
+/// formatted for inlining into the prompt. Each doc is taken from the DEPLOYED
+/// on-device app-cards tree when present (so a device can override with newer
+/// specs), otherwise from the copy baked into the binary
+/// (`baked_widget_md`/`baked_app_md`) — so a plain build+install works with an
+/// empty on-device app-cards dir. The spec goes LAST so it's the freshest
+/// context. Empty string only for a runtime-composed `domain` with nothing
+/// deployed (caller then falls back to the older memory-reliant prompt).
 fn app_card_docs(domain: &str) -> String {
-    let Some(root) = app_cards_root_dir() else {
-        return String::new();
-    };
+    let root = app_cards_root_dir();
     let mut out = String::new();
     for w in [
         "design-system",
@@ -374,11 +409,19 @@ fn app_card_docs(domain: &str) -> String {
         "sys-helpers",
         "weather-icon",
     ] {
-        if let Ok(s) = std::fs::read_to_string(root.join("widgets").join(format!("{w}.md"))) {
+        let body = root
+            .as_ref()
+            .and_then(|r| std::fs::read_to_string(r.join("widgets").join(format!("{w}.md"))).ok())
+            .or_else(|| baked_widget_md(w).map(|s| s.to_string()));
+        if let Some(s) = body {
             out.push_str(&format!("\n----- widgets/{w}.md -----\n{}\n", s.trim_end()));
         }
     }
-    if let Ok(s) = std::fs::read_to_string(root.join("apps").join(domain).join("app.md")) {
+    let app_md = root
+        .as_ref()
+        .and_then(|r| std::fs::read_to_string(r.join("apps").join(domain).join("app.md")).ok())
+        .or_else(|| baked_app_md(domain).map(|s| s.to_string()));
+    if let Some(s) = app_md {
         out.push_str(&format!(
             "\n----- apps/{domain}/app.md — THIS IS YOUR SPEC, follow it EXACTLY -----\n{}\n",
             s.trim_end()
@@ -4904,8 +4947,10 @@ impl App {
         }
         // New session — the Splash manual must be re-primed into it.
         self.splash_primed = false;
-        // Back to the compose state (no card on screen).
-        self.composer_shown = true;
+        // Composer stays FOLDED (only the "+" FAB) — it never auto-expands, so
+        // it never covers a card. The user taps "+" to unfold when they want to
+        // type. (Was: expand into "compose state".)
+        self.composer_shown = false;
         self.sync_composer(cx);
 
         if let Some(agent) = &mut self.agent {
@@ -5027,7 +5072,9 @@ impl App {
         // Fresh foreground app → clear the shared surface; re-prime the manual.
         self.wipe_chat_surface();
         self.splash_primed = false;
-        self.composer_shown = true;
+        // Stay folded to the "+" FAB; the user taps "+" to unfold and type the
+        // new app's first request. (Was: auto-expand.)
+        self.composer_shown = false;
         self.sync_composer(cx);
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -5061,10 +5108,10 @@ impl App {
         }
         self.restore_from(i);
         self.splash_primed = false;
-        // A restored app with content shows its card full-screen (composer
-        // collapsed to the pill); an empty app opens in compose mode.
         let count = { CHAT_DATA.read().unwrap().messages.len() };
-        self.composer_shown = count == 0;
+        // Composer stays folded to the "+" FAB regardless of content; the user
+        // taps "+" to unfold. (Was: expand when the app is empty — `count == 0`.)
+        self.composer_shown = false;
         self.sync_composer(cx);
         self.ui.view(cx, ids!(cancel_button)).set_visible(cx, false);
         self.update_empty_state_visibility(cx);
@@ -6325,6 +6372,15 @@ impl MatchEvent for App {
                     self.switch_to_app(cx, (self.foreground + 1) % n);
                 }
             }
+            // Native composer "+" FAB tapped to UNFOLD. Java already expanded the
+            // pill + raised the keyboard; mark composer_shown so the app state
+            // matches and a later sync_composer won't re-fold it mid-typing.
+            if action
+                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerExpand>()
+                .is_some()
+            {
+                self.composer_shown = true;
+            }
             // Composer QR scan → provision the LLM from the decoded JSON payload,
             // then respawn the kernel so the new provider/key takes effect.
             if let Some(scan) = action
@@ -6852,9 +6908,11 @@ impl MatchEvent for App {
         octos_app_transport::install_android_logger();
 
         // This app is a full-screen A2App card generator: A2App mode is always
-        // on (the toggle was removed), and the floating composer starts expanded.
+        // on (the toggle was removed). The floating composer starts FOLDED —
+        // only the "+" FAB shows until the user taps it to unfold (keeps the
+        // card full-screen; matches the native overlay's folded-by-default).
         self.splash_mode = true;
-        self.composer_shown = true;
+        self.composer_shown = false;
 
         // DEBUG: enable the fork's image decode tracing (decode_start/done,
         // gpu_commit) — diagnosing the first-image-of-a-fresh-process black
@@ -7071,6 +7129,23 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                 }
+            }
+        }
+        // Composer folds the moment its soft keyboard is dismissed. The
+        // composer is "unfolded" ONLY while actively being typed into, so
+        // dismissing the keyboard (BACK, or the IME "down" chevron) tucks the
+        // pill back to the "+" FAB — otherwise unfolding via "+" and then
+        // hiding the keyboard left the pill stuck open, covering the card.
+        // Submit already folds first, so this is a harmless no-op there.
+        // Android only (desktop has no soft keyboard / uses the reveal pill).
+        #[cfg(target_os = "android")]
+        if let Event::VirtualKeyboard(
+            makepad_widgets::makepad_platform::event::VirtualKeyboardEvent::DidHide { .. },
+        ) = event
+        {
+            if self.composer_shown {
+                self.composer_shown = false;
+                self.sync_composer(cx);
             }
         }
         // Streaming repaint tick — see `stream_tick` field docs.
@@ -7574,10 +7649,11 @@ mod tests {
     use makepad_widgets::DVec2;
 
     use super::{
-        assistant_message_is_safe_for_history, assistant_message_is_safe_to_store,
-        card_root_height, glass_opacity_values, pin_fullbleed_root_height,
-        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
-        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
+        app_card_docs, assistant_message_is_safe_for_history,
+        assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
+        glass_opacity_values, pin_fullbleed_root_height, should_start_window_drag,
+        splash_gen_prompt, DEFAULT_GLASS_OPACITY, FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY,
+        MIN_GLASS_OPACITY,
     };
 
     #[test]
@@ -7655,6 +7731,53 @@ mod tests {
         assert!(
             !p.contains("in your memory"),
             "must NOT rely on the dead memory injection"
+        );
+    }
+
+    #[test]
+    fn app_card_docs_baked_fallback_covers_builtin_apps() {
+        // The fix for "other party: missing weather md files". Every built-in
+        // app's spec + the shared widget docs are compiled INTO the binary, so a
+        // plain `git clone → build → install` renders cards even when the
+        // on-device app-cards dir was never provisioned (nothing in the normal
+        // build deploys it there).
+        for domain in [
+            "weather",
+            "stock",
+            "news",
+            "activity",
+            "weather-activity",
+            "web",
+            "youtube",
+        ] {
+            let md = baked_app_md(domain)
+                .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
+            assert!(md.len() > 200, "baked spec for '{domain}' looks empty");
+        }
+        for w in [
+            "design-system",
+            "containers",
+            "interaction",
+            "sys-helpers",
+            "weather-icon",
+        ] {
+            assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
+        }
+        // Runtime-composed apps (`<a>-<b>`) live only on-device — no baked copy.
+        assert!(baked_app_md("some-composed-app").is_none());
+        assert!(baked_widget_md("unknown-widget").is_none());
+
+        // The assembled docs for a built-in domain are non-empty and inline BOTH
+        // the routed spec and the shared widget docs — even with no deployed
+        // tree, since the baked fallback supplies them.
+        let docs = app_card_docs("weather");
+        assert!(
+            docs.contains("apps/weather/app.md"),
+            "inlines the routed weather spec"
+        );
+        assert!(
+            docs.contains("widgets/weather-icon.md"),
+            "inlines the shared widget docs"
         );
     }
 
