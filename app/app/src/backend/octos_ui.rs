@@ -476,6 +476,28 @@ impl OctosUiAgent {
                     }]
                 })
                 .unwrap_or_default(),
+            // The durably-stored row. Its `content` is what the kernel actually
+            // saved, so it is authoritative over our own `MessageDelta`
+            // accumulation — a delta lost in transit leaves that accumulation
+            // short by one chunk, spliced together mid-token, and an app-card
+            // DSL mangled that way fails to parse for reasons the model never
+            // wrote. Bridged so the consumer can prefer it at turn end.
+            UiNotification::MessagePersisted(ev) if ev.role == "assistant" => {
+                // Route by SESSION, not turn: the kernel's commit observer
+                // emits this with `turn_id: None` (a later PR is meant to add
+                // it), so a turn lookup silently drops every one of these and
+                // the authoritative text never arrives. `prompt_sessions` holds
+                // exactly the prompts still in flight, so the session's entry is
+                // the turn this row belongs to.
+                let pid = self
+                    .prompt_sessions
+                    .iter()
+                    .find(|(_, sess)| **sess == ev.session_id)
+                    .map(|(pid, _)| *pid);
+                pid.zip(ev.content.filter(|c| !c.trim().is_empty()))
+                    .map(|(prompt_id, text)| vec![AgentEvent::TextAuthoritative { prompt_id, text }])
+                    .unwrap_or_default()
+            }
             UiNotification::TurnCompleted(ev) => self
                 .prompt_ids
                 .remove(&ev.turn_id)
