@@ -1054,17 +1054,113 @@ fn strip_card_name_line(body: &str) -> std::borrow::Cow<'_, str> {
     std::borrow::Cow::Owned(kept.join("\n"))
 }
 
-/// Persist a named card's runsplash DSL (with its `// name:` line) for reuse.
-fn save_a2app_card(name: &str, dsl: &str) {
-    if let Some(dir) = a2app_cards_dir() {
-        let _ = std::fs::create_dir_all(&dir);
-        let path = dir.join(format!("{name}.splash"));
-        match std::fs::write(&path, dsl) {
-            Ok(()) => log::info!("a2app: saved card '{name}' ({} bytes) → {}", dsl.len(), path.display()),
-            Err(e) => log::warn!("a2app: save card '{name}' failed: {e}"),
-        }
-    } else {
+/// Persist a generated card so it can be retrieved by name and refined over
+/// time — the "save" half of the generate→save loop. Writes three things:
+/// the raw card body (`<name>.splash` / `<name>.html`, latest revision), a
+/// `<name>.meta.json` sidecar (substrate, owning domain, session, triggering
+/// prompt, timestamp), and one appended line in `index.jsonl` — the
+/// append-only ledger that makes every generation/refinement traceable.
+fn save_card_artifact(
+    name: &str,
+    substrate: &str,
+    body: &str,
+    domain: Option<&str>,
+    prompt: Option<&str>,
+    session_id: Option<&str>,
+) {
+    let Some(dir) = a2app_cards_dir() else {
         log::warn!("a2app: cannot save card '{name}' — no HOME/cards dir");
+        return;
+    };
+    let _ = std::fs::create_dir_all(&dir);
+    let ext = if substrate == "runhtml" { "html" } else { "splash" };
+    let path = dir.join(format!("{name}.{ext}"));
+    match std::fs::write(&path, body) {
+        Ok(()) => log::info!("a2app: saved card '{name}' ({substrate}, {} bytes) → {}", body.len(), path.display()),
+        Err(e) => log::warn!("a2app: save card '{name}' failed: {e}"),
+    }
+    let record = serde_json::json!({
+        "name": name,
+        "substrate": substrate,
+        "domain": domain,
+        "session_id": session_id,
+        "prompt": prompt,
+        "bytes": body.len(),
+        "saved_at": chrono::Utc::now().to_rfc3339(),
+    });
+    let meta_path = dir.join(format!("{name}.meta.json"));
+    if let Err(e) = std::fs::write(&meta_path, serde_json::to_vec_pretty(&record).unwrap()) {
+        log::warn!("a2app: save card meta '{name}' failed: {e}");
+    }
+    let mut line = serde_json::to_string(&record).unwrap();
+    line.push('\n');
+    use std::io::Write as _;
+    match std::fs::OpenOptions::new().create(true).append(true).open(dir.join("index.jsonl")) {
+        Ok(mut f) => {
+            if let Err(e) = f.write_all(line.as_bytes()) {
+                log::warn!("a2app: append card index '{name}' failed: {e}");
+            }
+        }
+        Err(e) => log::warn!("a2app: open card index failed: {e}"),
+    }
+}
+
+/// Mid-stream save: a card is complete enough to render the moment its
+/// closing fence arrives, so persist it then — a stalled or cancelled turn
+/// must still leave a traceable artifact (observed on-device: a youtube card
+/// fully rendered while its turn never finalized). Runs on every delta;
+/// deduped per turn via `data.saved_stream_cards`. The turn-complete save
+/// remains the final revision.
+fn save_completed_stream_cards(
+    data: &mut ChatData,
+    domain: Option<String>,
+    session: Option<String>,
+) {
+    let text = data.streaming_text.as_str();
+    if !text.contains("```") {
+        return;
+    }
+    let prompt = data
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == ChatRole::User)
+        .map(|m| m.text.clone());
+    if let Some(body) = extract_runsplash_body(text) {
+        // Never persist a forbidden card (same rule as the turn-complete
+        // path): scan ALL blocks, not just the first.
+        let forbidden = extract_all_runsplash_bodies(text)
+            .into_iter()
+            .find_map(runsplash_body_forbidden)
+            .is_some();
+        if !forbidden {
+            if let Some(name) = extract_card_name(body) {
+                if data.saved_stream_cards.insert(format!("runsplash:{name}")) {
+                    save_card_artifact(
+                        &name,
+                        "runsplash",
+                        body,
+                        domain.as_deref(),
+                        prompt.as_deref(),
+                        session.as_deref(),
+                    );
+                }
+            }
+        }
+    }
+    if let Some(html) = extract_runhtml_body(text) {
+        if let Some(name) = extract_html_card_name(html) {
+            if data.saved_stream_cards.insert(format!("runhtml:{name}")) {
+                save_card_artifact(
+                    &name,
+                    "runhtml",
+                    html,
+                    domain.as_deref(),
+                    prompt.as_deref(),
+                    session.as_deref(),
+                );
+            }
+        }
     }
 }
 
@@ -1333,6 +1429,50 @@ fn extract_runsplash_body(text: &str) -> Option<&str> {
     let body = &after[body_start..];
     let end = body.find("```")?;
     Some(body[..end].trim_end())
+}
+
+/// Pull the body of the first ```runhtml fenced block out of a message (the
+/// webview substrate — a complete HTML document).
+fn extract_runhtml_body(text: &str) -> Option<&str> {
+    let start = text.find("```runhtml")?;
+    let after = &text[start + "```runhtml".len()..];
+    let body_start = after.find('\n')? + 1;
+    let body = &after[body_start..];
+    let end = body.find("```")?;
+    Some(body[..end].trim_end())
+}
+
+/// Extract the `<!-- name: <slug> -->` directive the web contract requires on
+/// the first line of a runhtml card. Same slug rules as `extract_card_name`.
+fn extract_html_card_name(body: &str) -> Option<String> {
+    for line in body.lines().take(15) {
+        let t = line.trim();
+        let rest = t
+            .strip_prefix("<!-- name:")
+            .or_else(|| t.strip_prefix("<!--name:"));
+        if let Some(rest) = rest {
+            let rest = rest.trim().trim_end_matches("-->").trim();
+            let slug: String = rest
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+                .collect();
+            let slug = slug.trim_matches('-').to_string();
+            if !slug.is_empty() {
+                return Some(slug.chars().take(48).collect());
+            }
+        }
+        // The directive lives at the very top; stop once real markup starts
+        // (doctype / html / head openers are allowed through).
+        let upper = t.to_ascii_uppercase();
+        if t.starts_with('<')
+            && !t.starts_with("<!--")
+            && !upper.starts_with("<!DOCTYPE")
+            && !upper.starts_with("<HTML")
+        {
+            break;
+        }
+    }
+    None
 }
 
 /// Short A2App directive for follow-up requests in a session that already has
@@ -3214,6 +3354,7 @@ pub static CHAT_DATA: std::sync::RwLock<ChatData> = std::sync::RwLock::new(ChatD
     thinking_text: String::new(),
     is_streaming: false,
     a2app_state: std::collections::BTreeMap::new(),
+    saved_stream_cards: std::collections::BTreeSet::new(),
 });
 
 /// Bumped whenever `CHAT_DATA` is bulk-replaced (app switch restore, wipe) —
@@ -3699,6 +3840,11 @@ pub struct ChatData {
     /// state; `{{state.<key>}}` substitutes that card's value. Mutated by
     /// `agent.notify` events tagged with the card's id (see `tag_notify_calls`).
     pub a2app_state: std::collections::BTreeMap<usize, CardState>,
+    /// Cards already persisted mid-stream (fence-close save) for the CURRENT
+    /// turn — dedupes the per-delta scan; cleared on the next prompt submit.
+    /// The turn-complete save still writes the final revision.
+    /// (`BTreeSet` because `HashSet::new` is not const for the static init.)
+    pub saved_stream_cards: std::collections::BTreeSet<String>,
 }
 
 impl ChatData {
@@ -5235,6 +5381,7 @@ impl App {
             data.streaming_text.clear();
             data.authoritative_text.clear();
             data.thinking_text.clear();
+            data.saved_stream_cards.clear();
             data.is_streaming = true;
             data.messages.len() + 1
         };
@@ -7283,8 +7430,21 @@ impl AppMain for App {
                         // `stream_tick` drive redraws (first delta of a burst
                         // paints immediately).
                         {
+                            let card_owner = self.app_of_prompt(prompt_id);
+                            let card_domain =
+                                card_owner.and_then(|i| self.apps[i].domain.clone());
+                            let card_session = card_owner
+                                .map(|i| format!("{:?}", self.apps[i].session_id));
                             let mut data = CHAT_DATA.write().unwrap();
                             data.streaming_text.push_str(&text);
+                            // A completed card fence is a renderable artifact —
+                            // persist it NOW so a stalled/cancelled turn still
+                            // leaves a traceable save.
+                            save_completed_stream_cards(
+                                &mut data,
+                                card_domain,
+                                card_session,
+                            );
                         }
                         self.stream_dirty = true;
                         if self.stream_tick.is_empty() {
@@ -7438,6 +7598,19 @@ impl AppMain for App {
                         let mut rendered_card = false;
                         if !text.is_empty() {
                             if assistant_message_is_safe_to_store(&text) {
+                                // Card-archive context: which app produced the
+                                // card and the intent that triggered it — saved
+                                // alongside the card for traceability.
+                                let card_domain =
+                                    prompt_owner.and_then(|i| self.apps[i].domain.clone());
+                                let card_session = prompt_owner
+                                    .map(|i| format!("{:?}", self.apps[i].session_id));
+                                let card_prompt = data
+                                    .messages
+                                    .iter()
+                                    .rev()
+                                    .find(|m| m.role == ChatRole::User)
+                                    .map(|m| m.text.clone());
                                 // Persist a named A2App card so it can be
                                 // retrieved by name and refined over time.
                                 if let Some(body) = extract_runsplash_body(&text) {
@@ -7469,7 +7642,14 @@ impl AppMain for App {
                                         log::info!("CARDDSL[{i}]{}", String::from_utf8_lossy(chunk));
                                     }
                                     match extract_card_name(body) {
-                                        Some(name) => save_a2app_card(&name, body),
+                                        Some(name) => save_card_artifact(
+                                            &name,
+                                            "runsplash",
+                                            body,
+                                            card_domain.as_deref(),
+                                            card_prompt.as_deref(),
+                                            card_session.as_deref(),
+                                        ),
                                         None => log::warn!(
                                             "a2app: runsplash card has no `// name:` line — not saved"
                                         ),
@@ -7508,6 +7688,23 @@ impl AppMain for App {
                                         }
                                     }
                                     } // end else (safe card path)
+                                }
+                                // Webview (runhtml) cards get the same archive
+                                // treatment — previously they were ephemeral.
+                                if let Some(html) = extract_runhtml_body(&text) {
+                                    match extract_html_card_name(html) {
+                                        Some(name) => save_card_artifact(
+                                            &name,
+                                            "runhtml",
+                                            html,
+                                            card_domain.as_deref(),
+                                            card_prompt.as_deref(),
+                                            card_session.as_deref(),
+                                        ),
+                                        None => log::warn!(
+                                            "a2app: runhtml card has no `<!-- name: -->` — not saved"
+                                        ),
+                                    }
                                 }
                                 // Store the NEUTRALIZED text: a forbidden fence
                                 // must not survive in history to be re-rendered
