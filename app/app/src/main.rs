@@ -60,7 +60,7 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
@@ -302,6 +302,89 @@ const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow:
 /// down to a bare player, so youtube is a deterministic card, not a generation.
 const YOUTUBE_REFERENCE_CARD: &str = include_str!("../../../docs/youtube-player-reference.html");
 
+/// The complete Google-Maps-style trip-planner card (search → preview → plan →
+/// turn-by-turn drive over the native 2.5D `MapView`). Served DIRECTLY on a
+/// `nav` route — same rationale as [`YOUTUBE_REFERENCE_CARD`]: the on-device
+/// model under-generates / truncates this ~14 KB card when asked to re-emit it,
+/// so nav is a deterministic served card, not a generation. This is the SAME
+/// file embedded in `apps/nav/app.md` (the contract/reference); the drift-guard
+/// test keeps them identical. Interactivity survives the direct-serve because
+/// the render pipeline tags `agent.notify` calls and substitutes `{{state.*}}`
+/// by the card's slot id, independent of whether an LLM produced the body.
+const NAV_CANONICAL_CARD: &str =
+    include_str!("../../../a2app/apps/nav/exemplars/trip-planner.splash");
+
+/// Pull the destination place out of a natural-language nav intent so the served
+/// nav card can open straight on it (intent-based navigation) instead of an
+/// empty search box: "directions to SFO" -> "SFO", "how do I get to the Ferry
+/// Building from SOMA" -> "the Ferry Building", "show me a map of Golden Gate
+/// Bridge" -> "Golden Gate Bridge", "导航去北京南站" -> "北京南站", "去外滩怎么走"
+/// -> "外滩". Best-effort: returns None when nothing clear is named (the card
+/// then opens on its search box). An origin clause ("… from <place>") is dropped
+/// — only the destination is seeded; the origin default stays San Jose.
+fn extract_nav_destination(intent: &str) -> Option<String> {
+    let s = intent.trim();
+    let lower = s.to_lowercase();
+    let mut raw: Option<String> = None;
+    // English: the destination follows the LAST " to " (covers "from A to B",
+    // "get to X", "navigate to X"); a trailing "from <origin>" clause is cut.
+    if let Some(pos) = lower.rfind(" to ") {
+        let after = s[pos + 4..].trim();
+        let after = match after.to_lowercase().find(" from ") {
+            Some(f) => after[..f].trim(),
+            None => after,
+        };
+        if !after.is_empty() {
+            raw = Some(after.to_string());
+        }
+    }
+    // "map of X" / "picture of X" style.
+    if raw.is_none() {
+        if let Some(pos) = lower.rfind(" of ") {
+            let after = s[pos + 4..].trim();
+            if !after.is_empty() {
+                raw = Some(after.to_string());
+            }
+        }
+    }
+    // Chinese: the destination follows the LAST 去 or 到.
+    if raw.is_none() {
+        if let Some((idx, ch)) = s.char_indices().rev().find(|(_, c)| *c == '去' || *c == '到') {
+            let after = s[idx + ch.len_utf8()..].trim();
+            if !after.is_empty() {
+                raw = Some(after.to_string());
+            }
+        }
+    }
+    let mut d = raw?;
+    // Strip trailing qualifiers / politeness / punctuation until stable.
+    const TRAIL: &[&str] = &[
+        "怎么走", "怎么去", "怎么到", "路线", "导航", "，", "。", "！", "？", ",", ".", "!", "?",
+    ];
+    loop {
+        let before = d.clone();
+        d = d.trim().to_string();
+        for suf in TRAIL {
+            if let Some(p) = d.strip_suffix(suf) {
+                d = p.trim().to_string();
+            }
+        }
+        for suf in ["please", "thanks", "thank you"] {
+            if d.to_lowercase().ends_with(suf) {
+                d = d[..d.len() - suf.len()].trim().to_string();
+            }
+        }
+        if d == before {
+            break;
+        }
+    }
+    if d.is_empty() {
+        None
+    } else {
+        Some(d)
+    }
+}
+
 /// Google OAuth (device-code) client for YouTube sign-in, injected at BUILD time from
 /// env vars so the client id/secret never live in committed source. Build with
 /// `OCTOS_GOOGLE_CLIENT_ID=… OCTOS_GOOGLE_CLIENT_SECRET=… cargo makepad android build …`.
@@ -384,6 +467,7 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
         "news" => include_str!("../../../a2app/apps/news/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
+        "nav" => include_str!("../../../a2app/apps/nav/app.md"),
         "web" => include_str!("../../../a2app/apps/web/app.md"),
         "youtube" => YOUTUBE_CARD_CONTRACT,
         _ => return None,
@@ -4405,6 +4489,42 @@ impl App {
             cx.redraw_all();
             return;
         }
+        if app_id == "nav" {
+            // Serve the COMPLETE canonical trip-planner card DIRECTLY (no LLM —
+            // same rationale as youtube above: the on-device model
+            // under-generates / truncates this ~14 KB card). It is a fixed app,
+            // so serve it verbatim; the render pipeline still makes it fully
+            // interactive because it tags `agent.notify` and substitutes
+            // `{{state.*}}` by the card's slot id, not by who authored the body.
+            let card = NAV_CANONICAL_CARD;
+            // Intent-based navigation: if the request named a destination, seed
+            // it so the card opens on that place's route preview (top search
+            // hit) rather than the empty search box. Seeding STATE (not the card
+            // text) keeps `{{state.q}}` live, so the in-card search box still
+            // works for re-searching / disambiguation.
+            let seed_dest = extract_nav_destination(&intent);
+            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            if let Ok(mut data) = CHAT_DATA.write() {
+                data.messages.push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    text: format!("```runsplash\n{card}\n```"),
+                });
+                if let Some(q) = seed_dest {
+                    let item_id = data.messages.len() - 1;
+                    let st = data.a2app_state.entry(item_id).or_default();
+                    st.insert("q".to_string(), q);
+                    st.insert("sel".to_string(), "1".to_string());
+                }
+                data.is_streaming = false;
+            }
+            let chat_list = self.ui.widget(cx, ids!(chat_list));
+            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
+            self.apps[idx].repair_attempted = false;
+            self.update_empty_state_visibility(cx);
+            self.sync_app_tabs(cx);
+            cx.redraw_all();
+            return;
+        }
         // New foreground → drop ChatList's render cache so the card re-parses.
         CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Dispatch the domain-specialised generation prompt to the chosen agent.
@@ -5113,12 +5233,14 @@ impl App {
             let news = agent.create_session(cx, app_cfg());
             let web = agent.create_session(cx, app_cfg());
             let youtube = agent.create_session(cx, app_cfg());
+            let nav = agent.create_session(cx, app_cfg());
             self.apps = vec![
                 AppRecord::with_domain(weather, "Weather", "weather"),
                 AppRecord::with_domain(stock, "Stock", "stock"),
                 AppRecord::with_domain(news, "News", "news"),
                 AppRecord::with_domain(web, "Web", "web"),
                 AppRecord::with_domain(youtube, "YouTube", "youtube"),
+                AppRecord::with_domain(nav, "Nav", "nav"),
             ];
             self.foreground = 0;
             self.pending_intent = None;
@@ -5137,7 +5259,7 @@ impl App {
                 ..Default::default()
             };
             self.ama_session = Some(agent.create_session(cx, ama_config));
-            log::info!("AMA + 5 domain app agents (weather/stock/news/web/youtube) created concurrently");
+            log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
         }
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -7848,9 +7970,9 @@ mod tests {
     use super::{
         app_card_docs, assistant_message_is_safe_for_history,
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
-        glass_opacity_values, pin_fullbleed_root_height, should_start_window_drag,
-        splash_gen_prompt, DEFAULT_GLASS_OPACITY, FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY,
-        MIN_GLASS_OPACITY,
+        extract_nav_destination, glass_opacity_values, pin_fullbleed_root_height,
+        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
+        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
     };
 
     #[test]
@@ -7944,6 +8066,7 @@ mod tests {
             "news",
             "activity",
             "weather-activity",
+            "nav",
             "web",
             "youtube",
         ] {
@@ -7951,6 +8074,13 @@ mod tests {
                 .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
             assert!(md.len() > 200, "baked spec for '{domain}' looks empty");
         }
+        // The nav spec must ship the canonical card the agent reproduces
+        // verbatim (the whole app is that embedded card).
+        let nav = baked_app_md("nav").unwrap();
+        assert!(
+            nav.contains("// name: nav-app") && nav.contains("MapView{"),
+            "nav spec must embed the canonical card"
+        );
         for w in [
             "design-system",
             "containers",
@@ -7975,6 +8105,73 @@ mod tests {
         assert!(
             docs.contains("widgets/weather-icon.md"),
             "inlines the shared widget docs"
+        );
+    }
+
+    #[test]
+    fn nav_intent_destination_extraction() {
+        // Intent-based navigation: the served nav card is seeded with the place
+        // named in the request so it opens on that route preview. English " to "/
+        // " of " and Chinese 去/到, with origin ("from …") + trailing qualifiers
+        // ("怎么走", "please", punctuation) stripped.
+        let cases: &[(&str, Option<&str>)] = &[
+            ("directions to SFO", Some("SFO")),
+            ("navigate to the Ferry Building", Some("the Ferry Building")),
+            (
+                "how do I get to Blue Bottle Coffee from SOMA",
+                Some("Blue Bottle Coffee"),
+            ),
+            ("route to 1 Infinite Loop please", Some("1 Infinite Loop")),
+            ("take me to SFO.", Some("SFO")),
+            ("show me a map of Golden Gate Bridge", Some("Golden Gate Bridge")),
+            ("导航去北京南站", Some("北京南站")),
+            ("去外滩怎么走", Some("外滩")),
+            ("怎么去机场", Some("机场")),
+            ("到上海虹桥", Some("上海虹桥")),
+            // no destination named → no seeding, card opens on the search box
+            ("navigate", None),
+            ("weather in tokyo", None),
+        ];
+        for (intent, want) in cases {
+            assert_eq!(
+                extract_nav_destination(intent).as_deref(),
+                *want,
+                "extract_nav_destination({intent:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn nav_is_served_as_a_valid_canonical_card() {
+        // nav is a DIRECT-SERVE app (like youtube): the client emits
+        // NAV_CANONICAL_CARD verbatim on a `nav` route — no LLM, because the
+        // on-device model under-generates a card this large. Guard the served
+        // card's structural invariants so a truncated/broken exemplar can't ship.
+        let c = NAV_CANONICAL_CARD;
+        assert!(
+            c.starts_with("// name: nav-app"),
+            "served card must open with its name directive"
+        );
+        assert!(c.contains("fn tick()"), "drive screen is a no-rebuild tick card");
+        assert_eq!(
+            c.matches('{').count(),
+            c.matches('}').count(),
+            "served card braces must balance"
+        );
+        // every screen present (truncation canary — drive is the last screen)
+        for scr in ["\"search\"", "\"find\"", "\"preview\"", "\"plan\"", "\"drive\""] {
+            assert!(c.contains(scr), "served card missing screen {scr}");
+        }
+        // live bindings (never hardcoded places/ETAs) + the four nav maps
+        assert!(
+            c.contains("sys.search(") && c.contains("sys.navroute(") && c.contains("sys.navstep("),
+            "search + routing + turn helpers must be bound"
+        );
+        assert!(c.matches("MapView{").count() >= 4, "needs the four nav maps");
+        // drift-guard: the app.md contract embeds the EXACT card that is served.
+        assert!(
+            baked_app_md("nav").unwrap().contains(c.trim()),
+            "apps/nav/app.md must embed the exact canonical card it documents"
         );
     }
 
