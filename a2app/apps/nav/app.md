@@ -195,11 +195,21 @@ let ss = {{state.sel}}
 let go = "{{state.go}}"
 let vw = "{{state.view}}"
 let md = "{{state.mode}}"
+let oq = "{{state.oq}}"
 
-// origin — defaults to a San Jose start, replaceable by search (find == "orig")
+// origin — defaults to a San Jose start. An intent-seeded origin QUERY (oq,
+// e.g. "Saratoga High School" parsed from "from A to B") resolves to its top
+// search hit; an explicitly picked origin (find == "orig") still wins.
 let olat = 37.3350
 let olon = -121.8850
 let oname = "San Jose (downtown)"
+if oq != "0" {
+    if sys.searchnum(oq, 0, "lat") >= -900 {
+        olat = sys.searchnum(oq, 0, "lat")
+        olon = sys.searchnum(oq, 0, "lon")
+        oname = sys.search(oq, 0, "name")
+    }
+}
 if orig != "0" {
     olat = sys.coord(orig, "lat")
     olon = sys.coord(orig, "lon")
@@ -243,6 +253,20 @@ if dest != "0" { if find == "0" { scr = "plan" } }
 if go == "1" { scr = "drive" }
 
 fn tick() {
+    // The intent may seed an ORIGIN query (oq, parsed from "from A to B"). The
+    // top-level origin resolution FREEZES at build time — before oq's search
+    // lands — so re-resolve it here EVERY tick (tick re-runs on live data) and
+    // rebuild the marker string, so the route starts from the requested origin
+    // instead of the San Jose default. An explicitly picked origin still wins.
+    if orig == "0" { if oq != "0" { if sys.searchnum(oq, 0, "lat") >= -900 {
+        olat = sys.searchnum(oq, 0, "lat")
+        olon = sys.searchnum(oq, 0, "lon")
+        oname = sys.search(oq, 0, "name")
+        mk = "" + olat + "," + olon + ",0"
+        if wp1 != "0" { mk = mk + ";" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") + ",1" }
+        if wp2 != "0" { mk = mk + ";" + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon") + ",1" }
+        mk = mk + ";" + dlat + "," + dlon + ",2"
+    } } }
     // ---- search / find overlay: live results for the typed query ----
     if scr == "search" { if q != "0" {
         ui.cnt.set_text(sys.searchnum(q, 0, "count") + " results")

@@ -60,7 +60,7 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
@@ -383,6 +383,29 @@ fn extract_nav_destination(intent: &str) -> Option<String> {
     } else {
         Some(d)
     }
+}
+
+/// Parse the origin/destination the AMA appended to a `nav` decision line as
+/// `from=<origin>; to=<destination>` (see AMA_SYSTEM_PROMPT — the AMA splits
+/// "from A to B" and qualifies ambiguous places with world knowledge). Either
+/// may be absent (no origin stated). Each value runs to the next `;`/`|`/end and
+/// tolerates stray quotes. Returns (origin, destination), each trimmed non-empty.
+fn parse_nav_places(decision: &str) -> (Option<String>, Option<String>) {
+    fn field(s: &str, key: &str) -> Option<String> {
+        let i = s.find(key)?;
+        let r = &s[i + key.len()..];
+        let end = r.find([';', '|', '\n']).unwrap_or(r.len());
+        let v = r[..end]
+            .trim()
+            .trim_matches(['"', '\'', '\u{201c}', '\u{201d}'])
+            .trim();
+        if v.is_empty() || v == "0" {
+            None
+        } else {
+            Some(v.to_string())
+        }
+    }
+    (field(decision, "from="), field(decision, "to="))
 }
 
 /// Google OAuth (device-code) client for YouTube sign-in, injected at BUILD time from
@@ -4497,23 +4520,35 @@ impl App {
             // interactive because it tags `agent.notify` and substitutes
             // `{{state.*}}` by the card's slot id, not by who authored the body.
             let card = NAV_CANONICAL_CARD;
-            // Intent-based navigation: if the request named a destination, seed
-            // it so the card opens on that place's route preview (top search
-            // hit) rather than the empty search box. Seeding STATE (not the card
-            // text) keeps `{{state.q}}` live, so the in-card search box still
-            // works for re-searching / disambiguation.
-            let seed_dest = extract_nav_destination(&intent);
+            // Intent-based navigation ("LLM drives, card renders"): the AMA
+            // already understood the request and appended the parsed origin +
+            // destination to its decision line as `from="..."; to="..."`, using
+            // world knowledge to qualify ambiguous places (e.g. "nvidia
+            // headquarters" -> "nvidia santa clara"). Seed them as the card's
+            // origin/destination search QUERIES so it opens on the A->B route
+            // preview and routes correctly. Seeding STATE (not the card text)
+            // keeps the in-card search boxes live for re-searching. Fall back to
+            // the local destination extractor if the AMA gave nothing.
+            let (seed_orig, ama_dest) = parse_nav_places(decision);
+            let seed_dest = ama_dest.or_else(|| extract_nav_destination(&intent));
             CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             if let Ok(mut data) = CHAT_DATA.write() {
                 data.messages.push(ChatMessage {
                     role: ChatRole::Assistant,
                     text: format!("```runsplash\n{card}\n```"),
                 });
-                if let Some(q) = seed_dest {
+                if seed_dest.is_some() || seed_orig.is_some() {
                     let item_id = data.messages.len() - 1;
                     let st = data.a2app_state.entry(item_id).or_default();
-                    st.insert("q".to_string(), q);
-                    st.insert("sel".to_string(), "1".to_string());
+                    if let Some(q) = seed_dest {
+                        st.insert("q".to_string(), q);
+                        st.insert("sel".to_string(), "1".to_string());
+                    }
+                    // Origin query — the card resolves its top hit and routes
+                    // from there instead of the San Jose default.
+                    if let Some(o) = seed_orig {
+                        st.insert("oq".to_string(), o);
+                    }
                 }
                 data.is_streaming = false;
             }
@@ -7970,7 +8005,7 @@ mod tests {
     use super::{
         app_card_docs, assistant_message_is_safe_for_history,
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
-        extract_nav_destination, glass_opacity_values, pin_fullbleed_root_height,
+        extract_nav_destination, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
         should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
         FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
     };
@@ -8138,6 +8173,29 @@ mod tests {
                 *want,
                 "extract_nav_destination({intent:?})"
             );
+        }
+    }
+
+    #[test]
+    fn nav_parse_places_from_ama_decision() {
+        // "LLM drives": the AMA appends `from=…; to=…` (disambiguated) to the nav
+        // decision line; route_to_app seeds these as the card's origin/dest queries.
+        let cases: &[(&str, Option<&str>, Option<&str>)] = &[
+            (
+                "nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara",
+                Some("Saratoga High School"),
+                Some("NVIDIA Santa Clara"),
+            ),
+            ("nav — directions; to=SFO", None, Some("SFO")),
+            ("nav — go; from=; to=Golden Gate Bridge", None, Some("Golden Gate Bridge")),
+            ("nav — no places named", None, None),
+            // stray quotes tolerated
+            ("nav — x; from='Palo Alto'; to='Nvidia Santa Clara'", Some("Palo Alto"), Some("Nvidia Santa Clara")),
+        ];
+        for (dec, want_o, want_d) in cases {
+            let (o, d) = parse_nav_places(dec);
+            assert_eq!(o.as_deref(), *want_o, "origin for {dec:?}");
+            assert_eq!(d.as_deref(), *want_d, "dest for {dec:?}");
         }
     }
 
