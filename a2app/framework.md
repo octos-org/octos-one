@@ -12,6 +12,12 @@ request, then follow THAT app's `apps/<type>/app.md` spec:
 - **news** — top headlines / what's happening ("top news", "头条").
 - **activity** — nearby places / things to do ("what's nearby", "things to do
   around me", "places to visit", "附近有什么好玩的").
+- **nav** — maps & directions: getting to a place. Any go-there request with a
+  travel verb ("directions to SFO", "navigate home", "route to the airport",
+  "how do I get to X", "map to X", "show me a map of X", "导航去北京",
+  "怎么去外滩"). NOT `weather` (a bare place name stays weather) and NOT
+  `activity` (things-to-do nearby) — `nav` is specifically GOING somewhere. A
+  full-screen Splash trip planner + turn-by-turn per `apps/nav/app.md`.
 - **weather-activity** — the COMPOSED what-to-do-in-this-weather app: any
   what-should-I-DO / activities / plans / "should I go out" /
   "这个天气适合做什么" request where weather or air quality decides the
