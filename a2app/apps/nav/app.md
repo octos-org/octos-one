@@ -521,8 +521,8 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
 
   // ===================== PLAN =====================
   if scr == "plan" {
-    View{ width: Fill height: Fill flow: Down
-      themap := MapView{ width: Fill height: 384 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
+    View{ width: Fill height: Fill flow: Overlay
+      themap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
       RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 8} padding: Inset{left: 20 top: 16 right: 20 bottom: 16} spacing: 10
         View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14
