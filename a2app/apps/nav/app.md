@@ -345,7 +345,7 @@ fn tick() {
         ui.pvname.set_text(sys.search(q, ss - 1, "name"))
         ui.pvcat.set_text(sys.search(q, ss - 1, "cat"))
         ui.pvaddr.set_text(sys.search(q, ss - 1, "label"))
-        ui.pveta.set_text(sys.navroute(olat, olon, pplat, pplon, "min") + "  ·  " + sys.navroute(olat, olon, pplat, pplon, "km") + " away")
+        ui.pveta.set_text(sys.navroute(olat, olon, pplat, pplon, "min") + "  ·  " + sys.navroute(olat, olon, pplat, pplon, "km"))
         ui.pmap.set_nav_polyline(sys.navroute(olat, olon, pplat, pplon, "polyline"))
         ui.pmap.set_route_markers("" + olat + "," + olon + ",0;" + pplat + "," + pplon + ",2")
     }
@@ -648,22 +648,22 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
       themap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
       RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 8} padding: Inset{left: 20 top: 16 right: 20 bottom: 16} spacing: 10
-        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 14
-          View{ width: 102 height: 34 flow: Overlay
+        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
+          View{ width: 84 height: 34 flow: Overlay
             RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 padding: Inset{left: 10 top: 6 right: 10 bottom: 6} Label{ text: "‹ Search" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "dest", value: "0"}) }
           }
-          View{ width: 76 height: 34 flow: Overlay
+          View{ width: 70 height: 34 flow: Overlay
             if mdn == "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
             if mdn != "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "drive"}) }
           }
-          View{ width: 68 height: 34 flow: Overlay
+          View{ width: 64 height: 34 flow: Overlay
             if mdn == "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
             if mdn != "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "walk"}) }
           }
-          View{ width: 68 height: 34 flow: Overlay
+          View{ width: 64 height: 34 flow: Overlay
             if mdn == "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
             if mdn != "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "bike"}) }
