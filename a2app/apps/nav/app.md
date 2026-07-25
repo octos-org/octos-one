@@ -640,8 +640,8 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
 
   // ===================== DESTINATION PREVIEW =====================
   if scr == "preview" {
-    View{ width: Fill height: Fill flow: Down
-      pmap := MapView{ width: Fill height: 452 nav_mode: "plan" nav_route_width: 40.0 zoom: 14.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
+    View{ width: Fill height: Fill flow: Overlay
+      pmap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 14.0 min_zoom: 3.0 max_zoom: 16.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
       RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30} padding: Inset{left: 14 top: 13 right: 14 bottom: 13} spacing: 7
         View{ width: 110 height: 24 flow: Overlay
