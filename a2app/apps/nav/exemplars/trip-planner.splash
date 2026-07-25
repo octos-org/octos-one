@@ -18,6 +18,15 @@ let oq = "{{state.oq}}"
 let olat = 37.3350
 let olon = -121.8850
 let oname = "San Jose (downtown)"
+// Prefer the DEVICE's real GPS fix as the start when the trip names no origin.
+// sys.gps reads the last LocationListener fix synchronously ("ok" < 1 until the
+// first fix lands, then this takes over from the SJ default). An intent origin
+// (oq) or an explicitly picked origin (orig) below still overrides it.
+if sys.gps("ok") >= 1 {
+    olat = sys.gps("lat")
+    olon = sys.gps("lon")
+    oname = "Your location"
+}
 if oq != "0" {
     if sys.searchnum(oq, 0, "lat") >= -900 {
         olat = sys.searchnum(oq, 0, "lat")
@@ -93,6 +102,18 @@ fn tick() {
         olat = sys.searchnum(oq, 0, "lat")
         olon = sys.searchnum(oq, 0, "lon")
         oname = sys.search(oq, 0, "name")
+        mk = "" + olat + "," + olon + ",0"
+        if wp1 != "0" { mk = mk + ";" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") + ",1" }
+        if wp2 != "0" { mk = mk + ";" + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon") + ",1" }
+        mk = mk + ";" + dlat + "," + dlon + ",2"
+    } } }
+    // No named origin (no picked `orig`, no intent `oq`) -> follow the DEVICE GPS.
+    // GPS may land AFTER build, so (re)resolve it here each tick and rebuild the
+    // marker string, exactly like the oq path above.
+    if orig == "0" { if oq == "0" { if sys.gps("ok") >= 1 {
+        olat = sys.gps("lat")
+        olon = sys.gps("lon")
+        oname = "Your location"
         mk = "" + olat + "," + olon + ",0"
         if wp1 != "0" { mk = mk + ";" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") + ",1" }
         if wp2 != "0" { mk = mk + ";" + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon") + ",1" }
@@ -437,19 +458,19 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
     View{ width: Fill height: Fill flow: Down
       pmap := MapView{ width: Fill height: 452 nav_mode: "plan" nav_route_width: 40.0 zoom: 14.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
-      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 8} padding: Inset{left: 22 top: 20 right: 22 bottom: 20} spacing: 10
-        View{ width: 110 height: 34 flow: Overlay
-          RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 10 padding: Inset{left: 12 top: 8 right: 12 bottom: 8} Label{ text: "‹ Results" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 13 } }
+      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30} padding: Inset{left: 14 top: 13 right: 14 bottom: 13} spacing: 7
+        View{ width: 110 height: 24 flow: Overlay
+          RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 10 padding: Inset{left: 12 top: 8 right: 12 bottom: 8} Label{ text: "‹ Results" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 9 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "sel", value: "0"}) }
         }
-        pvname := Label{ width: Fill text: "…" draw_text.color: #ffffff draw_text.text_style.font_size: 22 }
+        pvname := Label{ width: Fill text: "…" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
         View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
-          pvcat := Label{ text: "" draw_text.color: #f5a623 draw_text.text_style.font_size: 14 }
-          pveta := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 14 }
+          pvcat := Label{ text: "" draw_text.color: #f5a623 draw_text.text_style.font_size: 9 }
+          pveta := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 9 }
         }
-        pvaddr := Label{ width: Fill text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
-        View{ width: Fill height: 52 flow: Overlay margin: Inset{top: 6}
-          RoundedView{ width: Fill height: 52 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "Directions  ›" draw_text.color: #ffffff draw_text.text_style.font_size: 15 } }
+        pvaddr := Label{ width: Fill text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 9 }
+        View{ width: Fill height: 42 flow: Overlay margin: Inset{top: 6}
+          RoundedView{ width: Fill height: 42 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "Directions  ›" draw_text.color: #ffffff draw_text.text_style.font_size: 10 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "dest", value: sys.searchnum(q, ss - 1, "lat") + "," + sys.searchnum(q, ss - 1, "lon") + "|" + sys.search(q, ss - 1, "name") }) }
         }
       }
@@ -460,89 +481,89 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
   // ===================== PLAN =====================
   if scr == "plan" {
     View{ width: Fill height: Fill flow: Overlay
-      themap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false }
+      themap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 16.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
-      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 8} padding: Inset{left: 20 top: 16 right: 20 bottom: 16} spacing: 10
+      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30} padding: Inset{left: 14 top: 11 right: 14 bottom: 11} spacing: 7
         View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
-          View{ width: 84 height: 34 flow: Overlay
-            RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 padding: Inset{left: 10 top: 6 right: 10 bottom: 6} Label{ text: "‹ Search" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } }
+          View{ width: 84 height: 24 flow: Overlay
+            RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 padding: Inset{left: 10 top: 6 right: 10 bottom: 6} Label{ text: "‹ Search" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 8 } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "dest", value: "0"}) }
           }
-          View{ width: 70 height: 34 flow: Overlay
-            if mdn == "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
-            if mdn != "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
+          View{ width: 70 height: 24 flow: Overlay
+            if mdn == "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #ffffff draw_text.text_style.font_size: 8 } } }
+            if mdn != "drive" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Drive" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 8 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "drive"}) }
           }
-          View{ width: 64 height: 34 flow: Overlay
-            if mdn == "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
-            if mdn != "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
+          View{ width: 64 height: 24 flow: Overlay
+            if mdn == "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #ffffff draw_text.text_style.font_size: 8 } } }
+            if mdn != "walk" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Walk" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 8 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "walk"}) }
           }
-          View{ width: 64 height: 34 flow: Overlay
-            if mdn == "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #ffffff draw_text.text_style.font_size: 12 } } }
-            if mdn != "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 12 } } }
+          View{ width: 64 height: 24 flow: Overlay
+            if mdn == "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #ffffff draw_text.text_style.font_size: 8 } } }
+            if mdn != "bike" { RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 Label{ text: "Bike" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 8 } } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "bike"}) }
           }
         }
         View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
-          eta := Label{ text: "…" draw_text.color: #4ade80 draw_text.text_style.font_size: 21 }
-          etad := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
+          eta := Label{ text: "…" draw_text.color: #4ade80 draw_text.text_style.font_size: 14 }
+          etad := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 9 }
         }
         SolidView{ width: Fill height: 1 draw_bg.color: #ffffff12 }
         // origin (editable) — the WHOLE row is tappable (Fill-width button,
         // reliable hit area) so tapping the start field opens the origin search.
-        View{ width: Fill height: 38 flow: Overlay
+        View{ width: Fill height: 30 flow: Overlay
           View{ width: Fill height: Fill flow: Right align: Align{y: 0.5} spacing: 12
             CircleView{ width: 11 height: 11 draw_bg.color: #22c55e }
-            oname := Label{ width: Fill text: "…" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 15 }          }
+            oname := Label{ width: Fill text: "…" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 10 }          }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.color_down: #ffffff10 draw_bg.border_size: 0.0 draw_bg.border_radius: 10 text: "" on_click: || { agent.notify("set", {key: "find", value: "orig"}); agent.notify("set", {key: "q", value: "0"}) } }
         }
         // per-leg time · distance (shown only when the trip has stops)
-        if wp1 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg0 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 12 } } }
+        if wp1 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg0 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 8 } } }
         // stop 1
         if wp1 != "0" {
           View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
             CircleView{ width: 11 height: 11 draw_bg.color: #2c7be5 }
-            wp1n := Label{ width: Fill text: "" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            wp1n := Label{ width: Fill text: "" draw_text.color: #ffffff draw_text.text_style.font_size: 10 }
             View{ width: 30 height: 30 flow: Overlay
-              RoundedView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #38445a draw_bg.border_radius: 15 Label{ text: "×" draw_text.color: #c6d0de draw_text.text_style.font_size: 15 } }
+              RoundedView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #38445a draw_bg.border_radius: 15 Label{ text: "×" draw_text.color: #c6d0de draw_text.text_style.font_size: 10 } }
               Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "wp1", value: "0"}) }
             }
           }
         }
-        if wp1 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg1 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 12 } } }
+        if wp1 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg1 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 8 } } }
         // stop 2
         if wp2 != "0" {
           View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
             CircleView{ width: 11 height: 11 draw_bg.color: #2c7be5 }
-            wp2n := Label{ width: Fill text: "" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
+            wp2n := Label{ width: Fill text: "" draw_text.color: #ffffff draw_text.text_style.font_size: 10 }
             View{ width: 30 height: 30 flow: Overlay
-              RoundedView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #38445a draw_bg.border_radius: 15 Label{ text: "×" draw_text.color: #c6d0de draw_text.text_style.font_size: 15 } }
+              RoundedView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #38445a draw_bg.border_radius: 15 Label{ text: "×" draw_text.color: #c6d0de draw_text.text_style.font_size: 10 } }
               Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "wp2", value: "0"}) }
             }
           }
         }
-        if wp2 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg2 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 12 } } }
+        if wp2 != "0" { View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{top: 1 bottom: 1} View{ width: 11 height: 15 flow: Overlay align: Align{x: 0.5 y: 0.5} SolidView{ width: 2 height: 15 draw_bg.color: #2c7be5 } } leg2 := Label{ text: "" draw_text.color: #8b99b0 draw_text.text_style.font_size: 8 } } }
         // destination (editable) — the WHOLE row is tappable, like the origin,
         // so tapping the end field opens the destination search.
-        View{ width: Fill height: 38 flow: Overlay
+        View{ width: Fill height: 30 flow: Overlay
           View{ width: Fill height: Fill flow: Right align: Align{y: 0.5} spacing: 12
             CircleView{ width: 11 height: 11 draw_bg.color: #ff6b6b }
-            dname := Label{ width: Fill text: "…" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }          }
+            dname := Label{ width: Fill text: "…" draw_text.color: #ffffff draw_text.text_style.font_size: 10 }          }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.color_down: #ffffff10 draw_bg.border_size: 0.0 draw_bg.border_radius: 10 text: "" on_click: || { agent.notify("set", {key: "find", value: "dest"}); agent.notify("set", {key: "q", value: "0"}) } }
         }
         // add stop (searchable) — only if a slot is free
         if wp2 == "0" {
-          View{ width: 140 height: 42 flow: Overlay margin: Inset{top: 2}
+          View{ width: 140 height: 34 flow: Overlay margin: Inset{top: 2}
             RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1b2534 draw_bg.border_radius: 18 spacing: 6
-              Label{ text: "+" draw_text.color: #72c0ff draw_text.text_style.font_size: 15 }
-              Label{ text: "Add stop" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 13 }
+              Label{ text: "+" draw_text.color: #72c0ff draw_text.text_style.font_size: 10 }
+              Label{ text: "Add stop" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 9 }
             }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || { agent.notify("set", {key: "find", value: "stop"}); agent.notify("set", {key: "q", value: "0"}) } }
           }
         }
-        View{ width: Fill height: 52 flow: Overlay margin: Inset{top: 4}
-          RoundedView{ width: Fill height: 52 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "▶  Start" draw_text.color: #ffffff draw_text.text_style.font_size: 15 } }
+        View{ width: Fill height: 42 flow: Overlay margin: Inset{top: 4}
+          RoundedView{ width: Fill height: 42 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "▶  Start" draw_text.color: #ffffff draw_text.text_style.font_size: 10 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "1"}) }
         }
       }
@@ -572,11 +593,11 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
   // ===================== DRIVE (turn-by-turn) =====================
   if scr == "drive" {
     View{ width: Fill height: Fill flow: Down padding: Inset{left: 10 top: 44 right: 10 bottom: 10}
-      roadpill := RoundedView{ width: Fill height: Fit flow: Right align: Align{y: 0.5} draw_bg.color: #0d3a2f draw_bg.border_radius: 20 padding: Inset{left: 14 top: 12 right: 20 bottom: 12} spacing: 14
-        CircleView{ width: 46 height: 46 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 arw := Label{ text: "↑" draw_text.color: #ffffff draw_text.text_style.font_size: 21 } }
-        View{ width: Fill height: Fit flow: Down spacing: 3
-          instr := Label{ width: Fill text: "Starting…" draw_text.color: #ffffff draw_text.text_style.font_size: 17 }
-          ndist := Label{ width: Fill text: "" draw_text.color: #a9d6c8 draw_text.text_style.font_size: 13 }
+      roadpill := RoundedView{ width: Fill height: Fit flow: Right align: Align{y: 0.5} draw_bg.color: #0d3a2f draw_bg.border_radius: 13 padding: Inset{left: 9 top: 7 right: 12 bottom: 7} spacing: 9
+        CircleView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 arw := Label{ text: "↑" draw_text.color: #ffffff draw_text.text_style.font_size: 14 } }
+        View{ width: Fill height: Fit flow: Down spacing: 2
+          instr := Label{ width: Fill text: "Starting…" draw_text.color: #ffffff draw_text.text_style.font_size: 11 }
+          ndist := Label{ width: Fill text: "" draw_text.color: #a9d6c8 draw_text.text_style.font_size: 9 }
         }
       }
       roadlbl := Label{ text: "" draw_text.color: #00000000 draw_text.text_style.font_size: 1 }

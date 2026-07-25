@@ -17,8 +17,21 @@ full widget-code audit and a 33/33 host-test run. Two UX defects were found and 
 the real routing pipeline + `SEED_CARD_FILE` cards to render stop/drive/search states directly
 (adb can't type into the makepad TextInput, so typed search + two-finger gestures stay code-verified).
 
-**Legend:** ✅ verified (device and/or code) · 🔷 code-confirmed, live-finger gesture/typing not adb-automatable · ⏳ deferred / future
-**Totals:** 56 requirements — **50 ✅ · 3 🔷 · 3 ⏳**, across 11 areas.
+**Follow-up (2026-07-24, branch `nav-gps`):** real device **GPS** was added (was R11.3, deferred) —
+`LocationManager` → JNI → `sys.gps` → the card's default origin becomes "Your location". Verified on device.
+
+**Follow-up (2026-07-24, pinch + controls):** two-finger **pinch-to-zoom** is now **device-verified**
+(root `sendevent` multi-touch injection to `/dev/input/event2`) on all three nav maps — planner preview,
+plan overview, and 3D drive — each zooming cleanly to street level and *holding* the zoom on finger-up
+(R3.7 / R3.8 / R8.3 upgraded 🔷 → ✅). Root cause of the earlier "registers only one finger" report: a real
+pinch is delivered as *separate per-finger* events, so the handler now accumulates every active touch by uid
+from the raw `TouchUpdate` stream. A third UX defect was found and **fixed**: the ◎ my-location control rendered
+as a **diamond** — the rounded-box SDF overshoots once the corner radius reaches half the side; the shader now
+clamps it so an over-large `border_radius` saturates to a clean circle/pill (fixes every round control
+app-wide — R3.6 / R3.9).
+
+**Legend:** ✅ verified (device and/or code) · 🔷 code-confirmed, live-finger typing not adb-automatable · ⏳ deferred / future
+**Totals:** 56 requirements — **53 ✅ · 1 🔷 · 2 ⏳**, across 11 areas.
 
 **Source of truth:** card = [`exemplars/trip-planner.splash`](exemplars/trip-planner.splash) ·
 map widget = `aichat/widgets/src/map/view.rs` · contract = [`app.md`](app.md).
@@ -58,9 +71,9 @@ map widget = `aichat/widgets/src/map/view.rs` · contract = [`app.md`](app.md).
 | R3.4 | **Label fade-in** — newly-revealed names ramp in (smoothstep) rather than pop. | ✅ |
 | R3.5 | **Labels clear of controls** — names never render clipped under the +/− pill or the my-location button. | ✅ |
 | R3.6 | **Zoom — buttons** — +/− zoom controls (precise, one-handed). | ✅ |
-| R3.7 | **Zoom — pinch** — two-finger pinch-to-zoom. *(Code-confirmed `view.rs:1267–1289`; the +/− button-zoom sibling verified live. A two-finger pinch isn't adb-automatable.)* | 🔷 |
-| R3.8 | **Pan — drag** — one-finger drag pans 1:1, computed as an absolute delta from a drag anchor (robust to partial/coalesced touch streams), re-anchored across a pinch release. *(Code-confirmed `view.rs:1275–1301` as absolute-delta; a real drag isn't adb-automatable.)* | 🔷 |
-| R3.9 | **My-location button** — centers the plan on the trip origin at street zoom (no live GPS → the origin is the "you are here" proxy). | ✅ |
+| R3.7 | **Zoom — pinch** — two-finger pinch-to-zoom. *(**Device-verified** via root `sendevent` multi-touch injection: pinch-out zooms the planner map to street level and *holds* the zoom on finger-up. Fix: accumulate every active touch by uid from the raw `TouchUpdate` stream — a real pinch arrives as separate per-finger events — and anchor the zoom at the fixed focal point captured at pinch start so the map doesn't drift.)* | ✅ |
+| R3.8 | **Pan — drag** — one-finger drag pans 1:1, computed as an absolute delta from a drag anchor (robust to partial/coalesced touch streams), re-anchored across a pinch release. *(Same raw-`TouchUpdate` handler as R3.7, now **device-verified**: the map re-anchors cleanly when a pinch releases back to a single finger, no jump.)* | ✅ |
+| R3.9 | **My-location button** — a round ◎ control that centers the plan on the trip origin at street zoom (with live GPS the origin is a true "you are here"). *(UX fix this pass: it rendered as a **diamond**; the box-SDF radius clamp restores a clean circle — see header.)* | ✅ |
 | R3.10 | **Smooth camera** — eased +/− zoom and a glide-to-origin animation; a direct gesture cleanly overrides an in-flight glide. | ✅ |
 | R3.11 | **Constant-width route line** — the route stays a fixed *screen* width (never a hairline when zoomed out) — white casing under a bright-blue core, anti-aliased. | ✅ |
 | R3.12 | **Route pins** — origin 🟢 green, stops 🔵 blue, destination 🔴 red — upright standing pins with soft shadows, anti-aliased. | ✅ |
@@ -112,7 +125,7 @@ map widget = `aichat/widgets/src/map/view.rs` · contract = [`app.md`](app.md).
 |----|-------------|:--:|
 | R8.1 | **3D chase view** — a pinhole 2.5D perspective over the vector tiles with a world-space route ribbon. | ✅ |
 | R8.2 | **Turn guidance** — next-turn instruction + distance (`sys.navstep`). | ✅ |
-| R8.3 | **2D/3D toggle · recenter · End** — on-map controls; pinch/pan to look around, recenter to snap back to the follow-cam. | ✅ |
+| R8.3 | **2D/3D toggle · recenter · End** — on-map controls; pinch/pan to look around, recenter to snap back to the follow-cam. *(Pinch **device-verified** in the 3D chase view: zooms the perspective camera to street level while still following the route.)* | ✅ |
 
 ## 9 · Rendering & technical
 *The engine constraints that shape the card.*
@@ -131,7 +144,7 @@ map widget = `aichat/widgets/src/map/view.rs` · contract = [`app.md`](app.md).
 | ID | Requirement | |
 |----|-------------|:--:|
 | R10.1 | **Runs with no device network** — the host tunnel (`OCTOS_PROXY` → `connect_proxy.py` over `adb reverse`) routes both the router LLM and app-side `sys.*` fetches, so a Wi-Fi-less phone still renders live cards. | ✅ |
-| R10.2 | **No live GPS** — there is no location provider; the trip origin is the current-location proxy throughout. | ✅ |
+| R10.2 | **Live GPS, proxy fallback** — the device's real GPS fix is now the default origin (see R11.3); it gracefully falls back to the San Jose default whenever there is no fix yet or the location permission is denied. | ✅ |
 | R10.3 | **Deterministic rendering** — no frame-to-frame flicker; a static overview is pixel-stable (verified 0% inter-frame diff). | ✅ |
 
 ## 11 · Deferred & open items
@@ -141,5 +154,5 @@ map widget = `aichat/widgets/src/map/view.rs` · contract = [`app.md`](app.md).
 |----|-------------|:--:|
 | R11.1 | **Tile fade-in** — tiles pop in on zoom/pan; fading each as it loads needs a shader-level change (tiles render in one batched pass), so it was scoped out. The *label* half of the ask is done (R3.4). | ⏳ |
 | R11.2 | **Route alternatives** — multiple route options / choose-a-route. Explicitly deferred ("leave route option later"). | ⏳ |
-| R11.3 | **True GPS** — would require an Android location provider + permission + a `sys.*` helper. Out of scope; origin stands in (R10.2). | ⏳ |
+| R11.3 | **Live GPS origin** — **shipped this session** (branch `nav-gps`). Android `LocationManager` listener → JNI `onLocation` → `makepad_platform::gps` → new `sys.gps("lat"/"lon"/"acc"/"ok")` helper; the card uses the real device fix as the default origin (**"Your location"**) whenever the trip names no origin, falling back to the SJ default until a fix lands. Verified on device: a destination-only trip started from the real fix (~Saratoga) → NVIDIA, **34 min · 24.3 km**, and the status bar showed active location. | ✅ |
 | R11.4 | **Typing a new place into the field — needs a real finger** — this pass verified tap-to-open-search, the find overlay, picking default items, rerouting through stops, mode switching, zoom, and my-location all on device. The one remaining un-automatable step is *typing* a brand-new query into the makepad TextInput: adb can't inject text there (`input text` and Gboard taps both fail), so a typed free-text search is confirmed only by code + the intent path. | 🔷 |
