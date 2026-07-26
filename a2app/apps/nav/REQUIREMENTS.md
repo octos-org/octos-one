@@ -30,6 +30,11 @@ as a **diamond** — the rounded-box SDF overshoots once the corner radius reach
 clamps it so an over-large `border_radius` saturates to a clean circle/pill (fixes every round control
 app-wide — R3.6 / R3.9).
 
+**Follow-up (2026-07-25, branch `nav-gps`):** drive-screen bottom sheet redesigned + direct-Wi-Fi + search/crash fixes, device-verified.
+- **Swipe-collapsible drive sheet (R8.3)** — the drive screen shows a compact **time · distance · speed** chip by default; **swipe up** reveals **End**, **swipe down** collapses it. A transparent swipe `Button` on top of the handle captures the gesture by z-order hit-test (`hits_with_capture_overload`) so it drives the sheet **without leaking into a map pan**. The swipe toggles the End row's visibility *directly* (`ui.endrow.set_visible` — a new zero-rebuild `View` script method) instead of through card state, so the sheet opens/closes **without re-rendering the map** (`eval_body` no longer fires on toggle — device-verified `0`). Chips are now solid — glass translucency removed. *(Both halves fix explicit user reports this pass: the swipe leaked into a map pan; the toggle re-rendered the whole map.)*
+- **Direct Wi-Fi networking (R10.1)** — the app can connect over the device's own Wi-Fi instead of the host `adb reverse` tunnel: a proxy value of `direct`/`none`/`off` clears the JVM proxy props (`android_jni.rs`). Map tiles, OSRM routes, and Photon search all load direct — fixes the intermittent blank-map / empty-search / no-route seen when the host proxy's `getaddrinfo` failed under concurrent load.
+- **Search + crash fixes** — search results render their name/address text again; the loading count shows "Searching…" until the real "N results" lands (no more "9999+" sentinel); the nav route store evicts **LRU** instead of bulk-clearing, fixing a SIGSEGV on plan→drive route churn.
+
 **Legend:** ✅ verified (device and/or code) · 🔷 code-confirmed, live-finger typing not adb-automatable · ⏳ deferred / future
 **Totals:** 56 requirements — **53 ✅ · 1 🔷 · 2 ⏳**, across 11 areas.
 

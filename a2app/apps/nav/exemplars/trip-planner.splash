@@ -8,7 +8,6 @@ let wp2 = "{{state.wp2}}"
 let sel = "{{state.sel}}"
 let ss = {{state.sel}}
 let go = "{{state.go}}"
-let ns = "{{state.ns}}"
 let vw = "{{state.view}}"
 let md = "{{state.mode}}"
 let oq = "{{state.oq}}"
@@ -638,7 +637,8 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
       // sits ON TOP of them (transparent) so it (a) catches the swipe to toggle and
       // (b) occludes the map so the swipe never leaks through to pan it. End is a
       // separate row BELOW the swipe target, so it stays tappable when expanded.
-      // ns state: "1" = expanded, else collapsed.
+      // Swipe toggles endrow's visibility DIRECTLY (ui.endrow.set_visible) — no
+      // agent.notify/eval_body, so the map is never torn down / re-rendered.
       View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 82}
         RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 7 right: 18 bottom: 12} spacing: 4
           View{ width: Fill height: Fit flow: Overlay
@@ -649,13 +649,11 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
               remmin := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
               remrest := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
             }
-            Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" swipe: true on_swipe_up: || agent.notify("set", {key: "ns", value: "1"}) on_swipe_down: || agent.notify("set", {key: "ns", value: "0"}) }
+            Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" swipe: true on_swipe_up: || ui.endrow.set_visible(true) on_swipe_down: || ui.endrow.set_visible(false) }
           }
-          if ns == "1" {
-            View{ width: Fill height: 44 flow: Overlay margin: Inset{top: 6}
-              RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 12 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
-              Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "0"}) }
-            }
+          endrow := View{ width: Fill height: 44 flow: Overlay margin: Inset{top: 6} visible: false
+            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 12 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
+            Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "0"}) }
           }
         }
       }
