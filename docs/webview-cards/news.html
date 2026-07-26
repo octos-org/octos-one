@@ -1,0 +1,305 @@
+<!-- name: news -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#fff;--ink:#000;--dim:#6e6e73;--line:#e5e5ea;--red:#fa2b3c;--tint:#fa2b3c}
+  *{-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"SF Pro Text","HarmonyOS Sans",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  body{padding-bottom:64px}
+  a{color:inherit;text-decoration:none}
+  .hd{padding:14px 18px 6px;display:flex;align-items:flex-end;justify-content:space-between}
+  .hd h1{font-size:34px;font-weight:800;letter-spacing:-.8px;margin:0}
+  .hd .dt{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px;font-weight:600;padding-bottom:6px}
+  .kicker{font-size:12px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.6px}
+  .sec{padding:18px 18px 8px;font-size:22px;font-weight:800;letter-spacing:-.4px;
+    border-top:1px solid var(--line);margin-top:8px}
+  .lead{padding:0 18px 16px}
+  .lead .img{width:100%;aspect-ratio:16/9;border-radius:12px;object-fit:cover;background:#f1f1f4;display:block}
+  .lead h2{font-size:25px;line-height:1.2;font-weight:800;letter-spacing:-.5px;margin:10px 0 6px}
+  .lead p{font-size:14px;line-height:1.45;color:var(--dim);margin:0}
+  .row{display:flex;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);align-items:flex-start}
+  .row .tx{flex:1;min-width:0}
+  .row h3{font-size:16px;line-height:1.28;font-weight:700;margin:0 0 5px;letter-spacing:-.2px}
+  .row .meta{font-size:12px;color:var(--dim)}
+  .row .th{width:86px;height:86px;border-radius:9px;object-fit:cover;background:#f1f1f4;flex:none}
+  .fav{width:86px;height:86px;border-radius:9px;flex:none;display:flex;align-items:center;
+    justify-content:center;background:linear-gradient(135deg,#f5f5f7,#e8e8ed)}
+  .fav img{width:30px;height:30px;border-radius:6px}
+  .fav span{font-size:22px;font-weight:800;color:#8e8e93}
+  .tabs{position:fixed;left:0;right:0;bottom:0;height:56px;display:flex;
+    background:rgba(255,255,255,.94);border-top:1px solid var(--line);backdrop-filter:blur(12px)}
+  .tabs button{flex:1;border:0;background:none;font-size:11px;font-weight:600;color:var(--dim);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:0}
+  .tabs button .g{font-size:17px}
+  .tabs button.on{color:var(--tint)}
+  .bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
+    padding:10px 14px;background:rgba(255,255,255,.94);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line)}
+  .bar button{border:0;background:none;font-size:16px;color:var(--tint);font-weight:600;padding:4px 2px}
+  .art{padding:0 18px 30px}
+  .art .hero{width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;background:#f1f1f4;margin-top:10px}
+  .art h1{font-size:30px;line-height:1.15;font-weight:800;letter-spacing:-.7px;margin:12px 0 8px}
+  .art .by{font-size:13px;color:var(--dim);margin-bottom:14px;
+    padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .art .body{font-size:17px;line-height:1.55}
+  .art .body p{margin:0 0 15px}
+  .art .body img{max-width:100%;height:auto;border-radius:10px;display:block;margin:14px 0}
+  .art .body a{color:var(--tint)}
+  .art .body blockquote{margin:0 0 15px;padding-left:14px;border-left:3px solid var(--line);color:var(--dim)}
+  .open{display:block;margin-top:20px;padding:13px;border-radius:11px;background:var(--tint);
+    color:#fff;text-align:center;font-weight:700;font-size:15px;border:0;width:100%}
+  .muted{padding:26px 18px;color:var(--dim);font-size:14px;text-align:center}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);
+    border-top-color:var(--tint);border-radius:50%;animation:s .8s linear infinite;vertical-align:-3px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  @media (prefers-color-scheme: dark){
+    :root{--bg:#000;--ink:#fff;--dim:#98989d;--line:#2c2c2e}
+    .tabs,.bar{background:rgba(0,0,0,.92)}
+    .row .th,.lead .img,.art .hero{background:#1c1c1e}
+    .fav{background:linear-gradient(135deg,#1c1c1e,#2c2c2e)}
+  }
+</style>
+</head>
+<body>
+<div id="app"><div class="muted"><span class="spin"></span> Loading news…</div></div>
+<div class="tabs" id="tabs"></div>
+
+<script>
+/* ---------------- state ---------------- */
+var S = { tab: 'today', article: null, hn: [], zh: [], err: '', loaded: false };
+var TABS = [
+  { id: 'today',  label: 'Today',   glyph: '◉' },
+  { id: 'tech',   label: 'Tech',    glyph: '⌘' },
+  { id: 'markets',label: 'Markets', glyph: '◰' }
+];
+
+/* ---------------- native fetch bridge ---------------- */
+function fetchText(url) {
+  if (window.octos && octos.invoke) {
+    return octos.invoke('http.fetch', { url: url, method: 'GET', headers: [], body: '' })
+      .then(function (r) {
+        if (!r || r.ok === false) throw new Error((r && r.error) || 'fetch failed');
+        if (r.status < 200 || r.status >= 300) throw new Error('HTTP ' + r.status);
+        return r.body || '';
+      });
+  }
+  return fetch(url).then(function (r) { return r.text(); });
+}
+
+/* ---------------- helpers ---------------- */
+function host(u) { try { return String(u).split('/')[2].replace(/^www\./, ''); } catch (e) { return ''; } }
+function ago(sec) {
+  var d = Math.max(0, Date.now() / 1000 - sec);
+  if (d < 3600) return Math.round(d / 60) + 'm ago';
+  if (d < 86400) return Math.round(d / 3600) + 'h ago';
+  return Math.round(d / 86400) + 'd ago';
+}
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function favicon(d) { return 'https://icons.duckduckgo.com/ip3/' + d + '.ico'; }
+
+/* ---------------- sources ---------------- */
+function loadHN() {
+  return fetchText('https://hacker-news.firebaseio.com/v0/topstories.json')
+    .then(function (t) {
+      var ids = JSON.parse(t).slice(0, 14);
+      return Promise.all(ids.map(function (id) {
+        return fetchText('https://hacker-news.firebaseio.com/v0/item/' + id + '.json')
+          .then(function (x) { return JSON.parse(x); })
+          .catch(function () { return null; });
+      }));
+    })
+    .then(function (items) {
+      S.hn = items.filter(function (i) { return i && i.title; }).map(function (i) {
+        var d = host(i.url || '');
+        return {
+          src: 'Hacker News', id: 'hn' + i.id, title: i.title,
+          url: i.url || ('https://news.ycombinator.com/item?id=' + i.id),
+          domain: d, image: '', favicon: d ? favicon(d) : '',
+          summary: i.score + ' points · ' + (i.descendants || 0) + ' comments · by ' + i.by,
+          body: '', time: ago(i.time), author: i.by
+        };
+      });
+    });
+}
+
+function parseRSS(xml) {
+  var out = [], items = xml.split('<item>').slice(1);
+  for (var i = 0; i < items.length && out.length < 10; i++) {
+    var it = items[i];
+    function tag(n) {
+      var m = it.match(new RegExp('<' + n + '>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</' + n + '>'));
+      return m ? m[1].trim() : '';
+    }
+    var t = tag('title'), l = tag('link');
+    if (t && l) out.push({ title: t, link: l, date: tag('pubDate'), author: tag('dc:creator') });
+  }
+  return out;
+}
+
+/* ZeroHedge articles are Next.js pages: __NEXT_DATA__ carries the title, the
+   full body HTML, a teaser image and a real summary — far better than the RSS,
+   whose <description> is only the title echoed back. */
+function loadZHArticle(a) {
+  return fetchText(a.link).then(function (h) {
+    var m = h.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!m) return a;
+    var n = JSON.parse(m[1]).props.pageProps.node || {};
+    a.image = n.teaserImageUrl || '';
+    a.summary = (n.summary || '').replace(/<[^>]+>/g, '').trim();
+    a.body = n.body || '';
+    a.author = n.authorName || a.author;
+    return a;
+  }).catch(function () { return a; });
+}
+
+function loadZH() {
+  return fetchText('https://feeds.feedburner.com/zerohedge/feed')
+    .then(function (xml) {
+      var raw = parseRSS(xml);
+      S.zh = raw.map(function (r, i) {
+        return {
+          src: 'ZeroHedge', id: 'zh' + i, title: r.title, url: r.link, link: r.link,
+          domain: 'zerohedge.com', image: '', favicon: favicon('zerohedge.com'),
+          summary: '', body: '', author: r.author,
+          time: r.date ? ago(Date.parse(r.date) / 1000) : ''
+        };
+      });
+      // Hydrate every item so each row has its real teaser image.
+      return Promise.all(S.zh.map(loadZHArticle));
+    });
+}
+
+/* ---------------- rendering ---------------- */
+function thumb(a, cls) {
+  if (a.image) return '<img class="' + cls + '" src="' + esc(a.image) + '" loading="lazy" alt="">';
+  if (a.favicon) return '<div class="fav"><img src="' + esc(a.favicon) + '" alt=""></div>';
+  return '<div class="fav"><span>' + esc((a.src || '?')[0]) + '</span></div>';
+}
+
+function rowHTML(a) {
+  return '<div class="row" data-open="' + esc(a.id) + '">' +
+    '<div class="tx"><div class="kicker">' + esc(a.src) + '</div>' +
+    '<h3>' + esc(a.title) + '</h3>' +
+    '<div class="meta">' + esc(a.domain || '') + (a.time ? ' · ' + esc(a.time) : '') + '</div></div>' +
+    thumb(a, 'th') + '</div>';
+}
+
+function leadHTML(a) {
+  if (!a) return '';
+  return '<div class="lead" data-open="' + esc(a.id) + '">' +
+    (a.image ? '<img class="img" src="' + esc(a.image) + '" alt="">' : '') +
+    '<div class="kicker" style="margin-top:10px">' + esc(a.src) + '</div>' +
+    '<h2>' + esc(a.title) + '</h2>' +
+    (a.summary ? '<p>' + esc(a.summary.slice(0, 150)) + '</p>' : '') + '</div>';
+}
+
+function listFor(tab) {
+  if (tab === 'tech') return S.hn;
+  if (tab === 'markets') return S.zh;
+  var out = [], i;
+  for (i = 0; i < Math.max(S.zh.length, S.hn.length); i++) {
+    if (S.zh[i]) out.push(S.zh[i]);
+    if (S.hn[i]) out.push(S.hn[i]);
+  }
+  return out;
+}
+
+function byId(id) {
+  var all = S.hn.concat(S.zh);
+  for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+  return null;
+}
+
+function render() {
+  var app = document.getElementById('app');
+
+  if (S.article) {
+    var a = S.article;
+    app.innerHTML =
+      '<div class="bar"><button data-back="1">‹ Back</button>' +
+      '<div style="font-size:13px;font-weight:700">' + esc(a.src) + '</div></div>' +
+      '<div class="art">' +
+      (a.image ? '<img class="hero" src="' + esc(a.image) + '" alt="">' : '') +
+      '<div class="kicker" style="margin-top:14px">' + esc(a.src) + '</div>' +
+      '<h1>' + esc(a.title) + '</h1>' +
+      '<div class="by">' + (a.author ? 'By ' + esc(a.author) + ' · ' : '') +
+      esc(a.time || '') + (a.domain ? ' · ' + esc(a.domain) : '') + '</div>' +
+      '<div class="body">' + (a.body || '<p>' + esc(a.summary || 'No preview available.') + '</p>') + '</div>' +
+      '<button class="open" data-ext="' + esc(a.url) + '">Open original ↗</button>' +
+      '</div>';
+    document.body.scrollTop = 0; document.documentElement.scrollTop = 0;
+    return;
+  }
+
+  var list = listFor(S.tab);
+  var html = '<div class="hd"><h1>News</h1><div class="dt">' +
+    new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }) +
+    '</div></div>';
+
+  if (S.err) html += '<div class="muted">' + esc(S.err) + '</div>';
+  if (!S.loaded) html += '<div class="muted"><span class="spin"></span> Loading news…</div>';
+  else if (!list.length) html += '<div class="muted">Nothing to show.</div>';
+  else {
+    html += leadHTML(list[0]);
+    html += '<div class="sec">' +
+      (S.tab === 'tech' ? 'Hacker News' : S.tab === 'markets' ? 'ZeroHedge' : 'Top Stories') +
+      '</div>';
+    for (var i = 1; i < list.length; i++) html += rowHTML(list[i]);
+  }
+  app.innerHTML = html;
+}
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = TABS.map(function (t) {
+    return '<button data-tab="' + t.id + '" class="' + (S.tab === t.id && !S.article ? 'on' : '') + '">' +
+      '<span class="g">' + t.glyph + '</span>' + t.label + '</button>';
+  }).join('');
+}
+
+/* ---------------- events (delegated: the list is re-rendered) ---------------- */
+document.addEventListener('click', function (e) {
+  var el = e.target;
+  while (el && el !== document.body) {
+    if (el.dataset && el.dataset.open) {
+      var a = byId(el.dataset.open);
+      if (a) {
+        S.article = a;
+        render(); renderTabs();
+        // ZeroHedge rows past the eager batch have no body yet — fetch on open.
+        if (a.src === 'ZeroHedge' && !a.body) {
+          loadZHArticle(a).then(function () { if (S.article === a) render(); });
+        }
+      }
+      return;
+    }
+    if (el.dataset && el.dataset.back) { S.article = null; render(); renderTabs(); window.scrollTo(0, 0); return; }
+    if (el.dataset && el.dataset.ext) {
+      var u = el.dataset.ext;
+      if (window.octos && octos.openUrl) octos.openUrl(u); else window.open(u, '_blank');
+      return;
+    }
+    if (el.dataset && el.dataset.tab) {
+      S.tab = el.dataset.tab; S.article = null; render(); renderTabs();
+      window.scrollTo(0, 0); return;
+    }
+    el = el.parentNode;
+  }
+});
+
+/* ---------------- boot ---------------- */
+renderTabs(); render();
+Promise.all([
+  loadZH().catch(function (e) { S.err = 'ZeroHedge: ' + e; }),
+  loadHN().catch(function (e) { S.err = (S.err ? S.err + ' / ' : '') + 'HN: ' + e; })
+]).then(function () { S.loaded = true; render(); renderTabs(); });
+</script>
+</body>
+</html>
