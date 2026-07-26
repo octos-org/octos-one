@@ -8409,8 +8409,8 @@ mod tests {
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
         embeddable_card, expand_card_embeds, extract_nav_destination, matching_brace,
         namespace_child_state, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
-        rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_props,
-        EmitHandler, DEFAULT_GLASS_OPACITY,
+        rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_card_state,
+        substitute_props, EmitHandler, DEFAULT_GLASS_OPACITY,
         FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
     };
     use std::collections::BTreeMap;
@@ -8542,6 +8542,103 @@ mod tests {
         // the component reads inputs via props and emits (not raw state/nav_end)
         assert!(raw.contains("{{props.dest}}"), "card not props-based");
         assert!(raw.contains(r#"agent.notify("emit", {event: "end"})"#), "no emit");
+    }
+
+    // ── Composition scenarios: through the FULL render pipeline ──────────────
+    // These run `substitute_card_state` (embed expansion + state substitution +
+    // notify tagging + all the safety rewrites), i.e. exactly what ships to the
+    // Splash VM — with a real seeded CardState, as the AMA would seed on a route.
+
+    /// A composed card is well-formed to ship: no unexpanded embeds, no unresolved
+    /// tokens, balanced braces (an imbalance crashes the Splash eval).
+    fn assert_shippable(out: &str) {
+        assert!(!out.contains("Card{"), "unexpanded Card embed:\n{out}");
+        assert!(!out.contains("{{props."), "unresolved prop token:\n{out}");
+        assert!(!out.contains("{{state."), "unresolved state token:\n{out}");
+        assert_eq!(
+            out.matches('{').count(),
+            out.matches('}').count(),
+            "unbalanced braces:\n{out}"
+        );
+    }
+
+    #[test]
+    fn compose_navigate_to_x_full_pipeline() {
+        // "navigate to NVIDIA": one-line host embeds nav.navigate, dest seeded
+        // from card state (as parse_nav_places → state.dest would).
+        let host = "// name: go\n\
+            Card{ use: \"nav.navigate\" \
+            props: { dest: \"{{state.dest}}\", mode: \"drive\" } \
+            on: { end: { key: \"done\", value: \"1\" } } }";
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "37.37,-121.96|NVIDIA".to_string());
+        let out = substitute_card_state(host, 7, &st);
+        assert_shippable(&out);
+        // seeded dest flowed props → parent state → value
+        assert!(out.contains("37.37,-121.96|NVIDIA"), "dest not wired:\n{out}");
+        // the 3D drive map + live tick are inlined
+        assert!(out.contains("MapView{"), "no map");
+        assert!(out.contains("fn tick()"), "no tick");
+        // End is wired to the parent `done` key, tagged with THIS card's id (7:)
+        assert!(
+            out.contains(r#"agent.notify("7:set", {key: "done", value: "1"})"#),
+            "end not wired to parent:\n{out}"
+        );
+        // the child's internal 2D/3D toggle stays namespaced + tagged
+        assert!(out.contains("7:set"), "notify not tagged");
+    }
+
+    #[test]
+    fn compose_two_navigate_cards_resolve_state_independently() {
+        // A 2-pane "compare routes" app: two nav.navigate embeds. Instance 0 is
+        // put in 2D and instance 1 in 3D via their NAMESPACED view state — proving
+        // the two embeds don't share internal state.
+        let host = "Card{ use:\"nav.navigate\" props:{dest:\"{{state.a}}\"} on:{end:{key:\"x\"}} }\n\
+                    Card{ use:\"nav.navigate\" props:{dest:\"{{state.b}}\"} on:{end:{key:\"y\"}} }";
+        let mut st = BTreeMap::new();
+        st.insert("a".to_string(), "1.0,1.0|Alpha".to_string());
+        st.insert("b".to_string(), "2.0,2.0|Beta".to_string());
+        st.insert("_c0_view".to_string(), "2d".to_string());
+        st.insert("_c1_view".to_string(), "0".to_string());
+        let out = substitute_card_state(host, 3, &st);
+        assert_shippable(&out);
+        // both destinations wired to their own instance
+        assert!(out.contains("1.0,1.0|Alpha") && out.contains("2.0,2.0|Beta"), "dests");
+        // per-instance view resolved independently: c0 → "2d", c1 → "0"
+        assert!(out.contains(r#"let vw = "2d""#), "c0 view!=2d:\n{out}");
+        assert!(out.contains(r#"let vw = "0""#), "c1 view!=0");
+    }
+
+    #[test]
+    fn compose_shipped_standalone_host_end_to_end() {
+        // The ACTUAL shipped host file — exactly what a standalone/on-device test
+        // would serve — composes to a shippable card with the dest seeded.
+        let host = include_str!("../../../a2app/apps/nav/cards/navigate-standalone.splash");
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "38.58,-121.49|Sacramento".to_string());
+        let out = substitute_card_state(host, 1, &st);
+        assert_shippable(&out);
+        assert!(out.contains("fn tick()"), "drive tick present");
+        assert!(out.contains("38.58,-121.49|Sacramento"), "dest wired");
+        // End wired back to the host's nav_end key
+        assert!(out.contains(r#"key: "nav_end""#), "end→nav_end not wired:\n{out}");
+    }
+
+    #[test]
+    fn demo_dump_composed_navigate() {
+        // Print the composed card so the composition is inspectable:
+        //   cargo test --bin octos-app demo_dump_composed_navigate -- --nocapture
+        let host = include_str!("../../../a2app/apps/nav/cards/navigate-standalone.splash");
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "37.37,-121.96|NVIDIA".to_string());
+        st.insert("orig".to_string(), "37.26,-122.03|Saratoga High School".to_string());
+        let out = substitute_card_state(host, 0, &st);
+        eprintln!(
+            "\n===== COMPOSED navigate-standalone (dest+orig seeded, item_id 0) =====\n{out}\n===== {} bytes, braces {}/{} =====",
+            out.len(),
+            out.matches('{').count(),
+            out.matches('}').count()
+        );
     }
 
     #[test]
