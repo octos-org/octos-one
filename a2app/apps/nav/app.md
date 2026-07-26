@@ -649,7 +649,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "sel", value: "0"}) }
         }
         pvname := Label{ width: Fill text: "…" draw_text.color: #ffffff draw_text.text_style.font_size: 15 }
-        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
+        View{ width: Fill height: Fit flow: Right align: Align{x: 0.5 y: 0.5} spacing: 12
           pvcat := Label{ text: "" draw_text.color: #f5a623 draw_text.text_style.font_size: 9 }
           pveta := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 9 }
         }
@@ -690,7 +690,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "mode", value: "bike"}) }
           }
         }
-        View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
+        View{ width: Fill height: Fit flow: Right align: Align{x: 0.5 y: 0.5} spacing: 8
           eta := Label{ text: "…" draw_text.color: #4ade80 draw_text.text_style.font_size: 14 }
           etad := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 9 }
         }
@@ -780,9 +780,9 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
     View{ width: Fill height: Fill flow: Down padding: Inset{left: 10 top: 44 right: 10 bottom: 10}
       roadpill := RoundedView{ width: Fill height: Fit flow: Right align: Align{y: 0.5} draw_bg.color: #0d3a2f draw_bg.border_radius: 13 padding: Inset{left: 9 top: 7 right: 12 bottom: 7} spacing: 9
         CircleView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 arw := Label{ text: "↑" draw_text.color: #ffffff draw_text.text_style.font_size: 14 } }
-        View{ width: Fill height: Fit flow: Down spacing: 2
-          instr := Label{ width: Fill text: "Starting…" draw_text.color: #ffffff draw_text.text_style.font_size: 11 }
-          ndist := Label{ width: Fill text: "" draw_text.color: #a9d6c8 draw_text.text_style.font_size: 9 }
+        View{ width: Fill height: Fit flow: Down spacing: 2 align: Align{x: 0.5}
+          instr := Label{ text: "Starting…" draw_text.color: #ffffff draw_text.text_style.font_size: 11 }
+          ndist := Label{ text: "" draw_text.color: #a9d6c8 draw_text.text_style.font_size: 9 }
         }
       }
       roadlbl := Label{ text: "" draw_text.color: #00000000 draw_text.text_style.font_size: 1 }
