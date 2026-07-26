@@ -4,26 +4,31 @@
 // The "drive" screen of the trip planner, extracted as a standalone card so an
 // app can jump straight into guided nav with just a source + destination.
 //
-// INPUT CONTRACT  (today: seeded via state keys; Phase-1 embed: props.*)
-//   dest    (required)  destination Place "lat,lon|name"          -> props.dest
-//   orig    (optional)  explicit origin Place; else GPS/oq/default -> props.origin
-//   oq      (optional)  origin free-text query (from "from A")     -> (folds into props.origin)
-//   wp1,wp2 (optional)  up to two stop Places                      -> props.stops[]
-//   mode    (optional)  "drive"|"walk"|"bike"  (default drive)     -> props.mode
-//   view    (optional)  "2d"|"3d"              (default 3d)        -> props.view
+// INPUT CONTRACT  (Card embed props — bind via Card{ use:"nav.navigate" props:{…} })
+//   props.dest    (required)  destination Place "lat,lon|name"
+//   props.origin  (optional)  explicit origin Place; else GPS/oq/default
+//   props.oq      (optional)  origin free-text query (from "from A …")
+//   props.stop1   (optional)  first stop Place
+//   props.stop2   (optional)  second stop Place
+//   props.mode    (optional)  "drive"|"walk"|"bike"   (default drive)
 // EMITS
-//   End tap -> state "nav_end" = 1   (Phase-1 embed becomes: emit("end"))
+//   End tap -> emit("end")   (host wires it via  on:{ end:{key:"…"} })
+// INTERNAL state (per-instance, namespaced by the host on embed)
+//   view   "2d"|"3d"  — the on-map 2D/3D toggle; starts 3D.
 //
 // REUSES  MapView(nav_mode 2d/3d) + sys.geo navroute/navroutenum/navstep/coord/gps.
 // Renders ONLY the drive view — no search / preview / plan. Origin defaults to
 // device GPS (then a San Jose fallback) when the trip names no origin.
+// Bind for standalone/on-device testing with a one-line host that embeds this
+// card (see cards/navigate-standalone.splash); do NOT direct-serve it raw
+// (unbound {{props.*}} would resolve to "0").
 // ─────────────────────────────────────────────────────────────────────────────
-let orig = "{{state.orig}}"
-let oq = "{{state.oq}}"
-let dest = "{{state.dest}}"
-let wp1 = "{{state.wp1}}"
-let wp2 = "{{state.wp2}}"
-let md = "{{state.mode}}"
+let orig = "{{props.origin}}"
+let oq = "{{props.oq}}"
+let dest = "{{props.dest}}"
+let wp1 = "{{props.stop1}}"
+let wp2 = "{{props.stop2}}"
+let md = "{{props.mode}}"
 let vw = "{{state.view}}"
 
 // origin: San Jose default -> device GPS -> intent origin query (oq) -> explicit pick (orig)
@@ -166,7 +171,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
         }
         endrow := View{ width: Fill height: 44 flow: Overlay margin: Inset{top: 6} visible: false
           RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 12 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
-          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "nav_end", value: "1"}) }
+          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("emit", {event: "end"}) }
         }
       }
     }

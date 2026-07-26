@@ -1,0 +1,8 @@
+// name: nav-navigate-standalone
+// Thin host that embeds nav.navigate for standalone / on-device testing of the
+// 3D turn-by-turn card in isolation. Seed the trip from card state keys (dest is
+// required; origin/oq/stops/mode optional) — e.g. the AMA parse or a SEED_CARD
+// sets state.dest = "lat,lon|name". End is wired back to state.nav_end.
+Card{ use: "nav.navigate"
+      props: { dest: "{{state.dest}}", origin: "{{state.orig}}", oq: "{{state.oq}}", stop1: "{{state.wp1}}", stop2: "{{state.wp2}}", mode: "{{state.mode}}" }
+      on: { end: { key: "nav_end", value: "1" } } }

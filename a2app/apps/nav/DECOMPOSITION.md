@@ -4,9 +4,15 @@
 reusable cards that an LLM composes into apps (ride-share, delivery, store
 locator, "navigate to X", …) — instead of hand-serving one giant card.
 
-**Status:** design + Phase 2 started. `cards/navigate.splash` extracted (the 3D
-turn-by-turn card). Framework embed primitive (Phase 1) and on-device
-verification still pending.
+**Status:**
+- **Phase 1 (framework embed primitive) — DONE, host-verified.** `Card{ use:… props:… on:… }`
+  expands host-side in `app/app/src/main.rs` (`expand_card_embeds` + `substitute_props`
+  + `namespace_child_state` + `rewrite_child_emits`), wired into `substitute_card_state`.
+  11 unit tests green via `cargo test` on the Mac (no device needed).
+- **Phase 2 (extract `nav.navigate`) — card written + props-based.** `cards/navigate.splash`
+  reads `{{props.*}}` and emits `end`; `cards/navigate-standalone.splash` is a one-line host.
+- **Pending:** on-device render/parity check (phone disconnected); extract `nav.picker` / `nav.planner`;
+  rewrite `trip-planner.splash` as the thin host.
 
 ---
 
