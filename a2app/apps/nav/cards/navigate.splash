@@ -1,0 +1,175 @@
+// name: nav-navigate
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPONENT  nav.navigate — 3D turn-by-turn navigation for a given trip.
+// The "drive" screen of the trip planner, extracted as a standalone card so an
+// app can jump straight into guided nav with just a source + destination.
+//
+// INPUT CONTRACT  (today: seeded via state keys; Phase-1 embed: props.*)
+//   dest    (required)  destination Place "lat,lon|name"          -> props.dest
+//   orig    (optional)  explicit origin Place; else GPS/oq/default -> props.origin
+//   oq      (optional)  origin free-text query (from "from A")     -> (folds into props.origin)
+//   wp1,wp2 (optional)  up to two stop Places                      -> props.stops[]
+//   mode    (optional)  "drive"|"walk"|"bike"  (default drive)     -> props.mode
+//   view    (optional)  "2d"|"3d"              (default 3d)        -> props.view
+// EMITS
+//   End tap -> state "nav_end" = 1   (Phase-1 embed becomes: emit("end"))
+//
+// REUSES  MapView(nav_mode 2d/3d) + sys.geo navroute/navroutenum/navstep/coord/gps.
+// Renders ONLY the drive view — no search / preview / plan. Origin defaults to
+// device GPS (then a San Jose fallback) when the trip names no origin.
+// ─────────────────────────────────────────────────────────────────────────────
+let orig = "{{state.orig}}"
+let oq = "{{state.oq}}"
+let dest = "{{state.dest}}"
+let wp1 = "{{state.wp1}}"
+let wp2 = "{{state.wp2}}"
+let md = "{{state.mode}}"
+let vw = "{{state.view}}"
+
+// origin: San Jose default -> device GPS -> intent origin query (oq) -> explicit pick (orig)
+let olat = 37.3350
+let olon = -121.8850
+let oname = "San Jose (downtown)"
+if sys.gps("ok") >= 1 {
+    olat = sys.gps("lat")
+    olon = sys.gps("lon")
+    oname = "Your location"
+}
+if oq != "0" {
+    if sys.searchnum(oq, 0, "lat") >= -900 {
+        olat = sys.searchnum(oq, 0, "lat")
+        olon = sys.searchnum(oq, 0, "lon")
+        oname = sys.search(oq, 0, "name")
+    }
+}
+if orig != "0" {
+    olat = sys.coord(orig, "lat")
+    olon = sys.coord(orig, "lon")
+    oname = sys.coord(orig, "name")
+}
+
+let dlat = sys.coord(dest, "lat")
+let dlon = sys.coord(dest, "lon")
+
+// stops -> OSRM vias string ("lat,lon;lat,lon")
+let vias = ""
+if wp1 != "0" { vias = "" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") }
+if wp2 != "0" {
+    if vias != "" { vias = vias + ";" }
+    vias = vias + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon")
+}
+
+// map pins: origin(0);stop(1);stop(1);destination(2)
+let mk = "" + olat + "," + olon + ",0"
+if wp1 != "0" { mk = mk + ";" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") + ",1" }
+if wp2 != "0" { mk = mk + ";" + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon") + ",1" }
+mk = mk + ";" + dlat + "," + dlon + ",2"
+
+let mdn = md
+if md == "0" { mdn = "drive" }
+
+fn tick() {
+    // freeze pattern (R9.5): the top-level lets freeze at build; re-resolve every
+    // live input here or a destination/stop/origin change silently won't apply.
+    if dest != "0" {
+        dlat = sys.coord(dest, "lat")
+        dlon = sys.coord(dest, "lon")
+    }
+    vias = ""
+    if wp1 != "0" { vias = "" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") }
+    if wp2 != "0" {
+        if vias != "" { vias = vias + ";" }
+        vias = vias + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon")
+    }
+    // origin may land AFTER build (oq geocode / GPS fix), so re-resolve each tick.
+    if orig == "0" { if oq != "0" { if sys.searchnum(oq, 0, "lat") >= -900 {
+        olat = sys.searchnum(oq, 0, "lat")
+        olon = sys.searchnum(oq, 0, "lon")
+        oname = sys.search(oq, 0, "name")
+    } } }
+    if orig == "0" { if oq == "0" { if sys.gps("ok") >= 1 {
+        olat = sys.gps("lat")
+        olon = sys.gps("lon")
+        oname = "Your location"
+    } } }
+    if orig != "0" {
+        olat = sys.coord(orig, "lat")
+        olon = sys.coord(orig, "lon")
+        oname = sys.coord(orig, "name")
+    }
+    mk = "" + olat + "," + olon + ",0"
+    if wp1 != "0" { mk = mk + ";" + sys.coord(wp1, "lat") + "," + sys.coord(wp1, "lon") + ",1" }
+    if wp2 != "0" { mk = mk + ";" + sys.coord(wp2, "lat") + "," + sys.coord(wp2, "lon") + ",1" }
+    mk = mk + ";" + dlat + "," + dlon + ",2"
+
+    // ---- turn-by-turn: advance a sim clock along the route ----
+    let km = sys.navroutenum(olat, olon, dlat, dlon, "km", vias)
+    let d = sys.navsecs(km * 1000 / 15.2) * 15.2
+    ui.dvmap.set_nav_polyline(sys.navroute(olat, olon, dlat, dlon, "polyline", vias))
+    ui.dvmap.set_route_markers(mk)
+    ui.instr.set_text(sys.navstep(olat, olon, dlat, dlon, d, "instr", vias))
+    ui.arw.set_text(sys.navstep(olat, olon, dlat, dlon, d, "arrow", vias))
+    ui.ndist.set_text(sys.navstep(olat, olon, dlat, dlon, d, "dist", vias))
+    let road = sys.navstep(olat, olon, dlat, dlon, d, "road", vias)
+    ui.roadlbl.set_text(road)
+    ui.roadpill.set_visible(road != "")
+    ui.remmin.set_text(sys.navstep(olat, olon, dlat, dlon, d, "remmin", vias) + " min")
+    ui.remrest.set_text(sys.navstep(olat, olon, dlat, dlon, d, "rem", vias) + "  ·  34 mph")
+}
+
+SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: #0b1017
+
+  // ===================== MAP BACKDROP =====================
+  if vw == "2d" { dvmap := MapView{ width: Fill height: 812 nav_mode: "2d" nav_period: 100 nav_route_width: 11.0 zoom: 16.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false } }
+  if vw != "2d" { dvmap := MapView{ width: Fill height: 812 nav_mode: "3d" nav_period: 100 nav_route_width: 14.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 19.0 use_network: true use_local_mbtiles: false } }
+  if vw != "2d" { GradientYView{ width: Fill height: 150 draw_bg.color: #8fb2d8 draw_bg.color_2: #d8e3ed } }
+
+  // ===================== DRIVE UI =====================
+  View{ width: Fill height: Fill flow: Down padding: Inset{left: 10 top: 44 right: 10 bottom: 10}
+    // next-turn banner (arrow + instruction + distance)
+    roadpill := RoundedView{ width: Fill height: Fit flow: Right align: Align{y: 0.5} draw_bg.color: #0d3a2f draw_bg.border_radius: 13 padding: Inset{left: 9 top: 7 right: 12 bottom: 7} spacing: 9
+      CircleView{ width: 30 height: 30 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 arw := Label{ text: "↑" draw_text.color: #ffffff draw_text.text_style.font_size: 14 } }
+      View{ width: Fill height: Fit flow: Down spacing: 2
+        instr := Label{ width: Fill text: "Starting…" draw_text.color: #ffffff draw_text.text_style.font_size: 11 }
+        ndist := Label{ width: Fill text: "" draw_text.color: #a9d6c8 draw_text.text_style.font_size: 9 }
+      }
+    }
+    roadlbl := Label{ text: "" draw_text.color: #00000000 draw_text.text_style.font_size: 1 }
+    // 2D/3D toggle floats bottom-left (map control)
+    View{ width: Fill height: Fill flow: Down align: Align{x: 0.0 y: 1.0}
+      View{ width: 60 height: 48 flow: Overlay margin: Inset{left: 4 bottom: 8}
+        if vw == "2d" {
+          RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 14 Label{ text: "3D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
+          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "view", value: "3d"}) }
+        }
+        if vw != "2d" {
+          RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 14 Label{ text: "2D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
+          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "view", value: "2d"}) }
+        }
+      }
+    }
+    // bottom sheet: compact time/distance chip; swipe up reveals End, swipe down
+    // collapses. A transparent swipe Button sits ON TOP of the handle so it catches
+    // the swipe (occluding the map, no pan leak) and toggles endrow's visibility
+    // DIRECTLY (ui.endrow.set_visible) — no eval_body, so the map is never re-rendered.
+    View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 82}
+      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 7 right: 18 bottom: 12} spacing: 4
+        View{ width: Fill height: Fit flow: Overlay
+          View{ width: Fill height: Fit flow: Down spacing: 4
+            View{ width: Fill height: 6 flow: Right align: Align{x: 0.5 y: 0.5}
+              RoundedView{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }
+            }
+            remmin := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
+            remrest := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
+          }
+          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" swipe: true on_swipe_up: || ui.endrow.set_visible(true) on_swipe_down: || ui.endrow.set_visible(false) }
+        }
+        endrow := View{ width: Fill height: 44 flow: Overlay margin: Inset{top: 6} visible: false
+          RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 12 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
+          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "nav_end", value: "1"}) }
+        }
+      }
+    }
+  }
+
+}
