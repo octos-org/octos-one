@@ -319,7 +319,12 @@ fn tick() {
     }
     // ---- search / find overlay: live results for the typed query ----
     if scr == "search" { if q != "0" {
-        ui.cnt.set_text(sys.searchnum(q, 0, "count") + " results")
+        // sys.searchnum "count" returns a large sentinel until results land (or
+        // if the fetch fails) — that's the "9999+ results" you saw. A real Photon
+        // count is small (<= the request limit), so show a loading label above it.
+        let sc = sys.searchnum(q, 0, "count")
+        if sc > 500 { ui.cnt.set_text("Searching…") }
+        if sc <= 500 { ui.cnt.set_text("" + sc + " results") }
         ui.sr0n.set_text(sys.search(q, 0, "name"))
         ui.sr0c.set_text(sys.search(q, 0, "cat"))
         ui.sr0l.set_text(sys.search(q, 0, "label"))
@@ -344,7 +349,9 @@ fn tick() {
         if q == "0" { ui.ytstart.set_text(oname) }
     }
     if scr == "find" { if q != "0" {
-        ui.fcnt.set_text(sys.searchnum(q, 0, "count") + " results")
+        let fc = sys.searchnum(q, 0, "count")
+        if fc > 500 { ui.fcnt.set_text("Searching…") }
+        if fc <= 500 { ui.fcnt.set_text("" + fc + " results") }
         ui.fr0n.set_text(sys.search(q, 0, "name"))
         ui.fr0l.set_text(sys.search(q, 0, "label"))
         ui.fr1n.set_text(sys.search(q, 1, "name"))
@@ -643,7 +650,11 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
     View{ width: Fill height: Fill flow: Overlay
       pmap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 14.0 min_zoom: 3.0 max_zoom: 16.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
-      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30} padding: Inset{left: 14 top: 13 right: 14 bottom: 13} spacing: 7
+      RoundedView{ width: Fill height: Fit flow: Overlay draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30}
+        // transparent full-bleed catch so touches on the sheet's empty areas don't
+        // fall through to the map behind and pan it. Real buttons on top still win.
+        Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || {} }
+        View{ width: Fill height: Fit flow: Down padding: Inset{left: 14 top: 13 right: 14 bottom: 13} spacing: 7
         View{ width: 110 height: 24 flow: Overlay
           RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 10 padding: Inset{left: 12 top: 8 right: 12 bottom: 8} Label{ text: "‹ Results" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 9 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "sel", value: "0"}) }
@@ -658,6 +669,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
           RoundedView{ width: Fill height: 42 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "Directions  ›" draw_text.color: #ffffff draw_text.text_style.font_size: 10 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "dest", value: sys.searchnum(q, ss - 1, "lat") + "," + sys.searchnum(q, ss - 1, "lon") + "|" + sys.search(q, ss - 1, "name") }) }
         }
+        }
       }
       }
     }
@@ -668,7 +680,12 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
     View{ width: Fill height: Fill flow: Overlay
       themap := MapView{ width: Fill height: 812 nav_mode: "plan" nav_route_width: 40.0 zoom: 15.0 min_zoom: 3.0 max_zoom: 16.0 use_network: true use_local_mbtiles: false }
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 1.0}
-      RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30} padding: Inset{left: 14 top: 11 right: 14 bottom: 11} spacing: 7
+      RoundedView{ width: Fill height: Fit flow: Overlay draw_bg.color: #0f1620 draw_bg.border_radius: 22 margin: Inset{left: 8 right: 8 bottom: 30}
+        // transparent full-bleed catch: touches on the sheet's empty (non-button)
+        // areas are captured HERE instead of falling through to the map behind and
+        // panning it (the "sheet not responding" feel). Real buttons sit on top and win.
+        Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || {} }
+        View{ width: Fill height: Fit flow: Down padding: Inset{left: 14 top: 11 right: 14 bottom: 11} spacing: 7
         View{ width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 8
           View{ width: 84 height: 24 flow: Overlay
             RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #222c3c draw_bg.border_radius: 9 padding: Inset{left: 10 top: 6 right: 10 bottom: 6} Label{ text: "‹ Search" draw_text.color: #cdd8e6 draw_text.text_style.font_size: 8 } }
@@ -751,12 +768,13 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
           RoundedView{ width: Fill height: 42 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #1a73e8 draw_bg.border_radius: 14 Label{ text: "▶  Start" draw_text.color: #ffffff draw_text.text_style.font_size: 10 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "1"}) }
         }
+        }
       }
       }
       // map controls (top-right): +/- zoom pill, then a "my location" button that
       // recenters on the trip origin. Pinch-to-zoom and one-finger drag also work.
       View{ width: Fill height: Fill flow: Down align: Align{x: 1.0 y: 0.0} padding: Inset{top: 74 right: 12} spacing: 12
-        RoundedView{ width: 50 height: 104 flow: Down align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232ee draw_bg.border_radius: 16
+        RoundedView{ width: 50 height: 104 flow: Down align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 16
           View{ width: 50 height: 51 flow: Overlay
             Label{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} text: "+" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 26 }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.color_down: #ffffff1a draw_bg.border_size: 0.0 draw_bg.border_radius: 14 text: "" on_click: || ui.themap.nav_zoom_by("0.7") }
@@ -768,7 +786,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
           }
         }
         View{ width: 50 height: 50 flow: Overlay
-          RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232ee draw_bg.border_radius: 25 Label{ text: "◎" draw_text.color: #72c0ff draw_text.text_style.font_size: 24 } }
+          RoundedView{ width: Fill height: Fill align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 25 Label{ text: "◎" draw_text.color: #72c0ff draw_text.text_style.font_size: 24 } }
           Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.color_down: #ffffff1a draw_bg.border_size: 0.0 draw_bg.border_radius: 25 text: "" on_click: || ui.themap.nav_center_origin("1") }
         }
       }
@@ -791,25 +809,37 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
       View{ width: Fill height: Fill flow: Down align: Align{x: 0.0 y: 1.0}
         View{ width: 60 height: 48 flow: Overlay margin: Inset{left: 4 bottom: 8}
           if vw == "2d" {
-            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232e0 draw_bg.border_radius: 14 Label{ text: "3D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
+            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 14 Label{ text: "3D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "view", value: "3d"}) }
           }
           if vw != "2d" {
-            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232e0 draw_bg.border_radius: 14 Label{ text: "2D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
+            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #172232 draw_bg.border_radius: 14 Label{ text: "2D" draw_text.color: #eaf0f7 draw_text.text_style.font_size: 15 } }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "view", value: "2d"}) }
           }
         }
       }
-      View{ width: Fill height: Fit flow: Right align: Align{y: 1.0} spacing: 8 padding: Inset{right: 82}
-        View{ width: Fill height: Fit flow: Down
-          RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 12 right: 18 bottom: 12} spacing: 2
-            remmin := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
-            remrest := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
+      // bottom sheet. The handle + time/distance form one big swipe target: a Button
+      // sits ON TOP of them (transparent) so it (a) catches the swipe to toggle and
+      // (b) occludes the map so the swipe never leaks through to pan it. End is a
+      // separate row BELOW the swipe target, so it stays tappable when expanded.
+      // Swipe toggles endrow's visibility DIRECTLY (ui.endrow.set_visible) — no
+      // agent.notify/eval_body, so the map is never torn down / re-rendered.
+      View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 82}
+        RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 7 right: 18 bottom: 12} spacing: 4
+          View{ width: Fill height: Fit flow: Overlay
+            View{ width: Fill height: Fit flow: Down spacing: 4
+              View{ width: Fill height: 6 flow: Right align: Align{x: 0.5 y: 0.5}
+                RoundedView{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }
+              }
+              remmin := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
+              remrest := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
+            }
+            Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" swipe: true on_swipe_up: || ui.endrow.set_visible(true) on_swipe_down: || ui.endrow.set_visible(false) }
           }
-        }
-        View{ width: 92 height: 52 flow: Overlay
-          RoundedView{ width: 92 height: 52 flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 14 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
-          Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "0"}) }
+          endrow := View{ width: Fill height: 44 flow: Overlay margin: Inset{top: 6} visible: false
+            RoundedView{ width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5} draw_bg.color: #7a1f1f draw_bg.border_radius: 12 Label{ text: "× End" draw_text.color: #ffd9d9 draw_text.text_style.font_size: 15 } }
+            Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" on_click: || agent.notify("set", {key: "go", value: "0"}) }
+          }
         }
       }
     }
