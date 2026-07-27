@@ -1,0 +1,56 @@
+<!-- name: native-bridge -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; min-height: 100%; background: #0b0f14; color: #e8edf2;
+    font-family: -apple-system, HarmonyOS Sans, Roboto, sans-serif; }
+  .wrap { padding: 14px 12px 24px; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .sub { font-size: 12px; color: #8fa3b8; margin-bottom: 12px; }
+  button { display: block; width: 100%; margin: 8px 0; padding: 13px;
+    border-radius: 12px; border: 0; background: #1c2733; color: #e8edf2; font-size: 15px; }
+  button:active { background: #2a3a4d; }
+  pre { background: #111a24; border-radius: 10px; padding: 10px; font-size: 11px;
+    white-space: pre-wrap; word-break: break-all; max-height: 42vh; overflow: auto; margin-top: 12px; }
+  .ok { color: #4ade80; } .err { color: #f87171; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>webview → native bridge</h1>
+  <div class="sub" id="has">checking…</div>
+
+  <button onclick="run('ping', {hello: 'ohos'})">ping — round trip</button>
+  <button onclick="run('fs.list', {path: '.'})">fs.list — native filesystem</button>
+  <button onclick="run('fs.write', {path: 'bridge-test.txt', data: 'written from the card'})">fs.write</button>
+  <button onclick="run('fs.read', {path: 'bridge-test.txt'})">fs.read</button>
+  <button onclick="run('clipboard.write', {text: 'copied from a webview card'})">clipboard.write</button>
+  <button onclick="run('dialog.open', {mime: '*/*'})">dialog.open — SYSTEM file picker</button>
+
+  <pre id="out">tap a button</pre>
+</div>
+<script>
+  var out = document.getElementById('out');
+  document.getElementById('has').textContent =
+    (window.octos_native && octos_native.invoke)
+      ? 'octos_native bridge: PRESENT' : 'octos_native bridge: MISSING';
+
+  function log(cls, label, v) {
+    var t = typeof v === 'string' ? v : JSON.stringify(v, null, 1);
+    out.innerHTML = '<span class="' + cls + '">' + label + '</span>\n' + t;
+  }
+
+  function run(tool, args) {
+    log('', tool + ' …', 'waiting for native');
+    octos.invoke(tool, args).then(function (r) {
+      log('ok', tool + ' ok', r);
+    }).catch(function (e) {
+      log('err', tool + ' failed', String(e));
+    });
+  }
+</script>
+</body>
+</html>

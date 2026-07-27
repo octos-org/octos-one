@@ -1,0 +1,61 @@
+<!-- name: youtube-live -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0f14; color: #e8edf2;
+    font-family: -apple-system, HarmonyOS Sans, Roboto, sans-serif; }
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 12px; box-sizing: border-box; }
+  h1 { font-size: 16px; margin: 0 0 10px 0; }
+  .player { flex: 1; border-radius: 12px; overflow: hidden; background: #000; }
+  iframe { width: 100%; height: 100%; border: 0; }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button { flex: 1 1 40%; padding: 10px; border-radius: 10px; border: 0;
+    background: #1c2733; color: #e8edf2; font-size: 14px; }
+  button.on { background: #2f6f4f; }
+  button:active { background: #2a3a4d; }
+  .empty { color: #8fa3b8; font-size: 14px; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 id="title">live — youtube card</h1>
+  <div class="player"><iframe id="yt" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>
+  <div class="row" id="row"></div>
+</div>
+<script>
+  // Channels are injected by the host from the app's OWN live-id resolver.
+  // Nothing here is hardcoded on purpose: a YouTube live id goes stale within
+  // days, and a stale one fails with "this live stream recording is not
+  // available" rather than falling back to anything useful.
+  var CHANNELS = __CHANNELS_JSON__;
+
+  function play(id, label, btn) {
+    document.getElementById('yt').src =
+      'https://www.youtube.com/embed/' + id + '?autoplay=1&mute=1&playsinline=1';
+    document.getElementById('title').textContent = label;
+    var all = document.querySelectorAll('#row button');
+    for (var i = 0; i < all.length; i++) { all[i].className = ''; }
+    if (btn) { btn.className = 'on'; }
+  }
+
+  (function () {
+    var row = document.getElementById('row');
+    if (!CHANNELS.length) {
+      document.getElementById('title').textContent = 'no live channels resolved';
+      row.innerHTML = '<div class="empty">The live-id resolver returned nothing — check network.</div>';
+      return;
+    }
+    CHANNELS.forEach(function (c, i) {
+      var b = document.createElement('button');
+      b.textContent = c.label;
+      b.onclick = function () { play(c.id, c.label, b); };
+      row.appendChild(b);
+      if (i === 0) { play(c.id, c.label, b); }
+    });
+  })();
+</script>
+</body>
+</html>
