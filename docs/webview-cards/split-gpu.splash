@@ -1,0 +1,32 @@
+// Half-screen native card: a per-pixel fragment shader running on the GPU,
+// stacked above a webview card so both substrates are on screen at once.
+// The plasma is computed in `pixel()` from `self.draw_pass.time`, so it
+// animates continuously — if it moves, makepad is really rendering it.
+View{
+  // ~half of the 849dp viewport, so the webview card above stays visible.
+  width: Fill height: 415 flow: Overlay
+  View{
+    width: Fill height: Fill show_bg: true
+    draw_bg +: {
+      pixel: fn() {
+        let p = self.pos * 2.0 - 1.0
+        let t = self.draw_pass.time * 0.6
+        let v = sin(p.x * 4.0 + t)
+          + sin(p.y * 4.0 - t * 0.8)
+          + sin((p.x + p.y) * 3.0 + t * 1.3)
+          + sin(length(p) * 6.0 - t * 1.7)
+        let a = 0.5 + 0.5 * sin(v * 1.2)
+        let b = 0.5 + 0.5 * sin(v * 1.2 + 2.1)
+        let c = 0.5 + 0.5 * sin(v * 1.2 + 4.2)
+        return Pal.premul(vec4(a * 0.35, b * 0.75, c * 0.95, 1.0))
+      }
+    }
+  }
+  View{
+    width: Fill height: Fill flow: Down align: Align{x: 0.5 y: 0.5} spacing: 8
+    Label{ text: "makepad · GPU" draw_text.color: #ffffff draw_text.text_style.font_size: 26 }
+    Label{ text: "per-pixel fragment shader, animated from draw_pass.time"
+      draw_text.color: #eaf6ff draw_text.text_style.font_size: 11 }
+    Label{ text: "▼ webview below" draw_text.color: #d8ecff draw_text.text_style.font_size: 11 }
+  }
+}

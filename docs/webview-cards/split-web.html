@@ -1,0 +1,46 @@
+<!-- name: split-web -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #120b1c; color: #f3ecff;
+    font-family: -apple-system, HarmonyOS Sans, Roboto, sans-serif; }
+  .wrap { display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 6px; text-align: center; padding: 0 16px;
+    box-sizing: border-box;
+    background: linear-gradient(135deg, #2a1145, #120b1c 60%); }
+  h1 { font-size: 26px; margin: 0; }
+  .sub { font-size: 11px; color: #c3b0dd; }
+  .live { font-size: 12px; color: #7ef7c8; font-variant-numeric: tabular-nums; }
+  button { margin-top: 10px; padding: 10px 18px; border-radius: 10px; border: 0;
+    background: #45266e; color: #f3ecff; font-size: 13px; }
+  button:active { background: #5b3690; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ArkWeb · webview</h1>
+  <div class="sub">chromium document in an ArkTS Web overlay</div>
+  <div class="live" id="clock">starting…</div>
+  <button onclick="bump()">tap me — this is a real DOM</button>
+  <div class="sub" id="taps">0 taps</div>
+</div>
+<script>
+  var n = 0;
+  // A rAF clock proves the webview is live and compositing independently of
+  // makepad's GL surface above it.
+  function tick() {
+    document.getElementById('clock').textContent =
+      'webview alive · ' + (performance.now() / 1000).toFixed(1) + 's';
+    requestAnimationFrame(tick);
+  }
+  tick();
+  function bump() {
+    n++;
+    document.getElementById('taps').textContent = n + (n === 1 ? ' tap' : ' taps');
+  }
+</script>
+</body>
+</html>

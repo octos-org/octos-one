@@ -1,0 +1,3 @@
+07-25 12:36:41.567  1461 27544 E C011FE/foundation/HapVerify: [a92ab910493b8e1 0 0][hap_cert_verify_openssl_utils.cpp(GetCertsChain:322)]it do not come from trusted root, issuer: C=CN, O=OpenHarmony, OU=OpenHarmony Team, CN=OpenHarmony Application Root CA
+07-25 12:36:41.567  1461 27544 E C011FE/foundation/HapVerify: [a92ab910493b8e1 0 0][hap_verify_openssl_utils.cpp(VerifyCertChain:123)]get cert chain for signInfo failed
+07-25 12:36:41.567  1461 27544 E C011FE/foundation/HapVerify: [a92ab910493b8e1 0 0][hap_verify_openssl_utils.cpp(GetCertChains:112)]verify 0st certchain failed

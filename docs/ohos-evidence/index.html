@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover"><title>octos-one weather</title>
+<script>window.__errs=[];window.onerror=function(m,s,l){window.__errs.push(m+" @"+String(s||"").split('/').pop()+":"+l);return false;};</script>
+</head>
+<body>
+
+  <div style="padding:14px 14px 2px;font-size:22px;font-weight:700;letter-spacing:-.5px">Weather</div>
+  <div style="padding:1px 14px 8px;color:var(--o-mut);font-size:12.5px">Live · composed from octos.forecast()</div>
+  <div id="wx"></div>
+  
+<script src="octos_core.js?v=1785004421" charset="utf-8"></script>
+<script src="octos_weather.js?v=1785004421" charset="utf-8"></script>
+<script>
+    octos.ns("wx.");
+    var CITIES = ["Shanghai", "Tokyo", "San Francisco", "London", "Sydney"];
+    document.getElementById("wx").innerHTML =
+      CITIES.map(function (c) { return octos.forecast(c); }).join("");
+  </script>
+<script>
+setTimeout(function(){
+  var d=document.createElement('div');
+  d.style.cssText='font:11px monospace;color:#888;padding:6px 14px';
+  d.textContent = "core="+(window.octos&&typeof window.octos.core)
+    +" cards="+document.querySelectorAll('.ow-card').length
+    +(window.__errs.length? " | "+window.__errs.join(" | ") : " | no errors");
+  document.body.appendChild(d);
+}, 4000);
+</script>
+</body></html>
