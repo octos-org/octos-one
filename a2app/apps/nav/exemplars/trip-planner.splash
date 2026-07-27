@@ -640,7 +640,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
       // separate row BELOW the swipe target, so it stays tappable when expanded.
       // Swipe toggles endrow's visibility DIRECTLY (ui.endrow.set_visible) — no
       // agent.notify/eval_body, so the map is never torn down / re-rendered.
-      View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 82}
+      View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 4}
         RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 7 right: 18 bottom: 12} spacing: 4
           View{ width: Fill height: Fit flow: Overlay
             View{ width: Fill height: Fit flow: Down spacing: 4
