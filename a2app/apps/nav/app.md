@@ -831,8 +831,8 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
               View{ width: Fill height: 6 flow: Right align: Align{x: 0.5 y: 0.5}
                 RoundedView{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }
               }
-              remmin := Label{ text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
-              remrest := Label{ text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
+              remmin := Label{ width: Fill align: Align{x: 0.5} text: "" draw_text.color: #4ade80 draw_text.text_style.font_size: 22 }
+              remrest := Label{ width: Fill align: Align{x: 0.5} text: "" draw_text.color: #9fb0c4 draw_text.text_style.font_size: 13 }
             }
             Button{ width: Fill height: Fill draw_bg.color: #00000000 draw_bg.border_size: 0.0 text: "" swipe: true on_swipe_up: || ui.endrow.set_visible(true) on_swipe_down: || ui.endrow.set_visible(false) }
           }
