@@ -319,12 +319,13 @@ fn tick() {
     }
     // ---- search / find overlay: live results for the typed query ----
     if scr == "search" { if q != "0" {
-        // sys.searchnum "count" returns a large sentinel until results land (or
-        // if the fetch fails) — that's the "9999+ results" you saw. A real Photon
-        // count is small (<= the request limit), so show a loading label above it.
+        // sys.searchnum "count" is -9999 while the fetch is loading OR failed,
+        // and a real Photon count is small (0..=8). Default to "Searching…" and
+        // only show a real count when it's in the sane 0..=500 range — so a
+        // pending/failed fetch never leaks the raw "-9999 results" sentinel.
         let sc = sys.searchnum(q, 0, "count")
-        if sc > 500 { ui.cnt.set_text("Searching…") }
-        if sc <= 500 { ui.cnt.set_text("" + sc + " results") }
+        ui.cnt.set_text("Searching…")
+        if sc >= 0 { if sc <= 500 { ui.cnt.set_text("" + sc + " results") } }
         ui.sr0n.set_text(sys.search(q, 0, "name"))
         ui.sr0c.set_text(sys.search(q, 0, "cat"))
         ui.sr0l.set_text(sys.search(q, 0, "label"))
@@ -350,8 +351,8 @@ fn tick() {
     }
     if scr == "find" { if q != "0" {
         let fc = sys.searchnum(q, 0, "count")
-        if fc > 500 { ui.fcnt.set_text("Searching…") }
-        if fc <= 500 { ui.fcnt.set_text("" + fc + " results") }
+        ui.fcnt.set_text("Searching…")
+        if fc >= 0 { if fc <= 500 { ui.fcnt.set_text("" + fc + " results") } }
         ui.fr0n.set_text(sys.search(q, 0, "name"))
         ui.fr0l.set_text(sys.search(q, 0, "label"))
         ui.fr1n.set_text(sys.search(q, 1, "name"))
