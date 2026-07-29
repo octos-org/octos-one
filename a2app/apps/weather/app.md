@@ -4,17 +4,25 @@ The DEFAULT for weather is an IMMERSIVE FULL-SCREEN iOS WEATHER CARD: a REAL pho
 of the city fills the whole screen; the CURRENT conditions sit at the top, a
 translucent 7-DAY FORECAST panel sits directly below them, then TWO FULL-WIDTH MAP
 PANES stacked vertically — first a LIVE 卫星云图 (real satellite cloud imagery),
-then a LIVE 空气质量图 (air-quality map) — each on its own row so the maps read
-large, then a frosted 6-TILE DETAIL GRID (air quality, UV, sunrise, sunset,
-humidity, wind) — like a refined iOS Weather app.
+then a LIVE 空气质量图 (air-quality contour map) — each on its own row so the maps
+read large, then a SUN & MOON panel (the sun's arc from 日出 to 日落, and the
+current 月相), then a frosted 4-TILE DETAIL GRID (air quality, UV, humidity, wind)
+— like a refined iOS Weather app.
 
 **YOU generate this card by ASSEMBLING the widget patterns** — there is no
 exemplar to copy. Build it from THIS spec + `widgets/weather-icon.md`,
 `widgets/containers.md`, `widgets/sys-helpers.md` (the image + data helpers),
 and `widgets/interaction.md`. Reproduce EXACTLY this structure: a full-screen
 Overlay (BLOCK: PHOTO-BACKDROP below — photo, dark scrim), then a Down column
-= BLOCK: CURRENT, the 7-day forecast, the two map panes, then
-BLOCK: DETAIL-TILES. `// name: weather-app` is the first line.
+= BLOCK: CURRENT, the 7-day forecast, the two map panes, the SUN & MOON panel,
+then BLOCK: DETAIL-TILES. `// name: weather-app` is the first line.
+
+**Emit EXACTLY ONE top-level element** — the root Overlay, and nothing beside it.
+Sibling top-level elements are laid out SIDE BY SIDE, so an extra
+`SolidView{ width: Fill height: N draw_bg.color: #0a0e14 }` added "for the
+background" does not sit behind the card; it takes half the screen's width and
+squeezes the whole card into the other half. The dark base colour belongs on the
+root Overlay ITSELF, and the photo already covers it.
 
 Composed "what should I DO in this weather" intents are NOT this card — they
 route to `apps/weather-activity/app.md`, a composed app that reuses this
@@ -46,8 +54,43 @@ EVERY temperature a `sys.weather(...)` call (the style files are hardcoded demos
 Shanghai/Tokyo/SF — you MUST swap in the requested city and its lat/lon). All
 styles load the bundled Roboto weights via
 `crate_resource("makepad_widgets:resources/Roboto-*.ttf")` and show whole-degree
-temps (the helper rounds temperature paths automatically). Full catalog +
-previews: `docs/weather-styles/README.md`.
+temps (`sys.weather` rounds temperature paths automatically — do NOT round in the
+card). Full catalog + previews: `docs/weather-styles/README.md`.
+
+## FONT WEIGHTS — how a weather card gets its 秀气
+
+Weight, not size, is what makes this card look refined. `draw_text.text_style.font_size: N`
+on its own leaves the DEFAULT weight and the result reads heavy and generic. Set
+a full `TextStyle` with an explicit `font_family` on every line that matters:
+
+```
+draw_text.text_style: TextStyle{
+    font_family: FontFamily{
+        latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 }
+    }
+    font_size: 76
+}
+```
+
+Bundled weights: `Roboto-Thin` (hero temperature ONLY), `Roboto-Light` (city,
+condition, stat lines, forecast rows), `Roboto-Regular`, `Roboto-Medium`,
+`Roboto-Bold`. Bigger + thinner beats smaller + heavier every time.
+
+**Glyph fallback.** `FontFamily` is an ORDERED chain: any glyph missing from one
+member is looked up in the next. Roboto has NO arrows (`↑` `↓`) — a line using
+them MUST add a NotoSans member or they render as tofu boxes:
+
+```
+font_family: FontFamily{
+    latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 }
+    sym   := FontMember{ res: crate_resource("makepad_widgets:resources/NotoSans-Regular.ttf") asc: 0.0 desc: 0.0 }
+}
+```
+
+The member NAMES are arbitrary labels; only the order matters. `°` and `≈` ARE in
+Roboto and need no fallback. Colour emoji (☀️ ⛅ 🌧️) resolve through
+`NotoColorEmoji` but inflate the line box, which is why forecast rows pin a fixed
+`height`.
 
 ## LIVE DATA — MANDATORY (never hardcode weather numbers)
 
@@ -102,21 +145,35 @@ and must reproduce them per THIS spec — same content, same live bindings.
 its lines in a `View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} }`
 and give the condition row `align: Align{x: 0.5 y: 0.5}` (a left-aligned hero
 reads as a draft). Use `Align{x: …}` — there is no `alignx` property.
-- City (font 30).
-- The hero temperature ALONE on its line (font 60, `margin: Inset{top: 6 bottom: 0}`
-  so its tall glyphs are not clipped) — its text is LIVE:
+The hero must read DELICATE (秀气), not heavy. Weight carries that, not size: set
+an explicit `font_family` on every line of this block — a bare
+`draw_text.text_style.font_size` leaves the default weight and the block renders
+chunky. Use `Roboto-Thin.ttf` for the big temperature and `Roboto-Light.ttf` for
+the text around it (both bundled; see the FONT WEIGHTS section below).
+
+- City — Roboto-Light, font 26, `#ffffffe6`.
+- The hero temperature ALONE on its line — **Roboto-Thin**, font 76,
+  `margin: Inset{top: 2 bottom: 0}` so its tall glyphs are not clipped. Thin is
+  what makes a 76pt number elegant instead of shouty; at the default weight this
+  line alone ruins the block. Its text is LIVE:
   `text: sys.weather(LAT, LON, "current.temperature_2m") + "°"`.
-- A `flow: Right` row (height 60, align y 0.5, spacing 10) holding an ANIMATED
-  `WeatherIcon{ draw_bg.cond: <N> width: 60 height: 60 }` followed by the condition
-  `Label` (font 20). `WeatherIcon` is a live shader-animated weather glyph (rays
-  rotate, rain/snow falls, wind/fog drifts, lightning flashes); pick `draw_bg.cond`
-  by CURRENT condition: 0 clear/sunny, 1 partly cloudy, 2 cloudy/overcast, 3
-  rain/drizzle, 4 thunderstorm, 5 snow, 6 wind, 7 fog/haze/mist. (See
-  `widgets/weather-icon.md`.)
-- Then an `H:__°  L:__°  Feels __°` line (font 15, #ffffffcc), every number LIVE:
-  `"H:" + sys.weather(LAT, LON, "daily.temperature_2m_max.0") + "°  L:" +
-  sys.weather(LAT, LON, "daily.temperature_2m_min.0") + "°  Feels " +
+- A `flow: Right` row (height 52, align x 0.5 y 0.5, spacing 8) holding an ANIMATED
+  `WeatherIcon{ draw_bg.cond: <N> width: 46 height: 46 }` followed by the condition
+  `Label` (Roboto-Light, font 17, `#ffffffe6`). `WeatherIcon` is a live
+  shader-animated weather glyph (rays rotate, rain/snow falls, wind/fog drifts,
+  lightning flashes); pick `draw_bg.cond` by CURRENT condition: 0 clear/sunny,
+  1 partly cloudy, 2 cloudy/overcast, 3 rain/drizzle, 4 thunderstorm, 5 snow,
+  6 wind, 7 fog/haze/mist. (See `widgets/weather-icon.md`.)
+- Then the high/low/feels line — **ICON GLYPHS, never the words "H:", "L:" or
+  "Feels"** (spelled-out labels read as a data table, not a weather app). Use
+  `↑` high, `↓` low, `≈` feels-like, THREE spaces between groups. Roboto-Light,
+  font 14, `#ffffffb3`, every number LIVE:
+  `"↑" + sys.weather(LAT, LON, "daily.temperature_2m_max.0") + "°   ↓" +
+  sys.weather(LAT, LON, "daily.temperature_2m_min.0") + "°   ≈" +
   sys.weather(LAT, LON, "current.apparent_temperature") + "°"`.
+
+  `↑` and `↓` are NOT in Roboto — this line MUST declare a NotoSans fallback
+  member or they render as tofu boxes. See FONT WEIGHTS below for the exact form.
 
 **(2) 7-DAY FORECAST** — directly under the current block (this comes BEFORE the
 detail grid). A translucent RoundedView (draw_bg.color #00000055, border_radius 20)
@@ -160,20 +217,66 @@ is its own row so the maps read large), each a `width: Fill` RoundedView
 - The SECOND pane is the LIVE 空气质量图 air-quality map — a `height: 190 flow:
   Overlay` View stacking
   `Image{ src: http_resource(sys.basemap(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
-  UNDER
-  `Image{ src: http_resource(sys.airmap(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
-  (fixed height, NOT Fill — Fill inside an Overlay wrongly resolves to the whole
-  card) — pass the CITY's real decimal LAT, LON (e.g. Tokyo 35.68, 139.65; both maps
-  take the SAME lat/lon) — + a `空气质量图` caption (font 11, #ffffffcc). (See
-  `widgets/sys-helpers.md`.)
+  UNDER an **`AqiContour`** (fixed height, NOT Fill — Fill inside an Overlay wrongly
+  resolves to the whole card) + a `空气质量图` caption (font 11, #ffffffcc).
+
+  `AqiContour` draws US-AQI as a FILLED CONTOUR FIELD in the EPA category colours
+  with isolines at each band boundary — an air-quality tile only marks discrete
+  monitoring stations, and over most cities it is very nearly empty. The contour
+  is translucent, so the basemap beneath still gives geographic context.
+
+  It takes a 4×4 grid of readings as the sixteen uniforms `a0`..`a15`, ROW-MAJOR
+  with the NORTH row first. Emit ALL SIXTEEN — every call shares one cached fetch,
+  so the cost is a single request. `span` is the width in degrees (use `1.6` for a
+  city); pass the SAME LAT, LON as the maps:
+
+```
+AqiContour{ width: Fill height: 190
+    draw_bg.a0:  sys.aqigrid(LAT, LON, 1.6, 0)   draw_bg.a1:  sys.aqigrid(LAT, LON, 1.6, 1)
+    draw_bg.a2:  sys.aqigrid(LAT, LON, 1.6, 2)   draw_bg.a3:  sys.aqigrid(LAT, LON, 1.6, 3)
+    draw_bg.a4:  sys.aqigrid(LAT, LON, 1.6, 4)   draw_bg.a5:  sys.aqigrid(LAT, LON, 1.6, 5)
+    draw_bg.a6:  sys.aqigrid(LAT, LON, 1.6, 6)   draw_bg.a7:  sys.aqigrid(LAT, LON, 1.6, 7)
+    draw_bg.a8:  sys.aqigrid(LAT, LON, 1.6, 8)   draw_bg.a9:  sys.aqigrid(LAT, LON, 1.6, 9)
+    draw_bg.a10: sys.aqigrid(LAT, LON, 1.6, 10)  draw_bg.a11: sys.aqigrid(LAT, LON, 1.6, 11)
+    draw_bg.a12: sys.aqigrid(LAT, LON, 1.6, 12)  draw_bg.a13: sys.aqigrid(LAT, LON, 1.6, 13)
+    draw_bg.a14: sys.aqigrid(LAT, LON, 1.6, 14)  draw_bg.a15: sys.aqigrid(LAT, LON, 1.6, 15)
+}
+```
+
+  (See `widgets/sys-helpers.md`.)
+
+**(3b) 日出日落 + 月相 — the SUN & MOON panel.** Directly under the map panes, a
+`width: Fill height: Fit` RoundedView (draw_bg.color #00000055, border_radius 20,
+padding 16, flow: Down, spacing 10) holding TWO parts:
+
+- **The sun's path** — a `SunArc{ width: Fill height: 96 draw_bg.progress:
+  sys.daylight(LAT, LON) }`, with a `flow: Right` row beneath it carrying the two
+  times at the ends: sunrise `Label` (`sys.weather(LAT, LON, "daily.sunrise.0")`,
+  already "HH:MM") then a `Filler` then sunset (`daily.sunset.0`), both
+  Roboto-Light font 13 `#ffffffb3`, and a `日出 / 日落` caption (font 11,
+  `#ffffff99`). `SunArc` draws a hairline arc from sunrise to sunset with the sun
+  riding it at the CURRENT time; `sys.daylight` returns 0 at sunrise and 1 at
+  sunset, and the widget dims the sun outside that range for night.
+  This REPLACES the old SUNRISE and SUNSET number tiles — two blunt clock
+  readings say far less than one curve showing where in the day you are.
+
+- **月相** — a `flow: Right` row (align y 0.5, spacing 14) holding a
+  `MoonPhase{ width: 72 height: 72 draw_bg.phase: sys.moonnum("phase") }` beside a
+  `flow: Down` column with the phase NAME (`sys.moonphase("name")`, Roboto-Light
+  font 16, `#ffffffe6`) over an illumination line
+  (`sys.moonphase("illumination") + "% 照亮"`, font 12, `#ffffff99`).
+  `MoonPhase` renders the real lit fraction with a correct elliptical terminator.
+  Use `sys.moonnum("phase")` for the UNIFORM — `draw_bg.phase` needs a number, and
+  the string form of `sys.moonphase` silently reads as 0 (a permanent new moon).
+  It is computed from the clock, so it never shows a "—" placeholder.
 
 ### BLOCK: DETAIL-TILES
 
-(4) The detail grid — below the map panes. A `flow: Down` View of THREE `flow: Right`
-rows, each holding TWO equal frosted tiles (`width: Fill`). Every tile is a
-RoundedView (draw_bg.color #ffffff1f, border_radius 18) stacking an UPPERCASE
-caption (font 11, #ffffff99), a big value (font 20), and a sub-line (font 12,
-#ffffffcc). The SIX tiles in order:
+(4) The detail grid — below the SUN & MOON panel. A `flow: Down` View of TWO
+`flow: Right` rows, each holding TWO equal frosted tiles (`width: Fill`). Every
+tile is a RoundedView (draw_bg.color #ffffff1f, border_radius 18) stacking an
+UPPERCASE caption (font 11, #ffffff99), a big value (Roboto-Light font 20), and a
+sub-line (font 12, #ffffffcc). The FOUR tiles in order:
 Every value here is LIVE (sys.airquality / sys.weather); only captions, sub-lines
 and the color category are yours:
 - AIR QUALITY — value = `sys.airquality(LAT, LON, "current.us_aqi")` (the AQI
@@ -181,15 +284,46 @@ and the color category are yours:
   Unhealthy #ff9f0a, Very Unhealthy #ff453a — and put the category word in the sub.
 - UV INDEX — `sys.weather(LAT, LON, "daily.uv_index_max.0")`; sub Low/Moderate/
   High/Very High.
-- SUNRISE — `sys.weather(LAT, LON, "daily.sunrise.0")` (already "HH:MM"); sub `🌅 Dawn`.
-- SUNSET — `sys.weather(LAT, LON, "daily.sunset.0")` (already "HH:MM"); sub `🌇 Dusk`.
 - HUMIDITY — `sys.weather(LAT, LON, "current.relative_humidity_2m") + "%"`; sub free.
 - WIND — `sys.weather(LAT, LON, "current.wind_speed_10m") + " km/h"`; sub free.
 
-The WHOLE inner column is a TALL, VERTICALLY-SCROLLING page (~1500dp) — it does NOT
-need to fit one screen; the user DRAGS to scroll down and reveal the forecast, the
-maps row and the detail grid, so use comfortable, breathable spacing rather than
-cramming everything in.
+SUNRISE and SUNSET are NOT tiles here — they belong to the SUN & MOON panel above.
+
+Keep every sub-line to TWO OR THREE WORDS ("Moderate", "Light breeze", "Feels
+humid"). A tile is half the screen wide minus padding; a sentence like "Dew point
+comfortable" does not fit and is clipped mid-word, which looks like a bug.
+
+## CARD HEIGHT — get this wrong and everything below the fold is LOST
+
+The card is a TALL page (~1500dp) that the user drags through; it does NOT fit one
+screen. The card list itself does the scrolling, so the card must simply BE tall.
+Use EXACTLY this height scheme:
+
+| element | height |
+|---|---|
+| root Overlay | `Fit` |
+| backdrop `Image` | `2000` — a FIXED number; THIS is what makes the card tall |
+| dark scrim over the photo | `Fill` |
+| inner `flow: Down` column | `Fit` |
+
+The photo must be TALLER than the content, not merely tall. A `Fit` Overlay takes
+the height of its tallest child, so if the column outgrows the photo the surplus
+has no photo behind it and ends in a hard edge of bare `#0a0e14` partway down the
+card. `2000` clears the full content with room to spare; any leftover photo at the
+bottom simply reads as more sky.
+
+Two failures to avoid, both of which silently DISCARD the bottom half of the card:
+
+- **A fixed height on the ROOT** (`height: 858`, one screen) clips everything past
+  it. Nothing scrolls, because there is nothing to scroll — the content is simply
+  truncated, and the maps, SUN & MOON panel and detail tiles never appear.
+- **`height: Fill` on the inner column** resolves to the root's height rather than
+  to the content's, so the column cannot grow to hold what you put in it. It must
+  be `Fit`.
+
+Do NOT wrap the card in a `ScrollYView` — it is not needed and a fixed-height one
+reintroduces the clipping. Give the page comfortable, breathable spacing rather
+than cramming sections in to save vertical room; there is no room to save.
 
 ## Data shape it needs
 
