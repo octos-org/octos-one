@@ -3,11 +3,12 @@
 The DEFAULT for weather is an IMMERSIVE FULL-SCREEN iOS WEATHER CARD: a REAL photo
 of the city fills the whole screen; the CURRENT conditions sit at the top, a
 translucent 7-DAY FORECAST panel sits directly below them, then TWO FULL-WIDTH MAP
-PANES stacked vertically — first a LIVE 卫星云图 (real satellite cloud imagery),
-then a LIVE 空气质量图 (air-quality contour map) — each on its own row so the maps
-read large, then a SUN & MOON panel (the sun's arc from 日出 to 日落, and the
-current 月相), then a frosted 4-TILE DETAIL GRID (air quality, UV, humidity, wind)
-— like a refined iOS Weather app.
+PANES stacked vertically — first a LIVE satellite cloud-imagery pane (卫星云图),
+then a LIVE air-quality contour map (空气质量图) — each on its own row so the maps
+read large, then a SUN & MOON panel (the sun's arc from sunrise to sunset, and the
+current moon phase), then a frosted 4-TILE DETAIL GRID (air quality, UV, humidity,
+wind) — like a refined iOS Weather app. All USER-FACING text is in ONE language,
+chosen by the request — see the LANGUAGE rule below.
 
 **YOU generate this card by ASSEMBLING the widget patterns** — there is no
 exemplar to copy. Build it from THIS spec + `widgets/weather-icon.md`,
@@ -57,6 +58,36 @@ styles load the bundled Roboto weights via
 temps (`sys.weather` rounds temperature paths automatically — do NOT round in the
 card). Full catalog + previews: `docs/weather-styles/README.md`.
 
+## LANGUAGE — pick ONE for the whole card, NEVER mix
+
+Every word on the card must be in the SAME language, and that language is the one
+the REQUEST was written in:
+
+- an English request ("weather in shanghai") → the card is **entirely English**
+- a Chinese request ("上海天气", "上海的天气怎么样") → the card is **entirely Chinese**
+
+A card reading `Shanghai / Cloudy / AIR QUALITY` next to `卫星云图 / 日出 / 100% 照亮`
+looks unfinished. That includes the CITY NAME (Shanghai vs 上海), the condition
+word, the day names, every tile caption and every sub-line — not just the headings.
+
+| element | English | 中文 |
+|---|---|---|
+| city | Shanghai | 上海 |
+| condition | Partly Cloudy / Cloudy / Rain | 局部多云 / 多云 / 雨 |
+| day names | Today, Wed, Thu … | 今天、周三、周四… |
+| satellite pane caption | Satellite | 卫星云图 |
+| air-quality pane caption | Air Quality | 空气质量图 |
+| sun panel caption | Sunrise / Sunset | 日出 / 日落 |
+| moon phase name | `sys.moonphase("name")` | `sys.moonphase("name_zh")` |
+| moon illumination | `… + "% illuminated"` | `… + "% 照亮"` |
+| detail tile captions | AIR QUALITY, UV INDEX, HUMIDITY, WIND | 空气质量、紫外线、湿度、风速 |
+| AQI categories | Good / Moderate / Unhealthy | 优 / 良 / 不健康 |
+| UV categories | Low / Moderate / High / Very High | 低 / 中等 / 高 / 很高 |
+
+`sys.moonphase("name")` returns English; use `"name_zh"` for the 八相 names
+(新月 / 蛾眉月 / 上弦月 / 盈凸月 / 满月 / 亏凸月 / 下弦月 / 残月) on a Chinese card.
+Numbers, `°`, `%`, `km/h` and the ↑ ↓ ≈ glyphs are language-neutral and stay as-is.
+
 ## FONT WEIGHTS — how a weather card gets its 秀气
 
 Weight, not size, is what makes this card look refined. `draw_text.text_style.font_size: N`
@@ -66,7 +97,8 @@ a full `TextStyle` with an explicit `font_family` on every line that matters:
 ```
 draw_text.text_style: TextStyle{
     font_family: FontFamily{
-        latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 }
+        latin   := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 }
+        chinese := FontMember{ res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 }
     }
     font_size: 76
 }
@@ -76,14 +108,29 @@ Bundled weights: `Roboto-Thin` (hero temperature ONLY), `Roboto-Light` (city,
 condition, stat lines, forecast rows), `Roboto-Regular`, `Roboto-Medium`,
 `Roboto-Bold`. Bigger + thinner beats smaller + heavier every time.
 
+**ALWAYS include the `chinese` member.** Writing an explicit `font_family`
+REPLACES the whole default chain, which had Chinese and emoji members in it.
+Roboto contains NO CJK glyphs, so a Chinese card whose hero declares only a
+`latin` member renders 上海 and 多云 as empty TOFU BOXES (▯▯) — the card looks
+broken at its largest text. `LXGWWenKaiRegular.ttf` covers CJK at every weight
+above; there is no Thin/Light CJK face, and it is not missed at these sizes.
+
+Carry the member even on an English card: it costs nothing when unused, and it is
+the difference between a city name rendering and not.
+
+**Do NOT set `font_family` on a label carrying colour emoji** (the ☀️ ⛅ 🌧️ in
+forecast rows). Overriding the family drops the `NotoColorEmoji` member the same
+way, and the emoji turns into tofu. Leave those labels on the default chain.
+
 **Glyph fallback.** `FontFamily` is an ORDERED chain: any glyph missing from one
 member is looked up in the next. Roboto has NO arrows (`↑` `↓`) — a line using
 them MUST add a NotoSans member or they render as tofu boxes:
 
 ```
 font_family: FontFamily{
-    latin := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 }
-    sym   := FontMember{ res: crate_resource("makepad_widgets:resources/NotoSans-Regular.ttf") asc: 0.0 desc: 0.0 }
+    latin   := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 }
+    sym     := FontMember{ res: crate_resource("makepad_widgets:resources/NotoSans-Regular.ttf") asc: 0.0 desc: 0.0 }
+    chinese := FontMember{ res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 }
 }
 ```
 
@@ -192,20 +239,48 @@ high one. Drop the `Filler` when you use it; the bar takes the slack. Pass RAW
 degrees — the widget normalises against `wmin`/`wmax` itself:
 
 ```
-Label{ width: 46 text: sys.weather(LAT,LON,"daily.temperature_2m_min.N") + "°"
+Label{ width: 46 align: Align{x: 1.0} padding: Inset{right: 5}
+       text: sys.weather(LAT,LON,"daily.temperature_2m_min.N") + "°"
        draw_text.color: #ffffff88 draw_text.text_style.font_size: 14 }
 TempBar{ width: Fill height: 8 margin: Inset{left: 10 right: 10}
          draw_bg.tlo:  sys.weathernum(LAT, LON, "daily.temperature_2m_min.N")
          draw_bg.thi:  sys.weathernum(LAT, LON, "daily.temperature_2m_max.N")
-         draw_bg.wmin: <the week's lowest low, a NUMBER>
-         draw_bg.wmax: <the week's highest high, a NUMBER> }
-Label{ width: 46 text: sys.weather(LAT,LON,"daily.temperature_2m_max.N") + "°"
+         draw_bg.wmin: sys.weekmin(LAT, LON)
+         draw_bg.wmax: sys.weekmax(LAT, LON) }
+Label{ width: 46 align: Align{x: 0.0} padding: Inset{left: 5}
+       text: sys.weather(LAT,LON,"daily.temperature_2m_max.N") + "°"
        draw_text.color: #ffffff draw_text.text_style.font_size: 14 }
 ```
 
+Every part of those two labels matters for CENTRING the bar, and none of it is
+optional:
+
+- **`align`** — each label is a FIXED 46-wide box holding a ~30-wide number, so a
+  left-aligned lo label strands ~16px of empty box between its digits and the bar
+  while the hi label strands none. The bar is then geometrically centred in its own
+  slot but visibly off to the RIGHT of the gap between the two numbers.
+  `Align{x: 1.0}` pushes the lo number right against the bar, `Align{x: 0.0}`
+  keeps the hi number left against it. (`Align{x: …}`, never `alignx` — see
+  BLOCK: CURRENT.)
+- **`padding`** — a right-aligned label sets its text flush to the box edge and the
+  `°` then overhangs the clip and is CUT OFF, rendering as `29ᶜ`. Widening the box
+  does NOT help: right-alignment moves the text with the edge. 5px of padding on
+  the inner side of each label pulls the digits back inside the clip AND makes the
+  two gaps equal.
+
+The bar itself is a hairline whatever `height` you give it — the widget caps the
+drawn track at 5px and centres it in the box — so `height` only sets the row's
+rhythm and cannot make the bar thick.
+
 Use `sys.weathernum` (NOT `sys.weather`) for tlo/thi — the string form does not
-coerce and the bar collapses. Pick wmin/wmax as round numbers bracketing the
-week, e.g. 26 and 40 for a 27–39° week.
+coerce and the bar collapses.
+
+**NEVER type wmin/wmax as literal numbers.** They are the week's actual lowest low
+and highest high, and you CANNOT know them — every temperature on this card is a
+live fetch you do not see. Guessing produces something like `wmin: 10 wmax: 35`
+for a 27–39° week, which clamps every high to the red end and crushes the whole
+week into the top of the scale. `sys.weekmin` / `sys.weekmax` read the real range
+off the same cached forecast, at no extra request.
 
 **(3) TWO FULL-WIDTH MAP PANES** — stacked vertically (NOT side by side — each pane
 is its own row so the maps read large), each a `width: Fill` RoundedView
@@ -213,12 +288,13 @@ is its own row so the maps read large), each a `width: Fill` RoundedView
 - The FIRST pane is the 卫星云图 — REAL satellite cloud imagery:
   `Image{ src: http_resource(sys.satellite(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
   (sys.satellite(LAT, LON) takes the city's real lat/lon, SAME as the air map below)
-  + a `卫星云图` caption (font 11, #ffffffcc).
+  + a caption (font 11, #ffffffcc) — `Satellite` or `卫星云图` per the LANGUAGE rule.
 - The SECOND pane is the LIVE 空气质量图 air-quality map — a `height: 190 flow:
   Overlay` View stacking
   `Image{ src: http_resource(sys.basemap(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
   UNDER an **`AqiContour`** (fixed height, NOT Fill — Fill inside an Overlay wrongly
-  resolves to the whole card) + a `空气质量图` caption (font 11, #ffffffcc).
+  resolves to the whole card) + a caption (font 11, #ffffffcc) — `Air Quality` or
+  `空气质量图` per the LANGUAGE rule.
 
   `AqiContour` draws US-AQI as a FILLED CONTOUR FIELD in the EPA category colours
   with isolines at each band boundary — an air-quality tile only marks discrete
@@ -253,18 +329,20 @@ padding 16, flow: Down, spacing 10) holding TWO parts:
   sys.daylight(LAT, LON) }`, with a `flow: Right` row beneath it carrying the two
   times at the ends: sunrise `Label` (`sys.weather(LAT, LON, "daily.sunrise.0")`,
   already "HH:MM") then a `Filler` then sunset (`daily.sunset.0`), both
-  Roboto-Light font 13 `#ffffffb3`, and a `日出 / 日落` caption (font 11,
-  `#ffffff99`). `SunArc` draws a hairline arc from sunrise to sunset with the sun
+  Roboto-Light font 13 `#ffffffb3`, and a caption (font 11, `#ffffff99`) —
+  `Sunrise / Sunset` or `日出 / 日落` per the LANGUAGE rule.
+  `SunArc` draws a hairline arc from sunrise to sunset with the sun
   riding it at the CURRENT time; `sys.daylight` returns 0 at sunrise and 1 at
   sunset, and the widget dims the sun outside that range for night.
   This REPLACES the old SUNRISE and SUNSET number tiles — two blunt clock
   readings say far less than one curve showing where in the day you are.
 
-- **月相** — a `flow: Right` row (align y 0.5, spacing 14) holding a
-  `MoonPhase{ width: 72 height: 72 draw_bg.phase: sys.moonnum("phase") }` beside a
-  `flow: Down` column with the phase NAME (`sys.moonphase("name")`, Roboto-Light
-  font 16, `#ffffffe6`) over an illumination line
-  (`sys.moonphase("illumination") + "% 照亮"`, font 12, `#ffffff99`).
+- **The moon phase (月相)** — a `flow: Right` row (align y 0.5, spacing 14) holding
+  a `MoonPhase{ width: 72 height: 72 draw_bg.phase: sys.moonnum("phase") }` beside
+  a `flow: Down` column with the phase NAME (Roboto-Light font 16, `#ffffffe6`)
+  over an illumination line (font 12, `#ffffff99`). BOTH follow the LANGUAGE rule:
+  `sys.moonphase("name") … + "% illuminated"` on an English card,
+  `sys.moonphase("name_zh") … + "% 照亮"` on a Chinese one.
   `MoonPhase` renders the real lit fraction with a correct elliptical terminator.
   Use `sys.moonnum("phase")` for the UNIFORM — `draw_bg.phase` needs a number, and
   the string form of `sys.moonphase` silently reads as 0 (a permanent new moon).
