@@ -98,7 +98,10 @@ and must reproduce them per THIS spec — same content, same live bindings.
 
 ### BLOCK: CURRENT
 
-(1) The current-conditions block, at the top:
+(1) The current-conditions block, at the top. The whole block is CENTRED: wrap
+its lines in a `View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} }`
+and give the condition row `align: Align{x: 0.5 y: 0.5}` (a left-aligned hero
+reads as a draft). Use `Align{x: …}` — there is no `alignx` property.
 - City (font 30).
 - The hero temperature ALONE on its line (font 60, `margin: Inset{top: 6 bottom: 0}`
   so its tall glyphs are not clipped) — its text is LIVE:
@@ -125,6 +128,27 @@ white width 48, all font 14. Give SEVEN rows: Today, then the next six days by n
 The lo°/hi° of row N are LIVE: `sys.weather(LAT, LON, "daily.temperature_2m_min.N")`
 and `sys.weather(LAT, LON, "daily.temperature_2m_max.N")` for N = 0 (Today) … 6.
 (The day NAMES and EMOJI you choose; the two temps must be sys.weather calls.)
+
+BETWEEN the lo° and hi° labels put a `TempBar` — the spectrum range bar. It fills
+the gap so the cool end sits against the low reading and the warm end against the
+high one. Drop the `Filler` when you use it; the bar takes the slack. Pass RAW
+degrees — the widget normalises against `wmin`/`wmax` itself:
+
+```
+Label{ width: 46 text: sys.weather(LAT,LON,"daily.temperature_2m_min.N") + "°"
+       draw_text.color: #ffffff88 draw_text.text_style.font_size: 14 }
+TempBar{ width: Fill height: 8 margin: Inset{left: 10 right: 10}
+         draw_bg.tlo:  sys.weathernum(LAT, LON, "daily.temperature_2m_min.N")
+         draw_bg.thi:  sys.weathernum(LAT, LON, "daily.temperature_2m_max.N")
+         draw_bg.wmin: <the week's lowest low, a NUMBER>
+         draw_bg.wmax: <the week's highest high, a NUMBER> }
+Label{ width: 46 text: sys.weather(LAT,LON,"daily.temperature_2m_max.N") + "°"
+       draw_text.color: #ffffff draw_text.text_style.font_size: 14 }
+```
+
+Use `sys.weathernum` (NOT `sys.weather`) for tlo/thi — the string form does not
+coerce and the bar collapses. Pick wmin/wmax as round numbers bracketing the
+week, e.g. 26 and 40 for a 27–39° week.
 
 **(3) TWO FULL-WIDTH MAP PANES** — stacked vertically (NOT side by side — each pane
 is its own row so the maps read large), each a `width: Fill` RoundedView
