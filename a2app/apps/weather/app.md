@@ -50,7 +50,8 @@ all of them. Selection order:
 2. **Default** (no style keyword): **immersive** for a single named city; **dark**
    for a bare "weather" with no city (its multi-city list reads better).
 
-Whatever the style, **adapt the city name + real lat/lon** to the request and keep
+Whatever the style, **adapt the city name to the request and resolve its
+coordinates with `sys.geocodenum` — never typed digits** (see LIVE DATA below), and keep
 EVERY temperature a `sys.weather(...)` call (the style files are hardcoded demos —
 Shanghai/Tokyo/SF — you MUST swap in the requested city and its lat/lon). All
 styles load the bundled Roboto weights via
@@ -146,10 +147,45 @@ NOT know the real weather, so you must NEVER type an invented number. Use
 `sys.weather(LAT, LON, "path")` and `sys.airquality(LAT, LON, "path")` (see
 `widgets/sys-helpers.md`) as the `text` of each value `Label`, concatenating the
 unit string, e.g. `text: sys.weather(LAT, LON, "current.temperature_2m") + "°"`.
-Pass the city's REAL decimal lat/lon (the SAME LAT, LON used by the map helpers).
 A value shows "—" for a moment while it loads, then the card auto-refreshes with
 the real reading. The ONLY things you choose yourself are labels, the photo query,
 the `WeatherIcon`/emoji condition, and the color categories.
+
+### NEVER type a coordinate — look it up
+
+**LAT and LON above are NOT numbers you write.** A coordinate you recall is an
+invented number exactly like a temperature you recall, and it is wrong in the same
+way: plausible for a famous city, fabricated for anywhere else, and silently
+pointing at the wrong place when a name is ambiguous. Everywhere this spec says
+`LAT, LON`, emit:
+
+```
+sys.geocodenum("<place>", "lat"),  sys.geocodenum("<place>", "lon")
+```
+
+so a call reads:
+
+```
+sys.weather(sys.geocodenum("Shanghai", "lat"), sys.geocodenum("Shanghai", "lon"),
+            "current.temperature_2m")
+```
+
+Use the SAME place string in every call on the card — every one shares a single
+cached lookup, so the cost is one request no matter how many times it appears.
+`sys.geocodenum` also anchors `sys.satellite`, `sys.basemap`, `sys.aqigrid`,
+`sys.daylight`, `sys.weekmin` and `sys.weekmax`. Use `sys.geocode("<place>","name")`
+when you want the resolved place NAME as display text, and `"country"`, `"admin1"`,
+`"timezone"` or `"population"` for the other facts.
+
+**Do NOT hoist the lookup into a top-level `let`.** A card's top-level `let`
+bindings are evaluated ONCE at build time, before any fetch has resolved, so
+`let LAT = sys.geocodenum(…)` freezes at the `-9999` loading sentinel and never
+updates. Call it inline at each use site instead; that is what makes it re-resolve
+on the redraw when the lookup lands.
+
+YOU still decide WHICH place the request means — resolving "nvidia" to Santa Clara,
+or 上海 to Shanghai, is world knowledge and it is your job. What you must not do is
+turn that name into digits.
 
 ## BLOCK: PHOTO-BACKDROP (the weather app's visual identity — reusable)
 
@@ -231,7 +267,17 @@ cloudy, 🌧️ rain, ⛈️ storm, ❄️ snow), a Filler, then lo° dim (#ffff
 white width 48, all font 14. Give SEVEN rows: Today, then the next six days by name.
 The lo°/hi° of row N are LIVE: `sys.weather(LAT, LON, "daily.temperature_2m_min.N")`
 and `sys.weather(LAT, LON, "daily.temperature_2m_max.N")` for N = 0 (Today) … 6.
-(The day NAMES and EMOJI you choose; the two temps must be sys.weather calls.)
+**The day NAME is a HELPER CALL, never a literal string.** Row N's label is
+`sys.dayname(LAT, LON, N, "en")` — or `"zh"` per the LANGUAGE rule — which yields
+`Today`, `Thu`, `Fri`, … (`今天`, `周四`, …). You do NOT reliably know today's date,
+and a wrong weekday is invisible: it looks exactly like a right one. Typing them
+out produced `Today, Wed, Thu, …` on a Wednesday — today repeated as tomorrow, so
+every row after the first was mislabelled. Cards are also SAVED and re-served, so a
+literal is stale the next morning even when it was right when generated.
+`sys.dayname` reads the date from the same cached forecast as the temperatures, so
+the labels belong to the FORECAST'S place, not to wherever the phone is.
+
+(The EMOJI you choose; the day name and both temps must be helper calls.)
 
 BETWEEN the lo° and hi° labels put a `TempBar` — the spectrum range bar. It fills
 the gap so the cool end sits against the low reading and the warm end against the
