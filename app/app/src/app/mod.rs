@@ -14,6 +14,7 @@ pub mod content_browser;
 pub mod diagram_safety;
 pub mod login;
 pub mod octo_thinking;
+pub mod plan;
 pub mod producers;
 pub mod sessions;
 pub mod task_dock;

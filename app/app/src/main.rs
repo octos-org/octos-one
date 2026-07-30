@@ -1692,7 +1692,7 @@ fn save_completed_stream_cards(
         .rev()
         .find(|m| m.role == ChatRole::User)
         .map(|m| m.text.clone());
-    if let Some(body) = extract_runsplash_body(text) {
+    if let Some(body) = card_splash_body(text) {
         // Never persist a forbidden card (same rule as the turn-complete
         // path): scan ALL blocks, not just the first.
         let forbidden = extract_all_runsplash_bodies(text)
@@ -1700,12 +1700,12 @@ fn save_completed_stream_cards(
             .find_map(runsplash_body_forbidden)
             .is_some();
         if !forbidden {
-            if let Some(name) = extract_card_name(body) {
+            if let Some(name) = extract_card_name(&body) {
                 if data.saved_stream_cards.insert(format!("runsplash:{name}")) {
                     save_card_artifact(
                         &name,
                         "runsplash",
-                        body,
+                        &body,
                         domain.as_deref(),
                         prompt.as_deref(),
                         session.as_deref(),
@@ -1993,6 +1993,42 @@ fn extract_all_runsplash_bodies(text: &str) -> Vec<&str> {
 /// Pull the body of the first ```runsplash fenced block out of a message so
 /// it can be fed straight to a `Splash` widget. Returns the raw Splash script
 /// (still containing any `{{state.*}}` placeholders).
+/// Pull the body of the first ```runplan fenced block (the semantic-plan
+/// substrate — typed JSON the runtime lowers into a card).
+fn extract_runplan_body(text: &str) -> Option<&str> {
+    let start = text.find("```runplan")?;
+    let after = &text[start + "```runplan".len()..];
+    let body_start = after.find('\n')? + 1;
+    let body = &after[body_start..];
+    let end = body.find("```")?;
+    Some(body[..end].trim_end())
+}
+
+/// The Splash body for a message: a ```runsplash block as the model wrote it, or a
+/// ```runplan block LOWERED to one.
+///
+/// This is the seam where intent becomes realization. A plan carries only what the
+/// model can be trusted with — which place, which condition, which sections — and
+/// `plan::lower_plan` supplies everything else: the coordinates (geocoded, never
+/// typed), the week's temperature extent, the weekday names, the font chain, the
+/// layout invariants. A malformed plan is REJECTED with a message naming the field,
+/// which is a far better repair target than one bad line in 16 KB of free-form DSL.
+fn card_splash_body(text: &str) -> Option<String> {
+    if let Some(b) = extract_runsplash_body(text) {
+        return Some(b.to_string());
+    }
+    let plan = extract_runplan_body(text)?;
+    match crate::app::plan::lower_plan(plan) {
+        Ok(dsl) => Some(dsl),
+        Err(e) => {
+            // Loud, and specific enough to repair from. Never fall through to a
+            // partial card: half a card looks complete and is not.
+            log::warn!("runplan rejected: {e}");
+            None
+        }
+    }
+}
+
 fn extract_runsplash_body(text: &str) -> Option<&str> {
     let start = text.find("```runsplash")?;
     let after = &text[start + "```runsplash".len()..];
@@ -6346,8 +6382,8 @@ impl App {
                 // Splash widget — its `set_text` re-evals on change, and this
                 // guarantees the update even if the markdown re-parse doesn't
                 // re-dispatch to the pooled splash_view.
-                if let Some(body) = extract_runsplash_body(&text) {
-                    let resolved = substitute_card_state(body, item_id, &state);
+                if let Some(body) = card_splash_body(&text) {
+                    let resolved = substitute_card_state(&body, item_id, &state);
                     item.widget(cx, ids!(splash_view)).set_text(cx, &resolved);
                 }
             }
@@ -8544,7 +8580,8 @@ impl AppMain for App {
                                     .map(|m| m.text.clone());
                                 // Persist a named A2App card so it can be
                                 // retrieved by name and refined over time.
-                                if let Some(body) = extract_runsplash_body(&text) {
+                                if let Some(body) = card_splash_body(&text) {
+                                    let body: &str = &body;
                                     rendered_card = true;
                                     // Never PERSIST a forbidden card (it would be
                                     // reused by name later); repair it instead.
