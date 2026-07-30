@@ -1,0 +1,107 @@
+// name: plain-card
+// LOWERED from a semantic plan for the plain-data backend.
+{t: "col", pad: 18, spacing: 12, c: [
+    {t: "col", spacing: 2, c: [
+        {t: "text", text: "TODAY · TOP GAINERS", variant: "labelMedium"},
+        {t: "text", text: "Movers", variant: "displayMedium"}
+    ]},
+    {t: "card", variant: "filled", pad: 14, c: [
+        {t: "col", spacing: 6, c: [
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "1", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(0, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(0, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(0, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(0, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "2", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(1, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(1, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(1, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(1, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "3", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(2, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(2, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(2, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(2, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "4", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(3, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(3, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(3, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(3, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "5", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(4, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(4, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(4, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(4, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "6", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(5, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(5, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(5, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(5, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "7", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(6, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(6, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(6, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(6, "changepct"), variant: "labelMedium"}
+                ]}
+            ]},
+            {t: "divider"},
+            {t: "row", spacing: 10, c: [
+                {t: "text", text: "8", variant: "bodyLarge", w: 26},
+                {t: "col", spacing: 2, grow: 1, c: [
+                    {t: "text", text: sys.movers(7, "symbol"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(7, "name"), variant: "labelMedium"}
+                ]},
+                {t: "col", spacing: 2, c: [
+                    {t: "text", text: "$" + sys.movers(7, "price"), variant: "bodyLarge"},
+                    {t: "text", text: sys.movers(7, "changepct"), variant: "labelMedium"}
+                ]}
+            ]}
+        ]}
+    ]}
+]}

@@ -45,6 +45,9 @@ pub const CAPABILITIES: &[&str] = &[
     "sys.weekmax",
     "sys.airquality",
     "sys.news",
+    "sys.movers",
+    "sys.stock",
+    "sys.stockrange",
     "sys.photo",
 ];
 
@@ -441,6 +444,124 @@ pub fn register(vm: &mut ScriptVm) {
                 )
             })()
             .unwrap_or_else(|| "—".into());
+            vm.bx.heap.new_string_from_str(&out)
+        },
+    );
+
+
+    // ---- market data ------------------------------------------------------
+    //
+    // Yahoo Finance, the same source octos-one uses. `movers` needs no ticker: who is
+    // moving is the market's answer, not the model's.
+
+    fn yahoo_quote(sym: &str) -> Option<serde_json::Value> {
+        let url = format!(
+            "https://query1.finance.yahoo.com/v8/finance/chart/{}?range=1d&interval=1d",
+            enc(sym)
+        );
+        at(&json(&url)?, "chart.result.0").cloned()
+    }
+
+    fn movers_list() -> Option<serde_json::Value> {
+        let url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved\
+?scrIds=day_gainers&count=10";
+        at(&json(url)?, "finance.result.0.quotes").cloned()
+    }
+
+    vm.add_method(
+        sys,
+        id_lut!(movers),
+        script_args_def!(index = NIL, field = NIL),
+        |vm, args| {
+            let i = narg!(vm, args, index).max(0.0) as usize;
+            let field = sarg!(vm, args, field);
+            let out = movers_list()
+                .and_then(|q| q.get(i).cloned())
+                .and_then(|row| {
+                    let key = match field.trim() {
+                        "symbol" => "symbol",
+                        "name" => "shortName",
+                        "price" => "regularMarketPrice",
+                        "change" => "regularMarketChange",
+                        "changepct" => "regularMarketChangePercent",
+                        _ => return None,
+                    };
+                    let v = row.get(key)?;
+                    Some(match v.as_f64() {
+                        // Two decimals for money, and a sign on a percentage — the
+                        // direction must be readable without colour.
+                        Some(n) if key == "regularMarketChangePercent" => {
+                            format!("{}{:.2}%", if n >= 0.0 { "+" } else { "" }, n)
+                        }
+                        Some(n) => format!("{n:.2}"),
+                        None => v.as_str().unwrap_or("—").to_string(),
+                    })
+                })
+                .unwrap_or_else(|| "—".into());
+            vm.bx.heap.new_string_from_str(&out)
+        },
+    );
+
+    vm.add_method(
+        sys,
+        id_lut!(stock),
+        script_args_def!(symbol = NIL, key = NIL),
+        |vm, args| {
+            let sym = sarg!(vm, args, symbol);
+            let key = sarg!(vm, args, key);
+            let out = yahoo_quote(&sym)
+                .and_then(|r| {
+                    let m = at(&r, "meta")?;
+                    let path = match key.trim() {
+                        "symbol" => "symbol",
+                        "name" => "longName",
+                        "price" => "regularMarketPrice",
+                        "prev" => "previousClose",
+                        "high" => "regularMarketDayHigh",
+                        "low" => "regularMarketDayLow",
+                        "open" => "regularMarketOpen",
+                        "currency" => "currency",
+                        _ => return None,
+                    };
+                    let v = m.get(path)?;
+                    Some(match v.as_f64() {
+                        Some(n) => format!("{n:.2}"),
+                        None => v.as_str().unwrap_or("—").to_string(),
+                    })
+                })
+                .unwrap_or_else(|| "—".into());
+            vm.bx.heap.new_string_from_str(&out)
+        },
+    );
+
+    vm.add_method(
+        sys,
+        id_lut!(stockrange),
+        script_args_def!(symbol = NIL, range = NIL, key = NIL),
+        |vm, args| {
+            let sym = sarg!(vm, args, symbol);
+            let _range = sarg!(vm, args, range);
+            let key = sarg!(vm, args, key);
+            let out = yahoo_quote(&sym)
+                .and_then(|r| {
+                    let m = at(&r, "meta")?;
+                    let price = m.get("regularMarketPrice")?.as_f64()?;
+                    let prev = m.get("previousClose")?.as_f64()?;
+                    let d = price - prev;
+                    Some(match key.trim() {
+                        // Direction is FETCHED. A card that asserted it would paint a red
+                        // day green for as long as it exists.
+                        "up" => (if d >= 0.0 { "1" } else { "0" }).to_string(),
+                        "change" => format!("{}{:.2}", if d >= 0.0 { "+" } else { "" }, d),
+                        "changepct" => format!(
+                            "{}{:.2}%",
+                            if d >= 0.0 { "+" } else { "" },
+                            if prev != 0.0 { d / prev * 100.0 } else { 0.0 }
+                        ),
+                        _ => "—".to_string(),
+                    })
+                })
+                .unwrap_or_else(|| "—".into());
             vm.bx.heap.new_string_from_str(&out)
         },
     );

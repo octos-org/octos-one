@@ -284,6 +284,7 @@ pub fn lower_plan_to_nodes(json: &str) -> Node {
             page(weather(sections, place, loc, zh))
         }
         "news" => page(news(sections, zh)),
+        "stock" => page(stock(sections, zh)),
         other => reject(&format!("unknown plan kind {other:?}")),
     }
 }
@@ -526,6 +527,116 @@ fn news(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
     out
 }
 
+
+/// Market blocks for the plain-data backend.
+///
+/// The ticker is the one fact a plan carries, because resolving "apple" to AAPL is world
+/// knowledge. Everything the symbol MEANS — price, change, direction, company name — is a
+/// live call, and the direction is the subtle one: a plan asserting "up" would paint a red
+/// day green for as long as the card exists, so the arrow and the colour both come from
+/// `sys.stockrange(..., "up")` at render time.
+fn stock(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
+    let mut out = Vec::new();
+    for sec in sections {
+        let block = sec.get("block").and_then(|b| b.as_str()).unwrap_or("");
+        let args = sec.get("args");
+        let arg = |k: &str, d: &str| {
+            args.and_then(|a| a.get(k))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or(d)
+                .to_string()
+        };
+        let ticker = arg("ticker", "");
+        let range = arg("range", "1d");
+        match block {
+            "MoversList" => {
+                let n = args
+                    .and_then(|a| a.get("count"))
+                    .and_then(|c| c.as_u64())
+                    .unwrap_or(10)
+                    .clamp(1, 10) as usize;
+                out.push(
+                    Node::new("col").n("spacing", 2.0).kids(vec![
+                        txt(role::CAPTION, &arg("label", if zh { "今日涨幅榜" } else { "TODAY · TOP GAINERS" })),
+                        txt(role::HERO, &arg("title", if zh { "涨幅榜" } else { "Movers" })),
+                    ]),
+                );
+                let mut rows = Vec::new();
+                for r in 0..n {
+                    rows.push(
+                        Node::new("row").n("spacing", 10.0).kids(vec![
+                            txt(role::ROW, &format!("{}", r + 1)).n("w", 26.0),
+                            Node::new("col").n("spacing", 2.0).n("grow", 1.0).kids(vec![
+                                txt(role::ROW, &format!("sys.movers({r}, \"symbol\")")),
+                                txt(role::CAPTION, &format!("sys.movers({r}, \"name\")")),
+                            ]),
+                            Node::new("col").n("spacing", 2.0).kids(vec![
+                                txt(role::ROW, &format!("\"$\" + sys.movers({r}, \"price\")")),
+                                txt(role::CAPTION, &format!("sys.movers({r}, \"changepct\")")),
+                            ]),
+                        ]),
+                    );
+                    if r + 1 < n {
+                        rows.push(Node::new("divider"));
+                    }
+                }
+                out.push(card(rows));
+            }
+            "QuoteHeader" => out.push(Node::new("col").n("spacing", 2.0).kids(vec![
+                txt(role::TITLE, &format!("sys.stock({ticker:?}, \"symbol\")")),
+                txt(role::CAPTION, &format!("sys.stock({ticker:?}, \"name\")")),
+                txt(role::HERO, &format!("\"$\" + sys.stock({ticker:?}, \"price\")")),
+                txt(
+                    role::STAT,
+                    &format!(
+                        "sys.stockrange({ticker:?}, {range:?}, \"change\") + \"  (\" \
+                         + sys.stockrange({ticker:?}, {range:?}, \"changepct\") + \")\""
+                    ),
+                ),
+            ])),
+            "StatGrid" => {
+                let stats: Vec<String> = args
+                    .and_then(|a| a.get("stats"))
+                    .and_then(|t| t.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                    .unwrap_or_default();
+                let mut cells = Vec::new();
+                for k in &stats {
+                    let cap = match k.as_str() {
+                        "price" => if zh { "现价" } else { "PRICE" },
+                        "prev" => if zh { "昨收" } else { "PREV CLOSE" },
+                        "high" => if zh { "最高" } else { "HIGH" },
+                        "low" => if zh { "最低" } else { "LOW" },
+                        "open" => if zh { "开盘" } else { "OPEN" },
+                        "currency" => if zh { "货币" } else { "CURRENCY" },
+                        _ => continue,
+                    };
+                    cells.push(
+                        card(vec![
+                            txt(role::CAPTION, cap),
+                            txt(role::VALUE, &format!("sys.stock({ticker:?}, {k:?})")),
+                        ])
+                        .n("grow", 1.0),
+                    );
+                }
+                for pair in cells.chunks(2) {
+                    out.push(Node::new("row").n("spacing", 10.0).kids(pair.to_vec()));
+                }
+            }
+            // PriceChart needs a plotting surface this backend does not have. Named on
+            // screen rather than dropped: a silently missing chart looks like a card that
+            // simply has none.
+            "PriceChart" => out.push(card(vec![
+                txt(role::CAPTION, if zh { "价格走势" } else { "PRICE CHART" }),
+                txt(role::STAT, if zh { "此后端暂无绘图组件" } else { "no plotting surface on this backend" }),
+            ])),
+            other => out.push(card(vec![txt(role::STAT, &format!("unknown block {other:?}"))])),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -657,6 +768,37 @@ mod tests {
             to_plain_splash(&lower_plan_to_nodes(news)),
         )
         .unwrap();
+        let stock = r#"{"plan":"stock","locale":"en","sections":[
+            {"block":"MoversList","args":{"count":8}}]}"#;
+        std::fs::write(
+            "/tmp/plain-stock.splash",
+            to_plain_splash(&lower_plan_to_nodes(stock)),
+        )
+        .unwrap();
+    }
+
+    /// Every domain on the PLAN path must also lower for the native backend. Without
+    /// this, a domain can join PLAN_DOMAINS and silently render as "unknown plan kind"
+    /// here — which is how stock was missing while weather and news looked finished.
+    #[test]
+    fn every_plan_domain_reaches_the_native_backend() {
+        for d in super::super::PLAN_DOMAINS {
+            let minimal = match *d {
+                "weather" => r#"{"plan":"weather","locale":"en","place":{"query":"Kyoto"},
+                    "sections":[{"block":"CurrentConditions"}]}"#,
+                "news" => r#"{"plan":"news","locale":"en",
+                    "sections":[{"block":"Masthead","args":{"title":"News"}}]}"#,
+                "stock" => r#"{"plan":"stock","locale":"en",
+                    "sections":[{"block":"MoversList","args":{"count":3}}]}"#,
+                other => panic!("PLAN_DOMAINS has {other:?} with no native test plan"),
+            };
+            let src = to_plain_splash(&lower_plan_to_nodes(minimal));
+            assert!(
+                !src.contains("unknown plan kind"),
+                "{d} does not lower for the native backend"
+            );
+            assert!(src.contains("{t: \"col\""), "{d} must produce a plain-data tree");
+        }
     }
 
     #[test]
