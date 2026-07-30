@@ -1,7 +1,0 @@
-dev.octos.splashnative.app-pngs-0 /Users/yuechen/home/octos-one/app/splash-native/app/build/generated/res/pngs/debug
-dev.octos.splashnative.app-resValues-1 /Users/yuechen/home/octos-one/app/splash-native/app/build/generated/res/resValues/debug
-dev.octos.splashnative.app-packageDebugResources-2 /Users/yuechen/home/octos-one/app/splash-native/app/build/intermediates/incremental/debug/packageDebugResources/merged.dir
-dev.octos.splashnative.app-packageDebugResources-3 /Users/yuechen/home/octos-one/app/splash-native/app/build/intermediates/incremental/debug/packageDebugResources/stripped.dir
-dev.octos.splashnative.app-debug-4 /Users/yuechen/home/octos-one/app/splash-native/app/build/intermediates/merged_res/debug/mergeDebugResources
-dev.octos.splashnative.app-debug-5 /Users/yuechen/home/octos-one/app/splash-native/app/src/debug/res
-dev.octos.splashnative.app-main-6 /Users/yuechen/home/octos-one/app/splash-native/app/src/main/res

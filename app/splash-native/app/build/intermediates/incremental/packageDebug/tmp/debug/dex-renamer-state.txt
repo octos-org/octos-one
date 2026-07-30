@@ -1,7 +1,0 @@
-#Thu Jul 30 11:40:03 PDT 2026
-base.0=/Users/yuechen/home/octos-one/app/splash-native/app/build/intermediates/dex/debug/mergeProjectDexDebug/0/classes.dex
-base.1=/Users/yuechen/home/octos-one/app/splash-native/app/build/intermediates/dex/debug/mergeProjectDexDebug/6/classes.dex
-path.0=0/classes.dex
-path.1=6/classes.dex
-renamed.0=classes.dex
-renamed.1=classes2.dex

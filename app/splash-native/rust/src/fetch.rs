@@ -566,11 +566,27 @@ pub fn register(vm: &mut ScriptVm) {
         },
     );
 
-    // A backdrop photo is a URL octos-one resolves through its own image service. There
-    // is no equivalent here, so it answers with an empty string — the card then draws
-    // no image rather than a broken one.
-    vm.add_method(sys, id_lut!(photo), script_args_def!(q = NIL), |vm, _a| {
-        vm.bx.heap.new_string_from_str("")
+    // sys.photo("kyoto city cloudy sky") -> a 9:16 backdrop for that subject.
+    //
+    // The SAME service octos-one uses (pollinations renders the natural-language prompt
+    // with an image model, so the photo always matches the subject). Returning an empty
+    // string here was why the native card looked drab next to the makepad one: the plan
+    // carried the photo intent all along and this backend simply had no helper to answer
+    // it. A missing data helper, not a missing renderer — which is the same shape as
+    // every other gap this port has hit.
+    vm.add_method(sys, id_lut!(photo), script_args_def!(query = NIL), |vm, args| {
+        let q = sarg!(vm, args, query);
+        let q = q.trim();
+        let q = if q.is_empty() {
+            "beautiful cinematic landscape scenery, golden hour"
+        } else {
+            q
+        };
+        let url = format!(
+            "https://image.pollinations.ai/prompt/{}?width=1080&height=1920&nologo=true&model=flux",
+            enc(q)
+        );
+        vm.bx.heap.new_string_from_str(&url)
     });
 
     // Creating the module is not enough: without this, `sys` is not a bare name in the

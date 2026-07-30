@@ -1664,6 +1664,10 @@ fn strip_card_name_line(body: &str) -> std::borrow::Cow<'_, str> {
 /// `<name>.meta.json` sidecar (substrate, owning domain, session, triggering
 /// prompt, timestamp), and one appended line in `index.jsonl` — the
 /// append-only ledger that makes every generation/refinement traceable.
+///
+/// `plan_source` is the plan the card was lowered from, when there was one. It is
+/// carried so the plain-data form can be published alongside the makepad one — the two
+/// are siblings from a single plan, not translations of each other.
 fn save_card_artifact(
     name: &str,
     substrate: &str,
@@ -1671,6 +1675,12 @@ fn save_card_artifact(
     domain: Option<&str>,
     prompt: Option<&str>,
     session_id: Option<&str>,
+    // LAST, matching every call site. It was briefly 4th while the calls passed it 7th,
+    // and because four consecutive parameters are all `Option<&str>` the compiler could
+    // not tell — the domain silently arrived as the plan and the lowering was skipped
+    // with "plan is not JSON: \"weather\"". Same-typed positional parameters are the
+    // hazard; keeping the new one at the end is the cheap guard.
+    plan_source: Option<&str>,
 ) {
     let Some(dir) = a2app_cards_dir() else {
         log::warn!("a2app: cannot save card '{name}' — no HOME/cards dir");
@@ -1679,6 +1689,42 @@ fn save_card_artifact(
     let _ = std::fs::create_dir_all(&dir);
     let ext = if substrate == "runhtml" { "html" } else { "splash" };
     let path = dir.join(format!("{name}.{ext}"));
+    // Also publish the PLAIN-DATA form of the same plan, for backends that render
+    // Splash without makepad's widget registry (see app/splash-native). A makepad card
+    // says `SolidView{…}`; a registry-free renderer needs `{t: "col", …}`. Both come
+    // from the ONE plan the model emitted, so this is a second lowering rather than a
+    // translation — and publishing it here means such a backend renders the model's real
+    // output instead of a hand-written stand-in.
+    if let Some(plan_json) = plan_source {
+        match crate::app::plan::nodes::try_plain(plan_json) {
+            Ok(plain) => {
+                // The app's own media directory: writable by this app without any
+                // permission, and world-READABLE, which is what a second renderer needs.
+                // `/data/local/tmp` looked simpler and is not writable by an app at all —
+                // SELinux blocks it whatever the mode bits say, which is why the first
+                // attempt failed with EACCES on a 777 directory.
+                let handoff = std::path::Path::new(
+                    "/storage/emulated/0/Android/media/dev.makepad.octos_app/cards",
+                );
+                if let Err(e) = std::fs::create_dir_all(handoff) {
+                    log::warn!("a2app: cannot create handoff dir: {e}");
+                } else {
+                    let p = handoff.join(format!("{name}.splash"));
+                    match std::fs::write(&p, &plain) {
+                        Ok(()) => log::info!(
+                            "a2app: published plain-data card ({} bytes) → {}",
+                            plain.len(),
+                            p.display()
+                        ),
+                        Err(e) => log::warn!("a2app: plain-data publish failed: {e}"),
+                    }
+                }
+            }
+            // Say WHY. "no plain-data lowering" alone sent me guessing at the cause
+            // when the real answer was in the text I had not printed.
+            Err(e) => log::warn!("a2app: plain-data lowering skipped — {e}"),
+        }
+    }
     match std::fs::write(&path, body) {
         Ok(()) => log::info!("a2app: saved card '{name}' ({substrate}, {} bytes) → {}", body.len(), path.display()),
         Err(e) => log::warn!("a2app: save card '{name}' failed: {e}"),
@@ -1747,6 +1793,7 @@ fn save_completed_stream_cards(
                         domain.as_deref(),
                         prompt.as_deref(),
                         session.as_deref(),
+                        extract_runplan_body(text),
                     );
                 }
             }
@@ -1762,6 +1809,8 @@ fn save_completed_stream_cards(
                     domain.as_deref(),
                     prompt.as_deref(),
                     session.as_deref(),
+                    // A hand-written HTML card has no plan, so no plain-data sibling.
+                    None,
                 );
             }
         }
@@ -8647,6 +8696,10 @@ impl AppMain for App {
                                     for (i, chunk) in body.as_bytes().chunks(600).enumerate() {
                                         log::info!("CARDDSL[{i}]{}", String::from_utf8_lossy(chunk));
                                     }
+                                    // The plan this card was lowered from, when the model
+                                    // emitted one. `None` for a hand-written runsplash
+                                    // card, which simply has no plain-data sibling.
+                                    let last_plan = extract_runplan_body(&text).map(str::to_string);
                                     match extract_card_name(body) {
                                         Some(name) => save_card_artifact(
                                             &name,
@@ -8655,6 +8708,7 @@ impl AppMain for App {
                                             card_domain.as_deref(),
                                             card_prompt.as_deref(),
                                             card_session.as_deref(),
+                                            last_plan.as_deref(),
                                         ),
                                         None => log::warn!(
                                             "a2app: runsplash card has no `// name:` line — not saved"
@@ -8706,6 +8760,7 @@ impl AppMain for App {
                                             card_domain.as_deref(),
                                             card_prompt.as_deref(),
                                             card_session.as_deref(),
+                                            None,
                                         ),
                                         None => log::warn!(
                                             "a2app: runhtml card has no `<!-- name: -->` — not saved"

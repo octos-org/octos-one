@@ -147,6 +147,46 @@ final class Builder {
                 v.setBackground(g);
                 return v;
             }
+            case "image": {
+                // The backdrop. Decoded on a worker and posted back: an image fetch on
+                // the UI thread would be a NetworkOnMainThreadException, and even cached
+                // it is too slow to block a frame on.
+                android.widget.ImageView iv = new android.widget.ImageView(ctx);
+                iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                final String url = n.s("src", "");
+                if (!url.isEmpty()) {
+                    new Thread(() -> {
+                        try {
+                            java.net.HttpURLConnection c =
+                                (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                            c.setConnectTimeout(15000);
+                            c.setReadTimeout(30000);
+                            final android.graphics.Bitmap bm =
+                                android.graphics.BitmapFactory.decodeStream(c.getInputStream());
+                            if (bm != null) iv.post(() -> iv.setImageBitmap(bm));
+                        } catch (Throwable t) {
+                            // A backdrop that will not load must not take the card with
+                            // it — the content is the card, the photo is decoration.
+                            android.util.Log.w("SplashNative", "photo failed: " + url, t);
+                        }
+                    }, "photo").start();
+                }
+                return iv;
+            }
+            case "stack": {
+                // Overlay: children draw over each other, first at the back. This is what
+                // puts a card over a photo.
+                android.widget.FrameLayout f = new android.widget.FrameLayout(ctx);
+                for (Node c : n.children) {
+                    View cv = build(c);
+                    if (cv != null) {
+                        f.addView(cv, new android.widget.FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            c.has("h") ? dp(c.f("h", 0)) : ViewGroup.LayoutParams.MATCH_PARENT));
+                    }
+                }
+                return f;
+            }
             case "spacer": {
                 View v = new View(ctx);
                 v.setMinimumHeight(dp(n.f("h", 8)));

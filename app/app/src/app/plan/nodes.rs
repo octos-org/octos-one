@@ -156,6 +156,24 @@ pub fn encode(root: &Node) -> Vec<u8> {
 }
 
 
+/// Plain-data source for a plan, or `None` if this plan kind has no lowering here.
+///
+/// Used by the card saver to publish the registry-free form beside the makepad one, so a
+/// backend without makepad's widget registry renders the model's REAL output rather than
+/// a hand-written stand-in.
+pub fn try_plain(plan_json: &str) -> Result<String, String> {
+    let v: serde_json::Value = serde_json::from_str(plan_json)
+        .map_err(|e| format!("plan is not JSON ({e}); first 80 bytes: {:?}", &plan_json.chars().take(80).collect::<String>()))?;
+    let kind = v
+        .get("plan")
+        .and_then(|k| k.as_str())
+        .ok_or_else(|| "plan has no \"plan\" field".to_string())?;
+    match kind {
+        "weather" | "news" | "stock" => Ok(to_plain_splash(&lower_plan_to_nodes(plan_json))),
+        other => Err(format!("no plain-data lowering for kind {other:?}")),
+    }
+}
+
 /// Serialise a node tree as PLAIN-DATA SPLASH SOURCE.
 ///
 /// This is the form `ymote/Splash` evaluates and `ymote/Splash-Android` renders:
@@ -250,8 +268,12 @@ fn txt(role: &str, text: &str) -> Node {
 /// children STACK rather than flow. Discovered the hard way: seven forecast rows drew
 /// on top of each other, which read as a data bug and was a container bug.
 fn card(kids: Vec<Node>) -> Node {
+    // Translucent on purpose: over a backdrop an opaque panel reads as a box pasted on
+    // top, while a wash lets the photo carry through and the card feel part of it.
     Node::new("card")
         .s("variant", "filled")
+        .n("bg", 0x8C_10_14_1Cu32 as f64)
+        .n("radius", 18.0)
         .n("pad", 14.0)
         .kid(Node::new("col").n("spacing", 6.0).kids(kids))
 }
@@ -281,7 +303,8 @@ pub fn lower_plan_to_nodes(json: &str) -> Node {
             else {
                 return reject("weather plan has no place.query");
             };
-            page(weather(sections, place, loc, zh))
+            let photo = v.get("photo").and_then(|p| p.as_str()).unwrap_or(place);
+            photo_page(photo, weather(sections, place, loc, zh))
         }
         "news" => page(news(sections, zh)),
         "stock" => page(stock(sections, zh)),
@@ -291,6 +314,24 @@ pub fn lower_plan_to_nodes(json: &str) -> Node {
 
 fn page(kids: Vec<Node>) -> Node {
     Node::new("col").n("pad", 18.0).n("spacing", 12.0).kids(kids)
+}
+
+/// A page over a full-bleed backdrop.
+///
+/// The plan has carried `photo` from the start — it is the model's own words for what
+/// the place looks like, which is exactly the kind of thing no tool can answer. The
+/// native backend simply had no `sys.photo` to resolve it, so the card fell back to a
+/// flat dark panel and looked drab beside the makepad one. That was a missing data
+/// helper, not a missing renderer.
+///
+/// A scrim sits between photo and content: the backdrop is an arbitrary generated image,
+/// so text over it is only legible if something guarantees contrast.
+fn photo_page(query: &str, kids: Vec<Node>) -> Node {
+    Node::new("stack").kids(vec![
+        Node::new("image").s("src_expr", &format!("sys.photo({query:?})")),
+        Node::new("box").n("bg", 0x99_0A_0E_14u32 as f64),
+        page(kids),
+    ])
 }
 
 fn reject(msg: &str) -> Node {
@@ -643,6 +684,7 @@ mod tests {
 
     const KYOTO: &str = r#"{
         "plan": "weather", "locale": "en", "place": { "query": "Kyoto" },
+        "photo": "kyoto temple autumn mist cinematic",
         "sections": [
             { "block": "CurrentConditions" },
             { "block": "Forecast", "args": { "days": 7 } },
@@ -687,7 +729,10 @@ mod tests {
     fn the_buffer_round_trips() {
         let buf = encode(&lower_plan_to_nodes(KYOTO));
         let kinds = decode_kinds(&buf);
-        assert_eq!(kinds[0], "col", "root is the page column");
+        // A weather page roots at a `stack`: backdrop, scrim, content. The assertion
+        // used to demand `col` and correctly failed when the backdrop landed.
+        assert_eq!(kinds[0], "stack", "weather roots at the backdrop stack");
+        assert!(kinds.iter().any(|k| k == "image"), "the backdrop must be there");
         assert!(kinds.iter().any(|k| k == "weathericon"));
         assert!(kinds.iter().any(|k| k == "card"));
         // 1 current + 7 forecast rows.
@@ -797,7 +842,10 @@ mod tests {
                 !src.contains("unknown plan kind"),
                 "{d} does not lower for the native backend"
             );
-            assert!(src.contains("{t: \"col\""), "{d} must produce a plain-data tree");
+            assert!(
+                src.contains("{t: \"col\"") || src.contains("{t: \"stack\""),
+                "{d} must produce a plain-data tree"
+            );
         }
     }
 

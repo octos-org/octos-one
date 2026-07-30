@@ -28,8 +28,21 @@ import java.nio.charset.StandardCharsets;
 public class MainActivity extends Activity {
     static final String TAG = "SplashNative";
 
-    /** Where octos-one saves what its LLM generated. */
-    static final String CARDS = "/data/data/dev.makepad.octos_app/files/a2app_cards/";
+    /**
+     * Where to look for a card octos-one's LLM generated, in order.
+     *
+     * The app's own files dir is private to it, so a second app cannot read it — the
+     * earlier runs all fell back to the bundled copy and said so on screen. A handoff
+     * directory is the honest fix for an experiment: octos-one's saved card is COPIED
+     * there verbatim, so what renders is still the model's own bytes rather than a
+     * transcription. A real integration would put the renderer inside octos-one instead
+     * of alongside it.
+     */
+    static final String[] CARD_DIRS = {
+        "/storage/emulated/0/Android/media/dev.makepad.octos_app/cards/",
+        "/data/local/tmp/octos-cards/",
+        "/data/data/dev.makepad.octos_app/files/a2app_cards/",
+    };
 
     LinearLayout root;
     ScrollView scroll;
@@ -59,7 +72,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> {
                 root.removeAllViews();
                 note("No card to render");
-                note("Looked in " + CARDS + name + ".splash and in assets/");
+                note("Looked in " + String.join(", ", CARD_DIRS) + " and in assets/");
                 note("Generate one in octos-one first, then relaunch.");
             });
             return;
@@ -103,10 +116,11 @@ public class MainActivity extends Activity {
 
     /** octos-one's saved card if readable, else the bundled copy. */
     String readCard(String name) {
-        File f = new File(CARDS + name + ".splash");
-        if (f.canRead()) {
+        for (String dir : CARD_DIRS) {
+            File f = new File(dir + name + ".splash");
+            if (!f.canRead()) continue;
             try (InputStream in = new FileInputStream(f)) {
-                cardOrigin = "octos-one's saved card";
+                cardOrigin = "octos-one's LLM output (" + dir + ")";
                 return slurp(in);
             } catch (Throwable t) {
                 Log.w(TAG, "cannot read " + f, t);
