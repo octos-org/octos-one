@@ -30,13 +30,11 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Home-screen registration: the app can be picked as the
-                 device launcher (system HOME component). -->
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
+            <!-- NOTE: the HOME/launcher-replacement intent-filter was removed so
+                 octos behaves as a normal app (tap the icon to open; Home returns
+                 to the device launcher) instead of competing to BE the home
+                 screen. Re-add a <category android:name="android.intent.category.HOME"/>
+                 + DEFAULT intent-filter here to ship octos as a device launcher. -->
             <!-- Deep links: open YouTube URLs in octos (the youtube card plays them). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
