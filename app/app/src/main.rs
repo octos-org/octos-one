@@ -106,6 +106,68 @@ const YOUTUBE_LIVE_CHANNELS: [(&str, &str); 4] = [
     ("NASA", "NASA space"),
 ];
 
+/// Refresh the `live:1` video ids in a composed youtube card.
+///
+/// Catalog ids are curated by the app agent when the card is generated, and the
+/// live ones go stale within days — a stale live id does not degrade to
+/// anything watchable, the player just reports "this live stream recording is
+/// not available". The card ships an `octos.handles` map (channel name ->
+/// youtube handle), which is the same key `youtube_live_cache` is stored under,
+/// so the two join without guessing.
+fn patch_youtube_live_ids(card: &str) -> String {
+    let mut handles: Vec<(String, String)> = Vec::new();
+    if let Some(at) = card.find("octos.handles") {
+        if let Some(open) = card[at..].find('{') {
+            let s = at + open + 1;
+            if let Some(close) = card[s..].find('}') {
+                for pair in card[s..s + close].split(',') {
+                    let mut it = pair.splitn(2, ':');
+                    if let (Some(name), Some(handle)) = (it.next(), it.next()) {
+                        let name = name.trim().trim_matches('"');
+                        let handle = handle.trim().trim_matches('"');
+                        if !name.is_empty() && !handle.is_empty() {
+                            handles.push((name.to_string(), handle.to_string()));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let cache = youtube_live_cache().lock().unwrap();
+    let mut out = String::with_capacity(card.len());
+    let mut patched = 0usize;
+    for line in card.split_inclusive('\n') {
+        let fresh_line = (|| {
+            if !line.contains("live:1") {
+                return None;
+            }
+            let ch_at = line.find("ch:\"")? + 4;
+            let ch_end = ch_at + line[ch_at..].find('"')?;
+            let handle = handles
+                .iter()
+                .find(|(name, _)| name == &line[ch_at..ch_end])
+                .map(|(_, h)| h.as_str())?;
+            let fresh = cache.get(handle)?;
+            let id_at = line.find("id:\"")? + 4;
+            let id_end = id_at + line[id_at..].find('"')?;
+            if &line[id_at..id_end] == fresh {
+                return None;
+            }
+            Some(format!("{}{}{}", &line[..id_at], fresh, &line[id_end..]))
+        })();
+        match fresh_line {
+            Some(l) => {
+                patched += 1;
+                out.push_str(&l);
+            }
+            None => out.push_str(line),
+        }
+    }
+    log::info!("youtube card: refreshed {patched} live id(s)");
+    out
+}
+
 /// handle -> current live video id, resolved by the app runtime (ground truth
 /// for the youtube agent — memorized live ids in the model are always stale).
 fn youtube_live_cache() -> &'static std::sync::Mutex<std::collections::HashMap<&'static str, String>>
@@ -3366,7 +3428,7 @@ script_mod! {
                         // Layer 3 (W08) — the multi-app switcher moved INTO the
                         // native composer pill (＋ new app, ⟳ switch). The screen
                         // is otherwise just the full-screen a2app card — no top
-                        // chrome (see `handle_actions` AndroidComposerNewApp/Switch).
+                        // chrome (see `handle_actions` NativeComposerNewApp/Switch).
 
                         top_bar := View {
                             width: Fill
@@ -4725,6 +4787,20 @@ pub struct App {
     /// again when the pill is tapped. Initialized true in `handle_startup`.
     #[rust]
     composer_shown: bool,
+    /// One-shot guard for the `OCTOS_SEED_PROMPT` build-time seed (see
+    /// `handle_actions`). Only used when that env var is set at compile time.
+    #[rust]
+    seed_prompt_sent: bool,
+    /// One-shot guard for the `OCTOS_SEED_CARD` build-time card injection.
+    #[rust]
+    seed_card_shown: bool,
+    /// Frames the seed card has waited for the youtube live-id resolver.
+    #[rust]
+    seed_card_waits: usize,
+    /// Pending (destination, origin) to seed into the nav card's state once its
+    /// message exists. Only set by the `OCTOS_SEED_CARD=nav` build-time seed.
+    #[rust]
+    seed_nav_state: Option<(String, Option<String>)>,
     /// Single OctosUiAgent instance — replaces aichat's `Box<dyn Agent>`
     /// dynamic dispatch over LLM backends. Lazily constructed on first use.
     #[rust]
@@ -5351,14 +5427,14 @@ impl App {
     #[cfg(target_os = "android")]
     fn has_embedded_kernel() -> bool {
         let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
-        Self::android_native_lib_dir()
+        Self::native_lib_dir()
             .map(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home).is_some())
             .unwrap_or(false)
     }
 
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
-        let lib_dir = Self::android_native_lib_dir()?;
+        let lib_dir = Self::native_lib_dir()?;
         let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
         let Some(program) = Self::find_embedded_kernel(&lib_dir, &home) else {
             log::warn!(
@@ -5521,18 +5597,13 @@ impl App {
         }
     }
 
-    #[cfg(not(target_os = "android"))]
-    fn stdio_spawn() -> Option<StdioSpawn> {
-        // Desktop dev keeps the WebSocket transport (talk to `octos serve`).
-        None
-    }
-
-    /// Locate the app's nativeLibraryDir by scanning `/proc/self/maps` for our
-    /// own already-mapped `libmakepad.so` — avoids a JNI round-trip to
-    /// `ApplicationInfo.nativeLibraryDir` (the path carries a per-install hash,
-    /// so it can't be hard-coded).
-    #[cfg(target_os = "android")]
-    fn android_native_lib_dir() -> Option<std::path::PathBuf> {
+    /// Directory holding the app's packaged native libraries, found by scanning
+    /// `/proc/self/maps` for our own mapped `libmakepad.so`. Android and
+    /// OpenHarmony are both Linux-kernel platforms that mount `/proc`, and
+    /// neither hands the app its lib dir directly (the bundle path carries an
+    /// install-specific prefix), so this is identical on both.
+    #[cfg(mobile)]
+    fn native_lib_dir() -> Option<std::path::PathBuf> {
         let maps = std::fs::read_to_string("/proc/self/maps").ok()?;
         for line in maps.lines() {
             let Some(slash) = line.find('/') else { continue };
@@ -5543,6 +5614,111 @@ impl App {
         }
         None
     }
+
+    /// The app-private read/write root inside the OpenHarmony sandbox.
+    #[cfg(target_env = "ohos")]
+    fn ohos_home() -> std::path::PathBuf {
+        std::path::PathBuf::from("/data/storage/el2/base/files/octos-home")
+    }
+
+    /// Bundled kernel path, if present. Mirrors the Android layout: the binary
+    /// ships as `liboctos.so` in the native lib dir, with a staged copy under
+    /// HOME as the fallback.
+    #[cfg(target_env = "ohos")]
+    fn find_embedded_kernel(
+        lib_dir: &std::path::Path,
+        home: &std::path::Path,
+    ) -> Option<std::path::PathBuf> {
+        [lib_dir.join("liboctos.so"), home.join(".bin/liboctos.so")]
+            .into_iter()
+            .find(|p| p.exists())
+    }
+
+    /// Whether the bundled kernel is present AND actually executable here.
+    ///
+    /// Unlike Android — where exec from `nativeLibraryDir` is a documented,
+    /// relied-upon capability — it is not established that an OpenHarmony HAP
+    /// may exec out of its bundle libs dir. Claiming an embedded kernel we
+    /// cannot launch would be worse than not having one: `stdio.is_some()` also
+    /// selects the `_main` profile id, so a kernel that fails to spawn would
+    /// leave the app talking to a remote server under a profile that server has
+    /// never heard of. So probe with a real `--version` exec and believe the
+    /// result rather than the file's mode bits.
+    #[cfg(target_env = "ohos")]
+    fn ohos_kernel_is_executable(program: &std::path::Path) -> bool {
+        match std::process::Command::new(program).arg("--version").output() {
+            Ok(out) if out.status.success() => true,
+            Ok(out) => {
+                log::warn!(
+                    "stdio: {} exited {} on --version probe; using WebSocket transport",
+                    program.display(),
+                    out.status
+                );
+                false
+            }
+            Err(e) => {
+                log::warn!(
+                    "stdio: cannot exec {} ({e}); using WebSocket transport",
+                    program.display()
+                );
+                false
+            }
+        }
+    }
+
+    #[cfg(target_env = "ohos")]
+    fn has_embedded_kernel() -> bool {
+        let home = Self::ohos_home();
+        Self::native_lib_dir()
+            .and_then(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home))
+            .is_some_and(|p| Self::ohos_kernel_is_executable(&p))
+    }
+
+    #[cfg(target_env = "ohos")]
+    fn stdio_spawn() -> Option<StdioSpawn> {
+        let lib_dir = Self::native_lib_dir()?;
+        let home = Self::ohos_home();
+        let program = Self::find_embedded_kernel(&lib_dir, &home).or_else(|| {
+            log::warn!(
+                "stdio: bundled octos not found under {}; using WebSocket transport",
+                lib_dir.display()
+            );
+            None
+        })?;
+        if !Self::ohos_kernel_is_executable(&program) {
+            return None;
+        }
+        // Create HOME before spawning: `Command::spawn` chdir's into `cwd`
+        // before exec, so a missing dir fails the spawn with ENOENT even though
+        // the binary is fine (same trap as the Android path).
+        if let Err(e) = std::fs::create_dir_all(&home) {
+            log::warn!("stdio: could not create HOME {}: {e}", home.display());
+        }
+        log::info!("stdio: octos={} HOME={}", program.display(), home.display());
+        let a2app = home.join("a2app").to_string_lossy().into_owned();
+        let env = vec![
+            ("HOME".to_owned(), home.to_string_lossy().into_owned()),
+            ("OCTOS_SKILLS_PATH".to_owned(), a2app),
+            ("RUST_LOG".to_owned(), "info".to_owned()),
+        ];
+        Some(StdioSpawn {
+            program,
+            args: vec!["serve".to_owned(), "--stdio".to_owned()],
+            env,
+            cwd: Some(home),
+        })
+    }
+
+    #[cfg(not(mobile))]
+    fn stdio_spawn() -> Option<StdioSpawn> {
+        // Desktop dev keeps the WebSocket transport (talk to `octos serve`).
+        None
+    }
+
+    /// Locate the app's nativeLibraryDir by scanning `/proc/self/maps` for our
+    /// own already-mapped `libmakepad.so` — avoids a JNI round-trip to
+    /// `ApplicationInfo.nativeLibraryDir` (the path carries a per-install hash,
+    /// so it can't be hard-coded).
 
     /// Does a routed/composed app id have a spec on disk yet? Checks the same
     /// two locations `card_lint::load_rules` reads. Used to reject hallucinated
@@ -5888,7 +6064,7 @@ impl App {
     /// Send `text` through the octos agent, reusing the splash-mode wrapping,
     /// saved-card injection, streaming state and list scroll. Both the Makepad
     /// composer (`send_message`) and the native Android floating composer
-    /// (`AndroidComposerSubmit`, routed from `handle_actions`) land here.
+    /// (`NativeComposerSubmit`, routed from `handle_actions`) land here.
     /// TEST/automation hook: `--es makepad.AUTO_PROMPT "<text>"` (env
     /// MAKEPAD_AUTO_PROMPT) auto-submits ONE prompt once a session is open, so a
     /// live LLM generation can be driven without touching the native composer via
@@ -6061,7 +6237,10 @@ impl App {
     /// full screen. A full redraw is required after flipping glass-composite
     /// visibility or the old composite lingers (see [[octos-app-android]]).
     fn sync_composer(&mut self, cx: &mut Cx) {
-        #[cfg(target_os = "android")]
+        // OHOS uses the native overlay for the same reasons Android does, and
+        // additionally because makepad has no text-input bridge there at all —
+        // a makepad TextInput on OHOS can never receive a character.
+        #[cfg(mobile)]
         {
             // The native floating composer overlay replaces the Makepad docked
             // composer + reveal pill on Android; keep both Makepad widgets hidden.
@@ -6071,15 +6250,15 @@ impl App {
             // expands when the user taps "+".
             self.ui.widget(cx, ids!(composer)).set_visible(cx, false);
             self.ui.button(cx, ids!(reveal_pill)).set_visible(cx, false);
-            cx.show_android_composer();
+            cx.show_native_composer();
             if self.composer_shown {
-                cx.expand_android_composer();
+                cx.expand_native_composer();
             } else {
-                cx.collapse_android_composer();
+                cx.collapse_native_composer();
             }
             cx.redraw_all();
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(mobile))]
         {
             let show = self.composer_shown;
             self.ui.widget(cx, ids!(composer)).set_visible(cx, show);
@@ -6272,14 +6451,14 @@ impl App {
         self.ui
             .view(cx, ids!(content_screen))
             .set_visible(cx, is_content);
-        // The native Android floating composer belongs to the chat screen —
-        // hide it while the content browser is up so it doesn't float over it.
-        #[cfg(target_os = "android")]
+        // The native floating composer belongs to the chat screen — hide it
+        // while the content browser is up so it doesn't float over it.
+        #[cfg(mobile)]
         {
             if is_chat {
-                cx.show_android_composer();
+                cx.show_native_composer();
             } else {
-                cx.hide_android_composer();
+                cx.hide_native_composer();
             }
         }
         self.ui.redraw(cx);
@@ -6861,6 +7040,24 @@ struct LoginAsyncAction {
 
 impl MatchEvent for App {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // Build-time seed prompt. makepad on OpenHarmony has no native
+        // text-input bridge yet (the IME opens but keystrokes never reach the
+        // composer), so there is no way to drive the app by typing on device.
+        // Building with OCTOS_SEED_PROMPT="…" submits it once as soon as the
+        // agent and a foreground session exist. Absent that env var this
+        // compiles to nothing.
+        if let Some(seed) = option_env!("OCTOS_SEED_PROMPT") {
+            if !self.seed_prompt_sent
+                && self.agent.is_some()
+                && self.fg_session().is_some()
+            {
+                self.seed_prompt_sent = true;
+                log::info!("seed prompt: {seed:?}");
+                self.submit_prompt(cx, seed.to_string());
+            }
+        }
+
+
         let opacity_slider = self.ui.slider(cx, ids!(opacity_slider));
         if let Some(opacity) = opacity_slider
             .slided(actions)
@@ -7018,7 +7215,7 @@ impl MatchEvent for App {
             self.collapse_sidebar_if_narrow(cx);
         }
         // Layer 3 (W08) — new-app / switch now live in the NATIVE composer pill
-        // (see the AndroidComposerNewApp/Switch action handlers above); no
+        // (see the NativeComposerNewApp/Switch action handlers above); no
         // top-strip or sidebar buttons.
         // Top-bar ☰ — bring the collapsed sidebar back (or hide it again).
         if self.ui.button(cx, ids!(nav_toggle)).clicked(actions) {
@@ -7039,13 +7236,15 @@ impl MatchEvent for App {
             self.cancel_request(cx);
         }
 
-        // Native Android floating composer submit → the same send path as the
-        // Makepad composer (splash-mode wrapping, saved cards, streaming). The
-        // action is posted from the platform's `onComposerSubmit` JNI callback
-        // (see `android.rs::handle_message`). Never fires off Android.
+        // Native floating composer submit → the same send path as the Makepad
+        // composer (splash-mode wrapping, saved cards, streaming). The action is
+        // posted from the platform's `onComposerSubmit` JNI callback on Android
+        // (`android.rs::handle_message`) and from the ArkTS composer overlay's
+        // napi callback on OpenHarmony (`open_harmony.rs::handle_message`).
+        // Never fires on desktop.
         for action in actions {
             if let Some(sub) = action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerSubmit>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerSubmit>()
             {
                 let text = sub.text.clone();
                 self.submit_prompt(cx, text);
@@ -7053,7 +7252,7 @@ impl MatchEvent for App {
             // Deep link / share (e.g. a YouTube URL shared from another app): emit a
             // `deeplink` event to the web card, which plays it (octos.on("deeplink")).
             if let Some(dl) = action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidDeepLink>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeDeepLink>()
             {
                 let payload = format!(
                     "\"{}\"",
@@ -7064,13 +7263,13 @@ impl MatchEvent for App {
             // Layer 3 — native composer "＋" / "⟳" controls (app management lives
             // in the composer now; the screen is otherwise just the a2app card).
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerNewApp>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerNewApp>()
                 .is_some()
             {
                 self.open_new_app(cx);
             }
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerSwitch>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerSwitch>()
                 .is_some()
             {
                 let n = self.apps.len();
@@ -7082,7 +7281,7 @@ impl MatchEvent for App {
             // pill + raised the keyboard; mark composer_shown so the app state
             // matches and a later sync_composer won't re-fold it mid-typing.
             if action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidComposerExpand>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeComposerExpand>()
                 .is_some()
             {
                 self.composer_shown = true;
@@ -7090,7 +7289,7 @@ impl MatchEvent for App {
             // Composer QR scan → provision the LLM from the decoded JSON payload,
             // then respawn the kernel so the new provider/key takes effect.
             if let Some(scan) = action
-                .downcast_ref::<makepad_widgets::makepad_platform::event::AndroidQrScanned>()
+                .downcast_ref::<makepad_widgets::makepad_platform::event::NativeQrScanned>()
             {
                 let json = scan.json.clone();
                 match crate::app::login::apply_provision_config_json(&json) {
@@ -7625,13 +7824,31 @@ impl MatchEvent for App {
         // photo. Must be set before the first decode (OnceLock).
         std::env::set_var("MAKEPAD_GLTF_TEX_DEBUG", "1");
 
-        // Android: the process has no usable HOME, and everything below
+        // Mobile: the process has no usable HOME, and everything below
         // (server.json, the token store, chat persistence) is HOME-relative.
-        // Point HOME at the app-private files dir makepad reports from
-        // `getFilesDir()` before any config path is resolved.
-        #[cfg(target_os = "android")]
-        if let Some(dir) = cx.get_data_dir() {
-            std::env::set_var("HOME", &dir);
+        // Point HOME at the app-private files dir the platform reports —
+        // `getFilesDir()` on Android, the HAP sandbox root on OpenHarmony —
+        // before any config path is resolved. Without it boot fails with
+        // "auto-solo: save default server config: Operation not permitted"
+        // and the UI comes up blank.
+        #[cfg(mobile)]
+        {
+            // OHOS needs a fallback: its sandbox root is fixed and always
+            // writable, whereas a missing Android data dir means there is
+            // nothing sensible to point at.
+            #[cfg(target_env = "ohos")]
+            let dir = Some(
+                cx.get_data_dir()
+                    .unwrap_or_else(|| "/data/storage/el2/base/files".to_string()),
+            );
+            #[cfg(not(target_env = "ohos"))]
+            let dir = cx.get_data_dir();
+
+            if let Some(dir) = dir {
+                let _ = std::fs::create_dir_all(&dir);
+                std::env::set_var("HOME", &dir);
+                log::info!("mobile: HOME={dir}");
+            }
         }
 
         // Provisioning deploy (non-rooted devices): `makepad.PROVISION_DIR`
@@ -7717,9 +7934,9 @@ impl MatchEvent for App {
         // listens on in stdio mode — so sign-in always failed, `clear_chat`
         // never ran, no sessions were created, and every composer submit was
         // silently dropped (dead app on a fresh embedded-kernel install).
-        #[cfg(target_os = "android")]
+        #[cfg(mobile)]
         let authed = Self::has_embedded_kernel() || self.boot_is_authed();
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(mobile))]
         let authed = self.boot_is_authed();
         self.show_login(cx, false);
         // W04 / M2 — make sure the chat_screen / content_screen pair
@@ -7817,6 +8034,158 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Build with OCTOS_SEED_CARD=1 to push one of the prebuilt Splash
+        // weather cards straight into the conversation, bypassing the AMA and
+        // the LLM entirely. The card is pure Splash DSL with live
+        // `sys.weather(...)` bindings, so it exercises the real native renderer
+        // and real open-meteo data — useful when no LLM key is available.
+        // Re-inject whenever the conversation is empty rather than once: the
+        // app bulk-replaces CHAT_DATA during session restore / app switch,
+        // which wiped a one-shot injection (card flashed, then vanished).
+        // Pushing only when empty is self-limiting.
+        if option_env!("OCTOS_SEED_CARD").is_some()
+            && CHAT_DATA.read().map(|d| d.messages.is_empty()).unwrap_or(false)
+        {
+            self.seed_card_shown = true;
+            // OCTOS_SEED_CARD=web (or =youtube) seeds a `runhtml` web app card
+            // instead of the native Splash one, so the webview substrate can be
+            // exercised without an LLM. The card embeds a YouTube live stream,
+            // which is also the youtube app's own card format.
+            // `None` means "not yet" — the card defers this frame WITHOUT
+            // returning from handle_event, which would starve every other
+            // handler below (including the ones that drive the resolver we are
+            // waiting on).
+            let text = match option_env!("OCTOS_SEED_CARD") {
+                // The nav app is a DETERMINISTIC served card (no LLM), so it can
+                // be seeded verbatim exactly the way `route_to_app` serves it —
+                // including the origin/destination state, which is what makes it
+                // open on a real A->B route preview instead of an empty search
+                // box. Destination/origin come from OCTOS_SEED_NAV[_FROM].
+                Some("nav") => {
+                    let dest = option_env!("OCTOS_SEED_NAV").unwrap_or("SFO");
+                    let orig = option_env!("OCTOS_SEED_NAV_FROM");
+                    log::info!(
+                        "seed card: nav canonical card, {} bytes, to={dest:?} from={orig:?}",
+                        NAV_CANONICAL_CARD.len()
+                    );
+                    self.seed_nav_state = Some((dest.to_string(), orig.map(|s| s.to_string())));
+                    Some(format!("```runsplash\n{NAV_CANONICAL_CARD}\n```"))
+                }
+                // Both substrates on screen at once: a native Splash card
+                // (GPU fragment shader) stacked above a webview card, to check
+                // the ArkTS Web overlay really clips to its own rect instead of
+                // covering the whole surface. Pushed as TWO messages so the
+                // chat list stacks them; handled below via `seed_split_web`.
+                // Both substrates in ONE message: a native Splash card (GPU
+                // fragment shader) above a webview card. One message rather
+                // than two so the blocks are adjacent and the self-healing
+                // re-injection (which fires whenever CHAT_DATA is empty) can't
+                // interleave duplicates of a two-message pair.
+                Some("split") => {
+                    let gpu = include_str!("../../../docs/webview-cards/split-gpu.splash");
+                    let web = include_str!("../../../docs/webview-cards/split-web.html");
+                    log::info!("seed card: split — native GPU card + webview card");
+                    Some(format!("```runsplash\n{gpu}\n```\n\n```runhtml\n{web}\n```"))
+                }
+                // A real news reader: crawls Hacker News and ZeroHedge live
+                // through the http.fetch bridge (both hosts are on the
+                // allowlist in web_card.rs) and renders an Apple-News-style
+                // reader with sections, a lead story, article pages and
+                // external links.
+                Some("news") => {
+                    let card = include_str!("../../../docs/webview-cards/news.html");
+                    log::info!("seed card: {} bytes of html (news)", card.len());
+                    Some(format!("```runhtml\n{card}\n```"))
+                }
+                // Exercises the JS→native bridge (octos_native.invoke) against
+                // real native components: filesystem, clipboard, and the system
+                // file picker.
+                Some("bridge") => {
+                    let card = include_str!("../../../docs/webview-cards/native-bridge.html");
+                    log::info!("seed card: {} bytes of html (bridge)", card.len());
+                    Some(format!("```runhtml\n{card}\n```"))
+                }
+                Some(kind @ ("web" | "youtube")) => {
+                    // Every video id comes from the app's own live-id resolver.
+                    // NOTHING is hardcoded: a YouTube live id goes stale within
+                    // days, and a stale one does not degrade gracefully — the
+                    // player shows "this live stream recording is not
+                    // available" instead of playing anything.
+                    //
+                    // Resolution takes a few seconds after boot and lands one
+                    // channel at a time, so wait for the whole set (bounded)
+                    // rather than seeding with a half-filled card.
+                    let resolved: Vec<(String, String)> = {
+                        let cache = youtube_live_cache().lock().unwrap();
+                        YOUTUBE_LIVE_CHANNELS
+                            .iter()
+                            .filter_map(|(handle, label)| {
+                                cache.get(*handle).map(|id| (id.clone(), (*label).to_string()))
+                            })
+                            .collect()
+                    };
+                    self.seed_card_waits += 1;
+                    let all_in = resolved.len() == YOUTUBE_LIVE_CHANNELS.len();
+                    if !all_in && self.seed_card_waits < 600 {
+                        None
+                    } else {
+                        // `youtube` seeds the REAL app — the full YouTube player
+                        // the youtube agent composes (top bar, sticky player,
+                        // feed, channel rows, PiP), which is what runs on
+                        // Android. `web` seeds a minimal card instead, kept for
+                        // diagnosing the webview substrate itself.
+                        let card = if kind == "youtube" {
+                            patch_youtube_live_ids(include_str!(
+                                "../../../docs/youtube-player-reference.html"
+                            ))
+                        } else {
+                            let json = resolved
+                                .iter()
+                                .map(|(id, label)| {
+                                    format!("{{\"id\":\"{id}\",\"label\":\"{label}\"}}")
+                                })
+                                .collect::<Vec<_>>()
+                                .join(",");
+                            include_str!("../../../docs/webview-cards/youtube-live.html")
+                                .replace("__CHANNELS_JSON__", &format!("[{json}]"))
+                        };
+                        log::info!(
+                            "seed card: {} bytes of html ({kind}), {} live channels resolved",
+                            card.len(),
+                            resolved.len()
+                        );
+                        Some(format!("```runhtml\n{card}\n```"))
+                    }
+                }
+                _ => {
+                    let card = include_str!("../../../docs/weather-styles/style-glass.splash");
+                    log::info!("seed card: {} bytes of splash", card.len());
+                    Some(format!("```runsplash\n{card}\n```"))
+                }
+            };
+            if let Some(text) = text {
+                let mut data = CHAT_DATA.write().unwrap();
+                data.messages.push(ChatMessage {
+                    role: ChatRole::Assistant,
+                    text,
+                });
+                // Seed the nav card's search state the same way `route_to_app`
+                // does, so it opens on the A->B preview. Seeding STATE (not the
+                // card text) keeps the in-card search boxes live for re-search.
+                if let Some((dest, orig)) = self.seed_nav_state.take() {
+                    let item_id = data.messages.len() - 1;
+                    let st = data.a2app_state.entry(item_id).or_default();
+                    st.insert("q".to_string(), dest);
+                    st.insert("sel".to_string(), "1".to_string());
+                    if let Some(o) = orig {
+                        st.insert("oq".to_string(), o);
+                    }
+                }
+                data.is_streaming = false;
+            }
+            self.update_empty_state_visibility(cx);
+            cx.redraw_all();
+        }
         // Central drain for async image decodes: guarantee every decoded image
         // buffer lands in the global ImageCache even when NO Image widget
         // catches the one-shot AsyncImageLoad action (a Splash card evals twice
@@ -7843,8 +8212,11 @@ impl AppMain for App {
         // pill back to the "+" FAB — otherwise unfolding via "+" and then
         // hiding the keyboard left the pill stuck open, covering the card.
         // Submit already folds first, so this is a harmless no-op there.
-        // Android only (desktop has no soft keyboard / uses the reveal pill).
-        #[cfg(target_os = "android")]
+        // Mobile only (desktop has no soft keyboard / uses the reveal pill).
+        // OHOS reports the same VirtualKeyboard events, so it needs this too —
+        // without it, dismissing the keyboard there leaves the composer pill
+        // expanded over the card.
+        #[cfg(mobile)]
         if let Event::VirtualKeyboard(
             makepad_widgets::makepad_platform::event::VirtualKeyboardEvent::DidHide { .. },
         ) = event
