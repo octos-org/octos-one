@@ -1,0 +1,87 @@
+{
+  "id": "octos.weather.immersive",
+  "version": "1.0.0",
+  "schema_range": ">=1.0 <2.0",
+  "_note": "The dora_tool_map.json analogue: every value the LLM used to be asked for. A designer edits THIS and the card re-renders with no LLM call. Font FILES live here, not in the plan — including the CJK and symbol members whose omission rendered 上海 as tofu boxes.",
+
+  "fonts": {
+    "_dir": "makepad_widgets:resources",
+    "display":  "Roboto-Thin.ttf",
+    "body":     "Roboto-Light.ttf",
+    "cjk":      "LXGWWenKaiRegular.ttf",
+    "symbols":  "NotoSans-Regular.ttf"
+  },
+
+  "type": {
+    "city":      { "font": "body",    "size": 26, "color": "#ffffffe6" },
+    "hero":      { "font": "display", "size": 76, "color": "#ffffff"   },
+    "condition": { "font": "body",    "size": 17, "color": "#ffffffe6" },
+    "stat":      { "font": "body",    "size": 14, "color": "#ffffffb3", "needs_symbols": true },
+    "row":       { "font": "body",    "size": 14, "color": "#ffffffe6" },
+    "row_dim":   { "font": "body",    "size": 14, "color": "#ffffff88" },
+    "caption":   { "font": "body",    "size": 11, "color": "#ffffff99" },
+    "tile_cap":  { "font": "body",    "size": 11, "color": "#ffffff99" },
+    "tile_val":  { "font": "body",    "size": 20, "color": "#ffffff"   },
+    "tile_sub":  { "font": "body",    "size": 12, "color": "#ffffffcc" }
+  },
+
+  "color": {
+    "base":    "#0a0e14",
+    "scrim":   "#00000066",
+    "panel":   "#00000055",
+    "tile":    "#ffffff1f",
+    "aqi_good": "#32d74b", "aqi_moderate": "#ffd60a",
+    "aqi_unhealthy": "#ff9f0a", "aqi_very_unhealthy": "#ff453a"
+  },
+
+  "layout": {
+    "_note": "The invariants the LLM kept getting wrong. Root Fit + a photo TALLER than the content; the card list does the scrolling.",
+    "root_height": "Fit",
+    "photo_height": 2000,
+    "page_padding": { "left": 22, "top": 54, "right": 22, "bottom": 8 },
+    "panel_radius": 20.0,
+    "tile_radius": 18.0,
+    "row_height": 40,
+    "day_col_width": 92,
+    "icon_col_width": 34,
+    "temp_col_width": 46,
+    "temp_inner_pad": 5,
+    "bar_margin": 10,
+    "bar_height": 8,
+    "section_gap": 16,
+    "map_height": 190
+  },
+
+  "strings": {
+    "en": {
+      "satellite": "Satellite", "air_quality": "Air Quality",
+      "sun": "Sunrise / Sunset", "illuminated": "% illuminated",
+      "aqi": "AIR QUALITY", "uv": "UV INDEX", "humidity": "HUMIDITY", "wind": "WIND",
+      "pressure": "PRESSURE", "visibility": "VISIBILITY",
+      "days": ["Today", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+      "uv_cat": ["Low", "Moderate", "High", "Very High"],
+      "aqi_cat": ["Good", "Moderate", "Unhealthy", "Very Unhealthy"]
+    },
+    "zh": {
+      "satellite": "卫星云图", "air_quality": "空气质量图",
+      "sun": "日出 / 日落", "illuminated": "% 照亮",
+      "aqi": "空气质量", "uv": "紫外线", "humidity": "湿度", "wind": "风速",
+      "pressure": "气压", "visibility": "能见度",
+      "days": ["今天", "周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+      "uv_cat": ["低", "中等", "高", "很高"],
+      "aqi_cat": ["优", "良", "不健康", "非常不健康"]
+    }
+  },
+
+  "condition_icons": {
+    "_note": "semantic condition -> WeatherIcon shader index + emoji, per backend. The plan says 'cloudy', never '2'.",
+    "clear":         { "cond": 0, "emoji": "☀️" },
+    "partly_cloudy": { "cond": 1, "emoji": "⛅" },
+    "cloudy":        { "cond": 2, "emoji": "☁️" },
+    "rain":          { "cond": 3, "emoji": "🌧️" },
+    "thunderstorm":  { "cond": 4, "emoji": "⛈️" },
+    "snow":          { "cond": 5, "emoji": "❄️" },
+    "wind":          { "cond": 6, "emoji": "🌬️" },
+    "fog":           { "cond": 7, "emoji": "🌫️" }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "schema": "octos.card.plan/1",
+  "plan": "stock",
+  "theme": "octos.stock.dark",
+  "locale": "en",
+  "state": { "selected": "", "range": "1d" },
+  "views": [
+    { "when": "selected == \"\"",
+      "sections": [
+        { "block": "MoversList", "args": {
+            "count": 10, "eyebrow": "TODAY · TOP GAINERS", "title": "Movers",
+            "onTap": "select" } }
+      ] },
+    { "when": "selected != \"\"",
+      "sections": [
+        { "block": "QuoteHeader", "args": { "ticker": "$selected" } },
+        { "block": "PriceChart",  "args": { "ticker": "$selected", "range": "$range" } },
+        { "block": "RangeChips",  "args": { "ranges": ["1d","5d","1mo","6mo","1y"], "onTap": "setRange" } },
+        { "block": "StatGrid",    "args": { "ticker": "$selected",
+                                            "stats": ["open","high","low","prev","volume","mktcap"] } }
+      ] }
+  ]
+}
