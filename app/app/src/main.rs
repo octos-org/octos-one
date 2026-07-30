@@ -1185,6 +1185,403 @@ fn substitute_state_keys(text: &str, state: &CardState) -> String {
     out
 }
 
+// ── Phase 1: card composition (Card{ use: … } embeds) ────────────────────────
+// Coarse, reusable cards an LLM composes into apps. `Card{ use: "nav.navigate"
+// props: {…} on: {…} }` is expanded HOST-SIDE by inlining the referenced card's
+// body — with its `{{props.k}}` inputs bound and its internal state namespaced —
+// into the one combined card before it reaches the Splash VM. So the composed
+// app is a single card/VM assembled from parts (one live MapView at a time), and
+// the LLM only has to emit a small host that wires pre-built cards. See
+// a2app/apps/nav/DECOMPOSITION.md.
+
+/// Registry: `use:` name → the direct-served component body. Extend as cards are
+/// extracted (nav.picker / nav.planner next).
+fn embeddable_card(name: &str) -> Option<&'static str> {
+    match name.trim() {
+        "nav.navigate" => Some(include_str!(
+            "../../../a2app/apps/nav/cards/navigate.splash"
+        )),
+        _ => None,
+    }
+}
+
+/// Cap on `Card{}` nesting expanded — guards against a card that embeds itself
+/// (direct or mutual recursion) blowing the stack; unmatched depth is left as an
+/// inert placeholder.
+const MAX_CARD_EMBED_DEPTH: u8 = 4;
+
+/// Index of the `}` matching the `{` at `open` (which must point AT that `{`).
+/// String-aware and `{{…}}`-aware: braces inside `"…"` and the `{{state.x}}` /
+/// `{{props.x}}` token delimiters do NOT count toward depth, so a prop value like
+/// `"{{state.drop}}"` can't unbalance the scan. Returns None if unmatched.
+fn matching_brace(s: &str, open: usize) -> Option<usize> {
+    let b = s.as_bytes();
+    if open >= b.len() || b[open] != b'{' {
+        return None;
+    }
+    let mut depth = 0i32;
+    let mut i = open;
+    let mut in_str = false;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        // Braces inside "…" are skipped via in_str above. A bare template token
+        // `{{state.x}}` (e.g. `let ss = {{state.sel}}`) is self-balancing (+2/−2),
+        // so it needs no special-casing — and special-casing `}}` would wrongly
+        // swallow adjacent STRUCTURAL closers like `{key:"x"}}`.
+        match c {
+            b'"' => in_str = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split the inside of a `{ … }` block on TOP-LEVEL commas (commas nested inside
+/// `{…}` or `"…"` are not separators). Used to parse `props:` / `on:` bodies.
+fn split_top_level_commas(inner: &str) -> Vec<String> {
+    let b = inner.as_bytes();
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0i32;
+    let mut in_str = false;
+    let mut i = 0usize;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            b'"' => in_str = true,
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            b',' if depth == 0 => {
+                parts.push(inner[start..i].trim().to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let tail = inner[start..].trim();
+    if !tail.is_empty() {
+        parts.push(tail.to_string());
+    }
+    parts
+}
+
+/// Strip one layer of matching quotes and trim.
+fn unquote(v: &str) -> String {
+    let v = v.trim();
+    if v.len() >= 2 && v.starts_with('"') && v.ends_with('"') {
+        v[1..v.len() - 1].to_string()
+    } else {
+        v.to_string()
+    }
+}
+
+/// Parse a flat `key: value, key: value` body into a map (values unquoted). Used
+/// for `props:`.
+fn parse_flat_map(inner: &str) -> std::collections::BTreeMap<String, String> {
+    let mut m = std::collections::BTreeMap::new();
+    for part in split_top_level_commas(inner) {
+        if let Some(colon) = part.find(':') {
+            let k = part[..colon].trim().to_string();
+            let v = unquote(&part[colon + 1..]);
+            if !k.is_empty() {
+                m.insert(k, v);
+            }
+        }
+    }
+    m
+}
+
+/// One `on:` handler: when the child emits `event`, write parent state `key`. If
+/// `value` is Some, that literal is written; if None, the value carried by the
+/// emit is passed through (so `nav.picker`'s `pick` stores the chosen place).
+struct EmitHandler {
+    key: String,
+    value: Option<String>,
+}
+
+/// Parse an `on: { ev: { key: "k", value: "v" }, ev2: { key: "k2" } }` body.
+fn parse_on_map(inner: &str) -> std::collections::BTreeMap<String, EmitHandler> {
+    let mut m = std::collections::BTreeMap::new();
+    for part in split_top_level_commas(inner) {
+        let Some(colon) = part.find(':') else { continue };
+        let ev = part[..colon].trim().to_string();
+        let rhs = part[colon + 1..].trim();
+        let obj = rhs.strip_prefix('{').and_then(|r| r.strip_suffix('}')).unwrap_or(rhs);
+        let fields = parse_flat_map(obj);
+        if let Some(key) = fields.get("key") {
+            m.insert(
+                ev,
+                EmitHandler {
+                    key: key.clone(),
+                    value: fields.get("value").cloned(),
+                },
+            );
+        }
+    }
+    m
+}
+
+/// Substitute `{{props.<k>}}` tokens with the embed's bound prop values. An
+/// unbound prop renders `"0"` — matching the cards' "0 = unset" convention, so a
+/// child's `if x != "0"` guard treats an omitted optional input as unset. Same
+/// scanning shape as `substitute_state_keys`.
+fn substitute_props(text: &str, props: &std::collections::BTreeMap<String, String>) -> String {
+    if !text.contains("{{props.") {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(pos) = rest.find("{{props.") {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + "{{props.".len()..];
+        if let Some(end) = after.find("}}") {
+            let key = after[..end].trim();
+            out.push_str(props.get(key).map(String::as_str).unwrap_or("0"));
+            rest = &after[end + 2..];
+        } else {
+            out.push_str(&rest[pos..]);
+            return out;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Namespace a child card's INTERNAL state so two embeds of the same card (or the
+/// parent) never collide: `{{state.X}}` reads and `agent.notify("set", {key: "X"`
+/// writes both become `…_c<inst>_X`. The emit mechanism uses `event:` (not
+/// `key:`), so it is untouched here and rewritten separately.
+fn namespace_child_state(body: &str, inst: u32) -> String {
+    let prefix = format!("_c{inst}_");
+    let reads = body.replace("{{state.", &format!("{{{{state.{prefix}"));
+    // writes: key: "X"  /  key:"X"  inside notify payloads
+    let w1 = reads.replace("{key: \"", &format!("{{key: \"{prefix}"));
+    w1.replace("{key:\"", &format!("{{key:\"{prefix}"))
+}
+
+/// Rewrite the child's `agent.notify("emit", {event: "<ev>" [, value: <v>]})`
+/// calls into parent-state writes per the embed's `on:` map. An emit with no
+/// matching handler becomes an inert namespaced write (so it never leaks a
+/// dangling notify). Parent keys written here are NOT namespaced — they are the
+/// composition bus the host wires.
+fn rewrite_child_emits(
+    body: &str,
+    inst: u32,
+    on: &std::collections::BTreeMap<String, EmitHandler>,
+) -> String {
+    let marker = "agent.notify(\"emit\"";
+    if !body.contains(marker) {
+        return body.to_string();
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(pos) = rest.find(marker) {
+        out.push_str(&rest[..pos]);
+        // find the payload object `{ … }` and the enclosing `)`
+        let after = &rest[pos..];
+        let Some(brace_rel) = after.find('{') else {
+            out.push_str(after);
+            return out;
+        };
+        let Some(brace_end) = matching_brace(after, brace_rel) else {
+            out.push_str(after);
+            return out;
+        };
+        // the call ends at the first ')' after the payload
+        let Some(paren_rel) = after[brace_end..].find(')') else {
+            out.push_str(after);
+            return out;
+        };
+        let call_end = brace_end + paren_rel + 1;
+        let payload = &after[brace_rel + 1..brace_end];
+        let fields = parse_flat_map(payload);
+        let ev = fields.get("event").cloned().unwrap_or_default();
+        let replacement = match on.get(&ev) {
+            Some(h) => {
+                let val = h
+                    .value
+                    .clone()
+                    .or_else(|| fields.get("value").cloned())
+                    .unwrap_or_else(|| "1".to_string());
+                format!(
+                    "agent.notify(\"set\", {{key: \"{}\", value: \"{}\"}})",
+                    h.key, val
+                )
+            }
+            None => format!(
+                "agent.notify(\"set\", {{key: \"_c{inst}_unhandled_{ev}\", value: \"1\"}})"
+            ),
+        };
+        out.push_str(&replacement);
+        rest = &after[call_end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Remove `//`-to-end-of-line comments that are NOT inside a string literal, so a
+/// card's doc comments (which may legitimately mention `Card{`, `{{props.…}}`,
+/// etc.) can't be misread as code by the embed scanner — and so the composed
+/// output carries no stale component docs. Preserves newlines and string content
+/// (incl. `://` inside a quoted URL).
+fn strip_line_comments(body: &str) -> String {
+    let b = body.as_bytes();
+    let mut out = String::with_capacity(body.len());
+    let mut i = 0usize;
+    let mut seg_start = 0usize;
+    let mut in_str = false;
+    while i < b.len() {
+        let c = b[i];
+        if in_str {
+            if c == b'\\' {
+                i += 2;
+                continue;
+            }
+            if c == b'"' {
+                in_str = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == b'"' {
+            in_str = true;
+        } else if c == b'/' && i + 1 < b.len() && b[i + 1] == b'/' {
+            out.push_str(&body[seg_start..i]);
+            let mut j = i + 2;
+            while j < b.len() && b[j] != b'\n' {
+                j += 1;
+            }
+            i = j; // land on '\n' (or EOF); the newline resumes the next segment
+            seg_start = i;
+            continue;
+        }
+        i += 1;
+    }
+    out.push_str(&body[seg_start..]);
+    out
+}
+
+/// Expand every `Card{ use: "<name>" props: {…} on: {…} }` embed by inlining the
+/// referenced card body with props bound, state namespaced, and emits rewritten.
+/// Recurses (bounded by `MAX_CARD_EMBED_DEPTH`) so a card may embed another;
+/// `next_inst` threads a globally-unique instance counter across all levels.
+fn expand_card_embeds(body: &str, depth: u8, next_inst: &mut u32) -> String {
+    if depth >= MAX_CARD_EMBED_DEPTH || !body.contains("Card{") {
+        return body.to_string();
+    }
+    // Comments can mention `Card{` (e.g. a component's own usage doc) — strip
+    // them so only real code is scanned, and the composed card stays lean.
+    let body = strip_line_comments(body);
+    let body = body.as_str();
+    if !body.contains("Card{") {
+        return body.to_string();
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    // Match `Card{` only when not part of a longer identifier (e.g. `MyCard{`).
+    while let Some(rel) = rest.find("Card{") {
+        let pre = rest.as_bytes().get(rel.wrapping_sub(1)).copied();
+        if rel > 0 && pre.map(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap_or(false) {
+            // not a standalone `Card{` — copy through and keep scanning
+            out.push_str(&rest[..rel + "Card{".len()]);
+            rest = &rest[rel + "Card{".len()..];
+            continue;
+        }
+        let brace = rel + "Card".len();
+        let Some(end) = matching_brace(rest, brace) else {
+            out.push_str(rest);
+            return out;
+        };
+        out.push_str(&rest[..rel]);
+        let attrs = &rest[brace + 1..end];
+        out.push_str(&expand_one_card(attrs, depth, next_inst));
+        rest = &rest[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Expand the attributes of a single `Card{ … }` into inlined child body (or an
+/// inert error placeholder for an unknown/omitted `use:`).
+fn expand_one_card(attrs: &str, depth: u8, next_inst: &mut u32) -> String {
+    // use: "<name>"
+    let name = attrs
+        .find("use:")
+        .map(|p| {
+            let after = attrs[p + "use:".len()..].trim_start();
+            let after = after.strip_prefix('"').unwrap_or(after);
+            after.split('"').next().unwrap_or("").to_string()
+        })
+        .unwrap_or_default();
+    let props = extract_braced(attrs, "props:")
+        .map(|b| parse_flat_map(&b))
+        .unwrap_or_default();
+    let on = extract_braced(attrs, "on:")
+        .map(|b| parse_on_map(&b))
+        .unwrap_or_default();
+
+    let Some(raw) = embeddable_card(&name) else {
+        return format!(
+            "RoundedView{{width: Fill height: 40 draw_bg.color: #3a1420 \
+Label{{text: \"⚠ unknown card: {name}\" draw_text.color: #ffb4b4}}}}"
+        );
+    };
+    let inst = *next_inst;
+    *next_inst += 1;
+
+    let child = strip_card_name_line(raw).into_owned();
+    // ORDER MATTERS: namespace the child's OWN state FIRST (so only its internal
+    // {{state.x}} / {key:"x"} get the _c<inst>_ prefix), THEN inject props — a
+    // prop bound to a parent {{state.drop}} must stay an un-namespaced PARENT ref.
+    let child = namespace_child_state(&child, inst);
+    let child = substitute_props(&child, &props);
+    // Emits map to parent keys inserted last, so they too stay un-namespaced.
+    let child = rewrite_child_emits(&child, inst, &on);
+    // A child may itself embed cards (e.g. planner → picker).
+    expand_card_embeds(&child, depth + 1, next_inst)
+}
+
+/// Return the inside of the `{ … }` block that follows `label` in `attrs`, if
+/// present (string/`{{…}}`-aware brace matching).
+fn extract_braced(attrs: &str, label: &str) -> Option<String> {
+    let p = attrs.find(label)?;
+    let after = &attrs[p + label.len()..];
+    let open_rel = after.find('{')?;
+    let end = matching_brace(after, open_rel)?;
+    Some(after[open_rel + 1..end].to_string())
+}
+
 /// Persistent registry of named A2App cards, so a card can be retrieved by
 /// name and refined/improved over time (`$HOME` is the app-private files dir
 /// on Android; see `set_var("HOME", get_data_dir())` at startup).
@@ -1379,7 +1776,12 @@ fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
 /// its notify calls with the card id.
 fn substitute_card_state(body: &str, item_id: usize, state: &CardState) -> String {
     let named = strip_card_name_line(body);
-    let subst = substitute_state_keys(&named, state);
+    // Expand Card{ use: … } composition FIRST, so an embedded child's inlined
+    // body (and any {{props.k}} bound to a parent {{state.x}}) is present before
+    // state substitution resolves it. No-op for cards with no embeds.
+    let mut inst = 0u32;
+    let composed = expand_card_embeds(&named, 0, &mut inst);
+    let subst = substitute_state_keys(&composed, state);
     let safe = neutralize_bare_view(&subst);
     // Pin a `height: Fill` root to a fixed height BEFORE the image fit, so the
     // background image (`force_fullbleed_image_fit`) pins to the same height.
@@ -8407,10 +8809,239 @@ mod tests {
     use super::{
         app_card_docs, assistant_message_is_safe_for_history,
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
-        extract_nav_destination, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
-        should_start_window_drag, splash_gen_prompt, DEFAULT_GLASS_OPACITY,
+        embeddable_card, expand_card_embeds, extract_nav_destination, matching_brace,
+        namespace_child_state, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
+        rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_card_state,
+        substitute_props, EmitHandler, DEFAULT_GLASS_OPACITY,
         FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
     };
+    use std::collections::BTreeMap;
+
+    // ── Phase 1: Card{} composition ─────────────────────────────────────────
+    fn expand(body: &str) -> String {
+        let mut inst = 0u32;
+        expand_card_embeds(body, 0, &mut inst)
+    }
+
+    #[test]
+    fn matching_brace_is_string_and_double_brace_aware() {
+        // Braces inside "…" and the {{…}} token delimiters must NOT unbalance.
+        let s = r#"Card{ props: { dest: "{{state.drop}}", note: "a}b{c" } }"#;
+        let open = s.find('{').unwrap();
+        let end = matching_brace(s, open).unwrap();
+        // The matched span is the whole Card body incl. the nested props block.
+        assert_eq!(s.as_bytes()[end], b'}');
+        assert_eq!(&s[end..], "}");
+    }
+
+    #[test]
+    fn substitute_props_binds_and_defaults_unset_to_zero() {
+        let mut p = BTreeMap::new();
+        p.insert("mode".to_string(), "drive".to_string());
+        // bound prop resolves; unbound prop -> "0" (the cards' unset sentinel)
+        assert_eq!(
+            substitute_props("m={{props.mode}} d={{props.dest}}", &p),
+            "m=drive d=0"
+        );
+    }
+
+    #[test]
+    fn props_can_carry_a_parent_state_ref_through() {
+        let mut p = BTreeMap::new();
+        p.insert("dest".to_string(), "{{state.drop}}".to_string());
+        // a prop value that is itself a parent {{state.x}} passes through verbatim,
+        // to be resolved later by the parent's state substitution.
+        assert_eq!(substitute_props("x={{props.dest}}", &p), "x={{state.drop}}");
+    }
+
+    #[test]
+    fn namespace_child_state_prefixes_reads_and_writes() {
+        let body = r#"let v = "{{state.view}}"  ... agent.notify("set", {key: "view", value: "2d"})"#;
+        let out = namespace_child_state(body, 2);
+        assert!(out.contains("{{state._c2_view}}"), "read: {out}");
+        assert!(out.contains(r#"{key: "_c2_view""#), "write: {out}");
+    }
+
+    #[test]
+    fn rewrite_emit_maps_to_parent_key_with_literal_value() {
+        let mut on = BTreeMap::new();
+        on.insert(
+            "end".to_string(),
+            EmitHandler { key: "nav_end".to_string(), value: Some("1".to_string()) },
+        );
+        let out = rewrite_child_emits(r#"agent.notify("emit", {event: "end"})"#, 0, &on);
+        assert_eq!(out, r#"agent.notify("set", {key: "nav_end", value: "1"})"#);
+    }
+
+    #[test]
+    fn rewrite_emit_passes_through_emitted_value_when_handler_omits_it() {
+        // nav.picker pattern: on:{ pick:{key:"pickup"} } stores the emitted place.
+        let mut on = BTreeMap::new();
+        on.insert("pick".to_string(), EmitHandler { key: "pickup".to_string(), value: None });
+        let out = rewrite_child_emits(
+            r#"agent.notify("emit", {event: "pick", value: "37.3,-121.9|Napa"})"#,
+            0,
+            &on,
+        );
+        assert!(out.contains(r#"key: "pickup""#), "{out}");
+        // comma inside the quoted place value must survive top-level comma split
+        assert!(out.contains(r#"value: "37.3,-121.9|Napa""#), "{out}");
+    }
+
+    #[test]
+    fn unknown_card_use_becomes_inert_placeholder_not_crash() {
+        let out = expand(r#"Card{ use: "nav.teleporter" props: {} }"#);
+        assert!(!out.contains("Card{"), "embed not consumed: {out}");
+        assert!(out.contains("unknown card: nav.teleporter"), "{out}");
+    }
+
+    #[test]
+    fn word_prefixed_card_ident_is_not_an_embed() {
+        // `MyCard{` / `ScoreCard{` must not be mistaken for a Card{} embed.
+        let src = "ScoreCard{ width: Fill }";
+        assert_eq!(expand(src), src);
+    }
+
+    #[test]
+    fn expand_navigate_embed_end_to_end() {
+        // The real standalone host body (mirrors cards/navigate-standalone.splash).
+        let host = r#"Card{ use: "nav.navigate"
+            props: { dest: "{{state.dest}}", origin: "{{state.orig}}", mode: "drive" }
+            on: { end: { key: "nav_end", value: "1" } } }"#;
+        let out = expand(host);
+        // (1) the embed is fully expanded — no Card{} and no unresolved props remain
+        assert!(!out.contains("Card{"), "Card{{}} not expanded");
+        assert!(!out.contains("{{props."), "unresolved props: {out}");
+        // (2) the required MapView drive body is inlined
+        assert!(out.contains("MapView{"), "map missing");
+        assert!(out.contains(r#"nav_mode: "3d""#), "3d map missing");
+        // (3) a required-prop binding became a PARENT state ref (un-namespaced)
+        assert!(out.contains("{{state.dest}}"), "dest parent ref missing: {out}");
+        // (4) the child's INTERNAL `view` state is namespaced to instance 0
+        assert!(out.contains("{{state._c0_view}}"), "view not namespaced: {out}");
+        assert!(!out.contains("{{state.view}}"), "view leaked un-namespaced");
+        // (5) the End emit is wired to the parent nav_end key
+        assert!(
+            out.contains(r#"agent.notify("set", {key: "nav_end", value: "1"})"#),
+            "end not wired: {out}"
+        );
+        assert!(!out.contains(r#""emit""#), "raw emit left in: {out}");
+    }
+
+    #[test]
+    fn two_embeds_get_distinct_namespaces() {
+        let host = r#"Card{ use:"nav.navigate" props:{dest:"a"} on:{end:{key:"e1"}} }
+                     Card{ use:"nav.navigate" props:{dest:"b"} on:{end:{key:"e2"}} }"#;
+        let out = expand(host);
+        // instance 0 and instance 1 keep separate internal `view` state
+        assert!(out.contains("{{state._c0_view}}"), "c0 view missing");
+        assert!(out.contains("{{state._c1_view}}"), "c1 view missing");
+    }
+
+    #[test]
+    fn registry_navigate_card_is_present_and_props_based() {
+        let raw = embeddable_card("nav.navigate").expect("nav.navigate registered");
+        // the component reads inputs via props and emits (not raw state/nav_end)
+        assert!(raw.contains("{{props.dest}}"), "card not props-based");
+        assert!(raw.contains(r#"agent.notify("emit", {event: "end"})"#), "no emit");
+    }
+
+    // ── Composition scenarios: through the FULL render pipeline ──────────────
+    // These run `substitute_card_state` (embed expansion + state substitution +
+    // notify tagging + all the safety rewrites), i.e. exactly what ships to the
+    // Splash VM — with a real seeded CardState, as the AMA would seed on a route.
+
+    /// A composed card is well-formed to ship: no unexpanded embeds, no unresolved
+    /// tokens, balanced braces (an imbalance crashes the Splash eval).
+    fn assert_shippable(out: &str) {
+        assert!(!out.contains("Card{"), "unexpanded Card embed:\n{out}");
+        assert!(!out.contains("{{props."), "unresolved prop token:\n{out}");
+        assert!(!out.contains("{{state."), "unresolved state token:\n{out}");
+        assert_eq!(
+            out.matches('{').count(),
+            out.matches('}').count(),
+            "unbalanced braces:\n{out}"
+        );
+    }
+
+    #[test]
+    fn compose_navigate_to_x_full_pipeline() {
+        // "navigate to NVIDIA": one-line host embeds nav.navigate, dest seeded
+        // from card state (as parse_nav_places → state.dest would).
+        let host = "// name: go\n\
+            Card{ use: \"nav.navigate\" \
+            props: { dest: \"{{state.dest}}\", mode: \"drive\" } \
+            on: { end: { key: \"done\", value: \"1\" } } }";
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "37.37,-121.96|NVIDIA".to_string());
+        let out = substitute_card_state(host, 7, &st);
+        assert_shippable(&out);
+        // seeded dest flowed props → parent state → value
+        assert!(out.contains("37.37,-121.96|NVIDIA"), "dest not wired:\n{out}");
+        // the 3D drive map + live tick are inlined
+        assert!(out.contains("MapView{"), "no map");
+        assert!(out.contains("fn tick()"), "no tick");
+        // End is wired to the parent `done` key, tagged with THIS card's id (7:)
+        assert!(
+            out.contains(r#"agent.notify("7:set", {key: "done", value: "1"})"#),
+            "end not wired to parent:\n{out}"
+        );
+        // the child's internal 2D/3D toggle stays namespaced + tagged
+        assert!(out.contains("7:set"), "notify not tagged");
+    }
+
+    #[test]
+    fn compose_two_navigate_cards_resolve_state_independently() {
+        // A 2-pane "compare routes" app: two nav.navigate embeds. Instance 0 is
+        // put in 2D and instance 1 in 3D via their NAMESPACED view state — proving
+        // the two embeds don't share internal state.
+        let host = "Card{ use:\"nav.navigate\" props:{dest:\"{{state.a}}\"} on:{end:{key:\"x\"}} }\n\
+                    Card{ use:\"nav.navigate\" props:{dest:\"{{state.b}}\"} on:{end:{key:\"y\"}} }";
+        let mut st = BTreeMap::new();
+        st.insert("a".to_string(), "1.0,1.0|Alpha".to_string());
+        st.insert("b".to_string(), "2.0,2.0|Beta".to_string());
+        st.insert("_c0_view".to_string(), "2d".to_string());
+        st.insert("_c1_view".to_string(), "0".to_string());
+        let out = substitute_card_state(host, 3, &st);
+        assert_shippable(&out);
+        // both destinations wired to their own instance
+        assert!(out.contains("1.0,1.0|Alpha") && out.contains("2.0,2.0|Beta"), "dests");
+        // per-instance view resolved independently: c0 → "2d", c1 → "0"
+        assert!(out.contains(r#"let vw = "2d""#), "c0 view!=2d:\n{out}");
+        assert!(out.contains(r#"let vw = "0""#), "c1 view!=0");
+    }
+
+    #[test]
+    fn compose_shipped_standalone_host_end_to_end() {
+        // The ACTUAL shipped host file — exactly what a standalone/on-device test
+        // would serve — composes to a shippable card with the dest seeded.
+        let host = include_str!("../../../a2app/apps/nav/cards/navigate-standalone.splash");
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "38.58,-121.49|Sacramento".to_string());
+        let out = substitute_card_state(host, 1, &st);
+        assert_shippable(&out);
+        assert!(out.contains("fn tick()"), "drive tick present");
+        assert!(out.contains("38.58,-121.49|Sacramento"), "dest wired");
+        // End wired back to the host's nav_end key
+        assert!(out.contains(r#"key: "nav_end""#), "end→nav_end not wired:\n{out}");
+    }
+
+    #[test]
+    fn demo_dump_composed_navigate() {
+        // Print the composed card so the composition is inspectable:
+        //   cargo test --bin octos-app demo_dump_composed_navigate -- --nocapture
+        let host = include_str!("../../../a2app/apps/nav/cards/navigate-standalone.splash");
+        let mut st = BTreeMap::new();
+        st.insert("dest".to_string(), "37.37,-121.96|NVIDIA".to_string());
+        st.insert("orig".to_string(), "37.26,-122.03|Saratoga High School".to_string());
+        let out = substitute_card_state(host, 0, &st);
+        eprintln!(
+            "\n===== COMPOSED navigate-standalone (dest+orig seeded, item_id 0) =====\n{out}\n===== {} bytes, braces {}/{} =====",
+            out.len(),
+            out.matches('{').count(),
+            out.matches('}').count()
+        );
+    }
 
     #[test]
     fn aichat_glass_opacity_slider_contract() {
