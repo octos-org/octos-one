@@ -155,6 +155,66 @@ pub fn encode(root: &Node) -> Vec<u8> {
     out
 }
 
+
+/// Serialise a node tree as PLAIN-DATA SPLASH SOURCE.
+///
+/// This is the form `ymote/Splash` evaluates and `ymote/Splash-Android` renders:
+///
+/// ```text
+/// {t: "col", pad: 18, c: [
+///     {t: "text", text: sys.geocode("Kyoto", "name"), variant: "headlineSmall"},
+/// ]}
+/// ```
+///
+/// Note what it is NOT: makepad dialect. A makepad card says `SolidView{…}` /
+/// `TextHero{…}`, which resolves through makepad's WIDGET REGISTRY — so on a backend
+/// without `makepad-widgets` it evaluates to an object with no `t:` tag and no tree.
+/// That is not a bug to fix in the renderer; the two dialects are genuinely different
+/// vocabularies over one language, and the plan is what lets a card exist in both.
+///
+/// String attributes holding a `sys.*` call are emitted as EXPRESSIONS, not quoted
+/// text, so the Android VM resolves them at render time exactly as makepad does. The
+/// rule survives the port: a card carries calls, never values.
+pub fn to_plain_splash(root: &Node) -> String {
+    let mut out = String::from("// name: plain-card\n// LOWERED from a semantic plan for the plain-data backend.\n");
+    write_node(root, 0, &mut out);
+    out.push('\n');
+    out
+}
+
+/// A value that should be emitted as a Splash expression rather than a quoted string.
+///
+/// `sys.foo(...)`, and concatenations built from one. Anything else is literal text and
+/// must be quoted, or a headline containing a bracket would become a syntax error.
+fn is_expr(s: &str) -> bool {
+    s.contains("sys.") && (s.starts_with("sys.") || s.starts_with('"'))
+}
+
+fn write_node(n: &Node, depth: usize, out: &mut String) {
+    let pad = "    ".repeat(depth);
+    out.push_str(&format!("{pad}{{t: {:?}", n.kind));
+    for (k, v) in &n.attrs {
+        match v {
+            Val::F(f) => out.push_str(&format!(", {k}: {f}")),
+            Val::S(s) if is_expr(s) => out.push_str(&format!(", {k}: {s}")),
+            Val::S(s) => out.push_str(&format!(", {k}: {s:?}")),
+        }
+    }
+    if n.children.is_empty() {
+        out.push('}');
+        return;
+    }
+    out.push_str(", c: [\n");
+    for (i, c) in n.children.iter().enumerate() {
+        write_node(c, depth + 1, out);
+        if i + 1 < n.children.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push_str(&format!("{pad}]}}"));
+}
+
 /// Text ROLES, resolved to this backend's own type scale.
 ///
 /// The makepad lowering resolves the same seven roles to Roboto weights and pixel
@@ -252,13 +312,13 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
             "CurrentConditions" => out.push(
                 Node::new("col")
                     .n("spacing", 2.0)
-                    .kid(txt(role::TITLE, &format!("sys.geocode({place:?}, \"name\")")).s("bind", "1"))
+                    .kid(txt(role::TITLE, &format!("sys.geocode({place:?}, \"name\")")))
                     .kid(
                         txt(
                             role::HERO,
                             &format!("sys.weather({ll}, \"current.temperature_2m\") + \"°\""),
                         )
-                        .s("bind", "1"),
+                        ,
                     )
                     .kid(
                         Node::new("row")
@@ -274,7 +334,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                                     role::BODY,
                                     &format!("sys.weatherword({ll}, \"current.weather_code\", {loc:?})"),
                                 )
-                                .s("bind", "1"),
+                                ,
                             ),
                     )
                     .kid(
@@ -286,7 +346,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                                  + sys.weather({ll}, \"current.apparent_temperature\") + \"°\""
                             ),
                         )
-                        .s("bind", "1"),
+                        ,
                     ),
             ),
             "Forecast" => {
@@ -300,7 +360,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                     rows.push(
                         Node::new("row")
                             .n("spacing", 10.0)
-                            .kid(txt(role::ROW, &format!("sys.dayname({ll}, {d}, {loc:?})")).s("bind", "1").n("w", 74.0))
+                            .kid(txt(role::ROW, &format!("sys.dayname({ll}, {d}, {loc:?})")).n("w", 74.0))
                             .kid(
                                 Node::new("weathericon")
                                     .s("bind_cond", &format!("sys.weathercond({ll}, \"daily.weather_code.{d}\")"))
@@ -309,12 +369,12 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                             )
                             .kid(
                                 txt(role::ROW, &format!("sys.weather({ll}, \"daily.temperature_2m_min.{d}\") + \"°\""))
-                                    .s("bind", "1")
+                                    
                                     .n("w", 46.0),
                             )
                             .kid(
                                 txt(role::ROW, &format!("sys.weather({ll}, \"daily.temperature_2m_max.{d}\") + \"°\""))
-                                    .s("bind", "1")
+                                    
                                     .n("w", 46.0),
                             ),
                     );
@@ -323,7 +383,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
             }
             "AirQualityField" => out.push(card(vec![
                 txt(role::CAPTION, if zh { "空气质量" } else { "AIR QUALITY" }),
-                txt(role::VALUE, &format!("sys.airquality({ll}, \"current.us_aqi\")")).s("bind", "1"),
+                txt(role::VALUE, &format!("sys.airquality({ll}, \"current.us_aqi\")")),
             ])),
             "SunMoon" => out.push(card(vec![
                 txt(role::CAPTION, if zh { "日出 / 日落" } else { "SUNRISE / SUNSET" }),
@@ -334,7 +394,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                          + sys.weather({ll}, \"daily.sunset.0\")"
                     ),
                 )
-                .s("bind", "1"),
+                ,
             ])),
             "Details" => {
                 let tiles: Vec<String> = args
@@ -364,7 +424,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                         _ => continue,
                     };
                     cells.push(
-                        card(vec![txt(role::CAPTION, cap), txt(role::VALUE, &call).s("bind", "1")])
+                        card(vec![txt(role::CAPTION, cap), txt(role::VALUE, &call)])
                             .n("w", 150.0),
                     );
                 }
@@ -399,7 +459,7 @@ fn news(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
             ),
             "LeadStory" => out.push(card(vec![
                 txt(role::CAPTION, if zh { "焦点" } else { "LEAD" }),
-                txt(role::BODY, "sys.news(0, \"title\")").s("bind", "1"),
+                txt(role::BODY, "sys.news(0, \"title\")"),
                 txt(
                     role::CAPTION,
                     &format!(
@@ -407,7 +467,7 @@ fn news(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
                         pts = if zh { " 分" } else { " pts" }
                     ),
                 )
-                .s("bind", "1"),
+                ,
             ])),
             "StoryFeed" => {
                 let n = args
@@ -424,7 +484,7 @@ fn news(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
                             .kid(
                                 Node::new("col")
                                     .n("spacing", 2.0)
-                                    .kid(txt(role::ROW, &format!("sys.news({r}, \"title\")")).s("bind", "1"))
+                                    .kid(txt(role::ROW, &format!("sys.news({r}, \"title\")")))
                                     .kid(
                                         txt(
                                             role::CAPTION,
@@ -434,7 +494,7 @@ fn news(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
                                                 pts = if zh { " 分" } else { " pts" }
                                             ),
                                         )
-                                        .s("bind", "1"),
+                                        ,
                                     ),
                             ),
                     );
@@ -538,6 +598,47 @@ mod tests {
         assert!(!buf.is_empty(), "never an empty buffer — a blank screen reads as a crash");
         let kinds = decode_kinds(&buf);
         assert!(kinds.iter().any(|k| k == "text"));
+    }
+
+
+    /// The plain-data form must be real Splash source: `t:` tags, and `sys.*` emitted as
+    /// CALLS rather than quoted text — otherwise the Android VM would render the literal
+    /// string "sys.weather(...)" instead of the temperature.
+    #[test]
+    fn plain_source_carries_calls_as_expressions() {
+        let src = to_plain_splash(&lower_plan_to_nodes(KYOTO));
+        assert!(src.contains("{t: \"col\""), "plain-data root: {src:.120}");
+        assert!(
+            src.contains("text: sys.geocode(") || src.contains("text: sys.weather("),
+            "sys.* must be an expression, not a quoted string"
+        );
+        assert!(
+            !src.contains("text: \"sys."),
+            "a quoted sys.* call would render as literal text"
+        );
+        // No makepad dialect may leak in — that is what fails on a registry-free backend.
+        for w in ["SolidView", "TextHero", "RoundedView", "draw_bg", "draw_text"] {
+            assert!(!src.contains(w), "makepad dialect leaked: {w}");
+        }
+    }
+
+
+    /// Writes the plain-data card to /tmp so it can be pushed to the device. Ignored by
+    /// default — it is a build artifact, not an assertion.
+    #[test]
+    #[ignore]
+    fn dump_plain_card() {
+        let src = to_plain_splash(&lower_plan_to_nodes(KYOTO));
+        std::fs::write("/tmp/plain-weather.splash", &src).unwrap();
+        let news = r#"{"plan":"news","locale":"en","sections":[
+            {"block":"Masthead","args":{"title":"Top Stories","label":"HACKER NEWS"}},
+            {"block":"LeadStory"},
+            {"block":"StoryFeed","args":{"count":6}}]}"#;
+        std::fs::write(
+            "/tmp/plain-news.splash",
+            to_plain_splash(&lower_plan_to_nodes(news)),
+        )
+        .unwrap();
     }
 
     #[test]

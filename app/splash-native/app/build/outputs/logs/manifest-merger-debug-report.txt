@@ -1,0 +1,52 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:2:1-17:12
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:2:1-17:12
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:2:1-17:12
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:2:1-17:12
+	package
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:3:5-37
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	android:versionName
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	android:versionCode
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:2:11-69
+uses-permission#android.permission.INTERNET
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:7:5-67
+	android:name
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:7:22-64
+application
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:9:5-16:19
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:9:5-16:19
+	android:extractNativeLibs
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	android:label
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:9:18-53
+	android:allowBackup
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:9:54-81
+activity#dev.octos.splashnative.MainActivity
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:10:9-15:20
+	android:exported
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:10:48-71
+	android:name
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:10:19-47
+intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:11:13-14:29
+action#android.intent.action.MAIN
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:12:17-69
+	android:name
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:12:25-66
+category#android.intent.category.LAUNCHER
+ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:13:17-77
+	android:name
+		ADDED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml:13:27-74
+uses-sdk
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/yuechen/home/octos-one/app/splash-native/app/src/main/AndroidManifest.xml
