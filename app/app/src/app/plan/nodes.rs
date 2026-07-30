@@ -361,6 +361,9 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
         match block {
             "CurrentConditions" => out.push(
                 Node::new("col")
+                    // Centred, like the makepad hero. A left-aligned hero reads as a
+                    // draft — the same note that is in the weather spec.
+                    .n("align", 1.0)
                     .n("spacing", 2.0)
                     .kid(txt(role::TITLE, &format!("sys.geocode({place:?}, \"name\")")))
                     .kid(
@@ -372,6 +375,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                     )
                     .kid(
                         Node::new("row")
+                            .n("align", 1.0)
                             .n("spacing", 8.0)
                             .kid(
                                 Node::new("weathericon")
@@ -447,14 +451,34 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
             ])),
             "SunMoon" => out.push(card(vec![
                 txt(role::CAPTION, if zh { "日出 / 日落" } else { "SUNRISE / SUNSET" }),
-                txt(
-                    role::BODY,
-                    &format!(
-                        "sys.weather({ll}, \"daily.sunrise.0\") + \"   \" \
-                         + sys.weather({ll}, \"daily.sunset.0\")"
-                    ),
-                )
-                ,
+                Node::new("sunarc")
+                    .s("progress_expr", &format!("sys.daylight({ll})"))
+                    .n("h", 76.0),
+                Node::new("row").n("spacing", 12.0).kids(vec![
+                    txt(role::ROW, &format!("sys.weather({ll}, \"daily.sunrise.0\")")),
+                    txt(role::ROW, &format!("sys.weather({ll}, \"daily.sunset.0\")")).n("grow", 1.0),
+                ]),
+                // 月相. Drawn from the live phase, with its name and lit percentage —
+                // the makepad card's SunMoon block has all three and this had none.
+                Node::new("row").n("align", 1.0).n("spacing", 14.0).kids(vec![
+                    Node::new("moonphase")
+                        .s("phase_expr", "sys.moonnum(\"phase\")")
+                        .n("w", 56.0)
+                        .n("h", 56.0),
+                    Node::new("col").n("spacing", 2.0).n("grow", 1.0).kids(vec![
+                        txt(
+                            role::BODY,
+                            &format!("sys.moonphase({:?})", if zh { "name_zh" } else { "name" }),
+                        ),
+                        txt(
+                            role::CAPTION,
+                            &format!(
+                                "sys.moonphase(\"illumination\") + {:?}",
+                                if zh { "% 照亮" } else { "% illuminated" }
+                            ),
+                        ),
+                    ]),
+                ]),
             ])),
             "Details" => {
                 let tiles: Vec<String> = args
@@ -688,7 +712,9 @@ mod tests {
         "sections": [
             { "block": "CurrentConditions" },
             { "block": "Forecast", "args": { "days": 7 } },
-            { "block": "Details", "args": { "tiles": ["uv","humidity"] } }
+            { "block": "AirQualityField" },
+            { "block": "SunMoon" },
+            { "block": "Details", "args": { "tiles": ["uv","humidity","wind"] } }
         ]
     }"#;
 

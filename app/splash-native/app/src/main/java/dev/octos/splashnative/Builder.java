@@ -70,7 +70,12 @@ final class Builder {
                 LinearLayout l = new LinearLayout(ctx);
                 boolean col = "col".equals(n.kind);
                 l.setOrientation(col ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-                if (!col) l.setGravity(Gravity.CENTER_VERTICAL);
+                // `align: 1` centres on the cross axis. The hero block asks for it, and
+                // ignoring it was why the native card's city and temperature sat hard
+                // left while the makepad one centred them.
+                boolean centre = n.f("align", 0) >= 1;
+                if (col) l.setGravity(centre ? Gravity.CENTER_HORIZONTAL : Gravity.NO_GRAVITY);
+                else l.setGravity(centre ? Gravity.CENTER : Gravity.CENTER_VERTICAL);
                 if (n.has("bg")) l.setBackgroundColor(argb(n.f("bg", 0)));
                 int p = dp(n.f("pad", 0));
                 if (p > 0) l.setPadding(p, p, p, p);
@@ -78,7 +83,7 @@ final class Builder {
                 for (int i = 0; i < n.children.size(); i++) {
                     View cv = build(n.children.get(i));
                     if (cv == null) continue;
-                    LinearLayout.LayoutParams lp = childParams(n.children.get(i), col);
+                    LinearLayout.LayoutParams lp = childParams(n.children.get(i), col, centre);
                     if (gap > 0 && i > 0) {
                         if (col) lp.topMargin = gap; else lp.leftMargin = gap;
                     }
@@ -102,7 +107,7 @@ final class Builder {
                 for (int i = 0; i < n.children.size(); i++) {
                     View cv = build(n.children.get(i));
                     if (cv == null) continue;
-                    LinearLayout.LayoutParams lp = childParams(n.children.get(i), true);
+                    LinearLayout.LayoutParams lp = childParams(n.children.get(i), true, false);
                     if (gap > 0 && i > 0) lp.topMargin = gap;
                     l.addView(cv, lp);
                 }
@@ -133,6 +138,12 @@ final class Builder {
                 // bracketed word is not a weather card.
                 WeatherIconView w = new WeatherIconView(ctx, (int) n.f("cond", n.f("bind_cond", 1)));
                 return w;
+            }
+            case "moonphase": {
+                return new MoonPhaseView(ctx, n.f("phase", 0.5f));
+            }
+            case "sunarc": {
+                return new SunArcView(ctx, n.f("progress", 0.5f));
             }
             case "tempbar": {
                 // The forecast range bar. A gradient keyed to POSITION IN THE WEEK, not
@@ -240,10 +251,18 @@ final class Builder {
             | (int) Math.round(ab + (bb - ab) * f);
     }
 
-    /** Explicit w/h win; otherwise a child fills the cross axis and wraps the main one. */
-    private LinearLayout.LayoutParams childParams(Node c, boolean parentIsColumn) {
+    /**
+     * Explicit w/h win; otherwise a child fills the cross axis and wraps the main one.
+     *
+     * EXCEPT under a centred column: a MATCH_PARENT child already spans the width, so
+     * gravity has nothing left to move and the text simply sits left inside a full-width
+     * view. Centring only becomes visible once the children wrap their content — which is
+     * why the condition row centred (it sets its own gravity) while the city and
+     * temperature beside it did not.
+     */
+    private LinearLayout.LayoutParams childParams(Node c, boolean parentIsColumn, boolean parentCentres) {
         int w = c.has("w") ? dp(c.f("w", 0))
-            : (parentIsColumn ? ViewGroup.LayoutParams.MATCH_PARENT
+            : (parentIsColumn && !parentCentres ? ViewGroup.LayoutParams.MATCH_PARENT
                               : ViewGroup.LayoutParams.WRAP_CONTENT);
         int h = c.has("h") ? dp(c.f("h", 0)) : ViewGroup.LayoutParams.WRAP_CONTENT;
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, h);

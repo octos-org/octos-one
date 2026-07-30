@@ -44,6 +44,9 @@ pub const CAPABILITIES: &[&str] = &[
     "sys.weekmin",
     "sys.weekmax",
     "sys.airquality",
+    "sys.moonphase",
+    "sys.moonnum",
+    "sys.daylight",
     "sys.news",
     "sys.movers",
     "sys.stock",
@@ -563,6 +566,96 @@ pub fn register(vm: &mut ScriptVm) {
                 })
                 .unwrap_or_else(|| "—".into());
             vm.bx.heap.new_string_from_str(&out)
+        },
+    );
+
+
+    // ---- sun and moon -----------------------------------------------------
+
+    /// Position in the synodic cycle, 0..1: 0 new, 0.25 first quarter, 0.5 full.
+    ///
+    /// The MEAN cycle, not a lunar theory — the true phase wanders by up to about half a
+    /// day, which is invisible in a drawn disc and a rounded percentage, and it keeps an
+    /// ephemeris out of the backend. Same simplification octos-one makes.
+    fn moon_fraction() -> f64 {
+        const SYNODIC: f64 = 29.530_588_853 * 86_400.0;
+        const NEW_MOON: f64 = 947_182_440.0; // 2000-01-06 18:14 UTC
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0) as f64;
+        let f = ((now - NEW_MOON) % SYNODIC) / SYNODIC;
+        if f < 0.0 { f + 1.0 } else { f }
+    }
+
+    vm.add_method(sys, id_lut!(moonphase), script_args_def!(field = NIL), |vm, args| {
+        let field = sarg!(vm, args, field);
+        let f = moon_fraction();
+        let out = match field.trim() {
+            "name" | "name_zh" | "name_cn" => {
+                let zh = field.trim() != "name";
+                let (en, cn) = if f < 0.0335 || f >= 0.9665 { ("New Moon", "新月") }
+                    else if f < 0.2165 { ("Waxing Crescent", "蛾眉月") }
+                    else if f < 0.2835 { ("First Quarter", "上弦月") }
+                    else if f < 0.4665 { ("Waxing Gibbous", "盈凸月") }
+                    else if f < 0.5335 { ("Full Moon", "满月") }
+                    else if f < 0.7165 { ("Waning Gibbous", "亏凸月") }
+                    else if f < 0.7835 { ("Last Quarter", "下弦月") }
+                    else { ("Waning Crescent", "残月") };
+                (if zh { cn } else { en }).to_string()
+            }
+            // Illuminated fraction is (1 - cos(2*pi*phase)) / 2 — 0 at new, 1 at full,
+            // correctly non-linear between.
+            "illumination" | "illum" => {
+                format!("{}", ((1.0 - (std::f64::consts::TAU * f).cos()) * 50.0).round() as i64)
+            }
+            _ => format!("{f:.2}"),
+        };
+        vm.bx.heap.new_string_from_str(&out)
+    });
+
+    vm.add_method(sys, id_lut!(moonnum), script_args_def!(field = NIL), |vm, args| {
+        let field = sarg!(vm, args, field);
+        let f = moon_fraction();
+        let n = match field.trim() {
+            "illumination" | "illum" => (1.0 - (std::f64::consts::TAU * f).cos()) * 50.0,
+            _ => f,
+        };
+        ScriptValue::from_f64(n)
+    });
+
+    /// Fraction of daylight elapsed: 0 at sunrise, 1 at sunset.
+    ///
+    /// "Now" is the DEVICE CLOCK shifted by the response's own utc_offset_seconds, never a
+    /// timestamp from the response — that response is cached, so its idea of "now" freezes
+    /// at first fetch and the sun stops moving.
+    vm.add_method(
+        sys,
+        id_lut!(daylight),
+        script_args_def!(lat = NIL, lon = NIL),
+        |vm, args| {
+            let (lat, lon) = (narg!(vm, args, lat), narg!(vm, args, lon));
+            let f = (|| {
+                let v = json(&wx_url(lat, lon))?;
+                let hhmm = |s: &str| -> Option<f64> {
+                    let t = if s.len() >= 16 && s.as_bytes().get(10) == Some(&b'T') { &s[11..16] } else { s };
+                    let (h, m) = t.split_once(':')?;
+                    Some(h.parse::<f64>().ok()? * 60.0 + m.parse::<f64>().ok()?)
+                };
+                let rise = hhmm(at(&v, "daily.sunrise.0")?.as_str()?)?;
+                let set = hhmm(at(&v, "daily.sunset.0")?.as_str()?)?;
+                let off = at(&v, "utc_offset_seconds")?.as_f64()?;
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_secs() as f64;
+                let local = (now + off).rem_euclid(86_400.0) / 60.0;
+                let span = set - rise;
+                if span <= 0.0 { return None; }
+                Some((local - rise) / span)
+            })()
+            .unwrap_or(0.5);
+            ScriptValue::from_f64(f)
         },
     );
 

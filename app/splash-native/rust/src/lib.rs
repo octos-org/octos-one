@@ -75,7 +75,6 @@ const ATTRS_S: &[(&str, LiveId)] = &[
     ("label", live_id!(label)),
     ("src", live_id!(src)),
     ("icon", live_id!(icon)),
-    ("align", live_id!(align)),
 ];
 
 /// Attributes carried as NUMBERS.
@@ -94,6 +93,11 @@ const ATTRS_N: &[(&str, LiveId)] = &[
     ("value", live_id!(value)),
     ("max", live_id!(max)),
     ("grow", live_id!(grow)),
+    // `align` is a NUMBER (0 = start, 1 = centre). It was in the string list, so the
+    // builder's `n.f("align")` never saw it and the hero stayed hard left however many
+    // times the lowering asked for centring. An attribute in the wrong list is not a
+    // parse error — it is silently the wrong type, which is why it took a render to spot.
+    ("align", live_id!(align)),
 ];
 
 fn sprop(vm: &mut ScriptVm, v: ScriptValue, id: LiveId) -> Option<String> {
