@@ -83,56 +83,29 @@ pub struct Section {
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Args {
-    /// Current condition, as a WORD not a shader index. `draw_bg.cond: 2` is a
-    /// backend detail and an unverifiable number; "cloudy" is intent.
-    #[serde(default)]
-    pub condition: String,
-    #[serde(default)]
-    pub conditions: Vec<String>,
+    /// How many forecast rows. The only thing about the forecast the model gets to
+    /// choose, because it is a presentation decision rather than a fact.
     #[serde(default)]
     pub days: Option<u32>,
     #[serde(default)]
     pub tiles: Vec<String>,
 }
 
-/// A condition word → the WeatherIcon shader index and a forecast-row emoji.
-/// Closed set: an unknown word is rejected, never silently drawn as clear sky.
-fn condition_icon(c: &str) -> Option<(u32, &'static str)> {
-    Some(match c {
-        "clear" => (0, "☀️"),
-        "partly_cloudy" => (1, "⛅"),
-        "cloudy" => (2, "☁️"),
-        "rain" => (3, "🌧️"),
-        "thunderstorm" => (4, "⛈️"),
-        "snow" => (5, "❄️"),
-        "wind" => (6, "🌬️"),
-        "fog" => (7, "🌫️"),
-        _ => return None,
-    })
-}
+// There is deliberately NO `condition` field, and no per-day `conditions` array.
+//
+// The weather condition is LIVE DATA — it comes from `weather_code` in the forecast
+// the card fetches at render time. An earlier version of this schema accepted a
+// condition WORD from the model, which was the same mistake as accepting a
+// coordinate wearing different clothes: a value the model has never observed,
+// stated confidently, with nothing able to contradict it. Seven more of them in the
+// forecast array.
+//
+// `sys.weathercond(lat, lon, path)` maps the live code to an icon instead. The code
+// was already in the fetch — the model was being asked to guess data the runtime
+// held.
 
-/// The condition word rendered for display, per locale.
-fn condition_word(c: &str, zh: bool) -> &'static str {
-    match (c, zh) {
-        ("clear", false) => "Clear",
-        ("partly_cloudy", false) => "Partly Cloudy",
-        ("cloudy", false) => "Cloudy",
-        ("rain", false) => "Rain",
-        ("thunderstorm", false) => "Thunderstorm",
-        ("snow", false) => "Snow",
-        ("wind", false) => "Wind",
-        ("fog", false) => "Fog",
-        ("clear", true) => "晴",
-        ("partly_cloudy", true) => "局部多云",
-        ("cloudy", true) => "多云",
-        ("rain", true) => "雨",
-        ("thunderstorm", true) => "雷暴",
-        ("snow", true) => "雪",
-        ("wind", true) => "大风",
-        ("fog", true) => "雾",
-        _ => "",
-    }
-}
+/// A condition word → the WeatherIcon shader index and a forecast-row emoji.
+
 
 /// Tile key → (caption_en, caption_zh, helper, path, unit).
 fn tile_spec(k: &str) -> Option<(&'static str, &'static str, &'static str, &'static str, &'static str)> {
@@ -200,6 +173,7 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
         return Err("place.query is empty — name the place".to_string());
     }
     let zh = plan.locale.starts_with("zh");
+    let loc = if zh { "zh" } else { "en" };
     let place = &plan.place.query;
     // Coordinates are RESOLVED, never carried. Called inline at each use site:
     // a card's top-level `let` bindings evaluate once at build time, before any
@@ -211,8 +185,8 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
     let mut body = String::new();
     for (i, sec) in plan.sections.iter().enumerate() {
         let s = match sec.block.as_str() {
-            "CurrentConditions" => current_conditions(&sec.args, &ll, place, zh, i)?,
-            "Forecast" => forecast(&sec.args, &ll, zh, i)?,
+            "CurrentConditions" => current_conditions(&ll, place, loc),
+            "Forecast" => forecast(&sec.args, &ll, loc),
             "AirQualityField" => air_quality_field(&ll, &lat, &lon, zh),
             "SunMoon" => sun_moon(&ll, zh),
             "Details" => details(&sec.args, &ll, zh, i)?,
@@ -248,23 +222,17 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
     ))
 }
 
-fn current_conditions(a: &Args, ll: &str, place: &str, zh: bool, i: usize) -> Result<String, String> {
-    let (cond, _) = condition_icon(&a.condition).ok_or_else(|| {
-        format!(
-            "sections[{i}] CurrentConditions: condition {:?} is not one of \
-             clear, partly_cloudy, cloudy, rain, thunderstorm, snow, wind, fog",
-            a.condition
-        )
-    })?;
-    let word = condition_word(&a.condition, zh);
-    Ok(format!(
+fn current_conditions(ll: &str, place: &str, loc: &str) -> String {
+    format!(
         "\x20       View{{ width: Fill height: Fit flow: Down align: Align{{x: 0.5}}\n\
          \x20           TextTitle{{ text: sys.geocode({place:?}, \"name\") draw_text.color: {soft} }}\n\
          \x20           TextHero{{ text: sys.weather({ll}, \"current.temperature_2m\") + \"°\" \
          margin: Inset{{top: 2 bottom: 0}} draw_text.color: {text} }}\n\
          \x20           View{{ width: Fit height: 52 flow: Right align: Align{{x: 0.5 y: 0.5}} spacing: 8\n\
-         \x20               WeatherIcon{{ draw_bg.cond: {cond} width: 46 height: 46 }}\n\
-         \x20               TextBody{{ text: {word:?} draw_text.color: {soft} }}\n\
+         \x20               WeatherIcon{{ draw_bg.cond: sys.weathercond({ll}, \"current.weather_code\") \
+         width: 46 height: 46 }}\n\
+         \x20               TextBody{{ text: sys.weatherword({ll}, \"current.weather_code\", {loc:?}) \
+         draw_text.color: {soft} }}\n\
          \x20           }}\n\
          \x20           TextStat{{ text: \"↑\" + sys.weather({ll}, \"daily.temperature_2m_max.0\") + \"°   ↓\" \
          + sys.weather({ll}, \"daily.temperature_2m_min.0\") + \"°   ≈\" \
@@ -273,25 +241,19 @@ fn current_conditions(a: &Args, ll: &str, place: &str, zh: bool, i: usize) -> Re
         soft = theme::TEXT_SOFT,
         text = theme::TEXT,
         dim = theme::TEXT_DIM,
-    ))
+        loc = loc,
+    )
 }
 
-fn forecast(a: &Args, ll: &str, zh: bool, i: usize) -> Result<String, String> {
+fn forecast(a: &Args, ll: &str, loc: &str) -> String {
     let days = a.days.unwrap_or(7).clamp(1, 7) as usize;
-    let loc = if zh { "zh" } else { "en" };
     let mut rows = String::new();
     for d in 0..days {
-        // An absent per-day condition falls back to cloudy rather than failing the
-        // whole card: the icon is decoration, and a missing one must not cost the
-        // user their forecast.
-        let word = a.conditions.get(d).map(String::as_str).unwrap_or("cloudy");
-        let (_, emoji) = condition_icon(word).ok_or_else(|| {
-            format!("sections[{i}] Forecast: conditions[{d}] {word:?} is not a known condition")
-        })?;
         rows.push_str(&format!(
             "\x20           View{{ width: Fill height: {rh} flow: Right align: Align{{y: 0.5}}\n\
              \x20               TextRow{{ width: {dw} text: sys.dayname({ll}, {d}, {loc:?}) draw_text.color: {soft} }}\n\
-             \x20               Label{{ width: {iw} text: {emoji:?} draw_text.text_style.font_size: 16 }}\n\
+             \x20               WeatherIcon{{ width: {iw} height: 26 \
+             draw_bg.cond: sys.weathercond({ll}, \"daily.weather_code.{d}\") }}\n\
              \x20               TextRow{{ width: {tw} align: Align{{x: 1.0}} padding: Inset{{right: {tp}}} \
              text: sys.weather({ll}, \"daily.temperature_2m_min.{d}\") + \"°\" draw_text.color: {rowdim} }}\n\
              \x20               TempBar{{ width: Fill height: {bh} margin: Inset{{left: {bm} right: {bm}}} \
@@ -313,14 +275,14 @@ fn forecast(a: &Args, ll: &str, zh: bool, i: usize) -> Result<String, String> {
             text = theme::TEXT,
         ));
     }
-    Ok(format!(
+    format!(
         "\x20       RoundedView{{ width: Fill height: Fit flow: Down new_batch: true \
          draw_bg.color: {panel} draw_bg.border_radius: {pr} margin: Inset{{top: {gap}}} \
          padding: Inset{{left: 16 right: 16 top: 10 bottom: 10}}\n{rows}\x20       }}",
         panel = theme::PANEL,
         pr = theme::PANEL_RADIUS,
         gap = theme::GAP,
-    ))
+    )
 }
 
 fn air_quality_field(ll: &str, lat: &str, lon: &str, zh: bool) -> String {
@@ -425,9 +387,8 @@ mod tests {
         "place": { "query": "Kyoto" },
         "photo": "kyoto city cloudy sky",
         "sections": [
-            { "block": "CurrentConditions", "args": { "condition": "cloudy" } },
-            { "block": "Forecast", "args": { "days": 7,
-              "conditions": ["cloudy","partly_cloudy","rain","cloudy","clear","partly_cloudy","cloudy"] } },
+            { "block": "CurrentConditions" },
+            { "block": "Forecast", "args": { "days": 7 } },
             { "block": "AirQualityField" },
             { "block": "SunMoon" },
             { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
@@ -482,12 +443,31 @@ mod tests {
         assert!(err.contains("PollenChart") && err.contains("CurrentConditions"), "{err}");
     }
 
+    /// The condition is LIVE DATA, so the plan has no field for it at all — the
+    /// same rule as a coordinate. A plan that tries to state the weather is
+    /// rejected, not merely ignored.
     #[test]
-    fn unknown_condition_is_rejected_rather_than_drawn_as_clear_sky() {
+    fn the_weather_itself_cannot_be_stated_by_the_model() {
         let bad = r#"{"plan":"weather","locale":"en","place":{"query":"Kyoto"},
-            "sections":[{"block":"CurrentConditions","args":{"condition":"drizzly"}}]}"#;
+            "sections":[{"block":"CurrentConditions","args":{"condition":"cloudy"}}]}"#;
         let err = lower_plan(bad).unwrap_err();
-        assert!(err.contains("drizzly") && err.contains("partly_cloudy"), "{err}");
+        assert!(err.contains("condition"), "unknown field must be named: {err}");
+    }
+
+    /// Icon AND word both come from the same live weather code, so they cannot
+    /// disagree with each other or with the sky.
+    #[test]
+    fn condition_is_derived_from_the_live_code() {
+        let out = lower_plan(KYOTO).unwrap();
+        assert!(out.contains("sys.weathercond("), "icon from the live code");
+        assert!(out.contains("sys.weatherword("), "word from the live code");
+        assert!(!out.contains("draw_bg.cond: 2"), "no literal icon index");
+        // Seven forecast rows, each deriving its own day's icon.
+        assert_eq!(out.matches("daily.weather_code.").count(), 7);
+        // The emoji column is gone with the guesses that fed it.
+        for e in ["☀️", "⛅", "☁️", "🌧️"] {
+            assert!(!out.contains(e), "no guessed emoji {e}");
+        }
     }
 
     /// A Chinese plan must produce a card with no English label, and must select the
@@ -496,11 +476,11 @@ mod tests {
     fn locale_drives_every_label() {
         let zh = KYOTO.replace(r#""locale": "en""#, r#""locale": "zh""#);
         let out = lower_plan(&zh).expect("zh plan must lower");
-        assert!(out.contains("多云"));
+        assert!(out.contains("\"zh\""), "locale is threaded to the helpers");
         assert!(out.contains("空气质量图"));
         assert!(out.contains("name_zh"));
         assert!(!out.contains("Air Quality"));
-        assert!(!out.contains("\"Cloudy\""));
+        assert!(!out.contains("\"en\""), "no en helper call on a zh card");
     }
 
     /// The plan is far smaller than the card it produces — that ratio IS the

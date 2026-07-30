@@ -9025,7 +9025,7 @@ mod tests {
             "place": { "query": "Kyoto" },
             "photo": "kyoto city cloudy sky",
             "sections": [
-                { "block": "CurrentConditions", "args": { "condition": "cloudy" } },
+                { "block": "CurrentConditions" },
                 { "block": "Forecast", "args": { "days": 7 } },
                 { "block": "AirQualityField" },
                 { "block": "SunMoon" },

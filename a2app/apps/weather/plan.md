@@ -11,9 +11,8 @@ You do **not** write the card. You choose what it shows; the runtime builds it.
   "place": { "query": "Kyoto" },
   "photo": "kyoto city cloudy sky",
   "sections": [
-    { "block": "CurrentConditions", "args": { "condition": "cloudy" } },
-    { "block": "Forecast", "args": { "days": 7,
-      "conditions": ["cloudy","partly_cloudy","rain","cloudy","clear","partly_cloudy","cloudy"] } },
+    { "block": "CurrentConditions" },
+    { "block": "Forecast", "args": { "days": 7 } },
     { "block": "AirQualityField" },
     { "block": "SunMoon" },
     { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
@@ -37,20 +36,19 @@ That is a complete card. It is about 600 bytes; the card it produces is about 16
 
 | block | args |
 |---|---|
-| `CurrentConditions` | `condition` (required) |
-| `Forecast` | `days` 1–7 (default 7), `conditions` — one word per day |
+| `CurrentConditions` | none |
+| `Forecast` | `days` 1–7 (default 7) |
 | `AirQualityField` | none |
 | `SunMoon` | none |
 | `Details` | `tiles` — two or more of `aqi` `uv` `humidity` `wind` `pressure` |
 
-`condition` is one of: `clear` `partly_cloudy` `cloudy` `rain` `thunderstorm`
-`snow` `wind` `fog`. Anything else is rejected.
-
 ## What you decide, and what you must not
 
 **Yours** — which place the request means (resolving "nvidia" to Santa Clara is
-world knowledge and your job), which condition word matches, which sections and in
-what order, which tiles, the photo phrase, the locale.
+world knowledge and your job), which sections and in what order, which tiles, the
+photo phrase, the locale. In short: **what the user asked for, and what the card
+should look like.** You know their preferences and you may be composing with another
+app; that judgement is exactly what you are for.
 
 **NOT yours, and there is no field for them:**
 
@@ -60,6 +58,11 @@ what order, which tiles, the photo phrase, the locale.
   geocodes, in the right language for the script you wrote.
 - **Any weather value.** Every temperature, AQI, UV and wind figure is fetched at
   render time. You never see them, so you never type them.
+- **The weather itself.** Not the condition word, not the icon, not a per-day
+  forecast icon. `weather_code` is already in the fetch, so the runtime derives both
+  the icon and the word from it — and they therefore cannot disagree with each other
+  or with the sky. Stating "cloudy" for weather you have never observed is the same
+  mistake as stating a coordinate, just harder to notice.
 - **The week's temperature range.** Derived from the fetched forecast. You cannot
   know it — the values are a live fetch — and guessing it flattens every gradient
   bar to one colour.
