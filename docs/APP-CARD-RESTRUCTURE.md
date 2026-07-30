@@ -52,9 +52,14 @@ without the card knowing which.
 > `SunMoon` is not degraded on ArkUI but *impossible* there. Good news, since
 > "write N data helpers" is bounded work in a way "rewrite the UI" is not.
 >
-> **§4a still stands and is the hard part.** Snapshot trees are not enough;
-> mutation needs a session/delta contract with stable keys. That is the real
-> project, and today only proved static construction.
+> **§4a needs correcting too, in the other direction.** I wrote that mutation needs
+> a session/delta contract built from scratch, and that overstated it: octos-one
+> ALREADY has a zero-rebuild in-place update path — `fn tick()` plus
+> `ui.<id>.set_*`, with 63 call sites in the nav trip planner and `sys.navsecs`
+> existing specifically so a tick does not arm the re-eval pump. The real gap is
+> narrower: that path and the `agent.notify("set", …)` state path are DISJOINT, and
+> a state write takes the rebuilding one. See
+> [`CARD-STATE-IDENTITY.md`](CARD-STATE-IDENTITY.md).
 
 ---
 
