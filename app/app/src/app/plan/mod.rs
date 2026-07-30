@@ -39,6 +39,14 @@
 //! | [`news`] | a headline feed | Masthead, LeadStory, StoryFeed |
 //! | [`stock`] | market movers | MoversList, QuoteHeader, PriceChart, StatGrid |
 //!
+//! ## Two render backends
+//!
+//! [`lower_plan`] emits makepad Splash DSL, which is what the app renders today.
+//! [`nodes::lower_plan_to_nodes`] emits the Splash-Android node tree instead, so the
+//! SAME plan can be rendered by native `android.widget.*` views. Neither knows about the
+//! other: two `match` statements over one closed vocabulary, so adding a backend cannot
+//! break an existing one.
+//!
 //! Each domain owns its own schema and lowering, because a block IS the domain — the
 //! stocks prototype showed zero block reuse across domains while the *infrastructure*
 //! reused entirely. What is shared is this dispatch, the rule above, and the
@@ -56,6 +64,7 @@
 
 pub mod common;
 pub mod news;
+pub mod nodes;
 pub mod stock;
 pub mod weather;
 
