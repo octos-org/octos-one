@@ -1,48 +1,9 @@
-//! Semantic plan → Splash DSL.
+//! Weather plans → Splash DSL.
 //!
-//! The generating model emits a small typed PLAN; this lowers it to the card. It
-//! is the runtime half of separating intent from realization.
-//!
-//! ## Why
-//!
-//! When the model emits the whole card, the error surface is the whole card. On
-//! 2026-07-29/30 that produced six distinct silent failures in one domain —
-//! invented coordinates (71 per card), a guessed temperature range that flattened
-//! every gradient, weekday names off by one in *every* card ever generated, tofu
-//! boxes where CJK should be, a fixed root height that truncated half the card,
-//! and a stray sibling node that squeezed it into half the width. Each was fixed
-//! by adding a prohibition to `a2app/apps/weather/app.md`, which is now 448 lines
-//! of which 28 are MUST/NEVER rules. That is whack-a-mole with a scar log.
-//!
-//! Every one of those fixes had the same shape: NARROW WHAT THE MODEL MAY WRITE and
-//! move the decision into the runtime. This module does that wholesale rather than
-//! one bug at a time.
-//!
-//! ## The rule it enforces
-//!
-//! **The runtime must never accept a value it cannot verify.** In order of
-//! preference:
-//!
-//! 1. The field does not exist and the runtime derives it. A `place` is a NAME, so
-//!    a coordinate is unexpressible; the week's extent is not an input at all.
-//! 2. The field is typed and a violation is REJECTED before lowering, where the
-//!    repair loop can act on a precise message.
-//! 3. The model is asked to get it right. This is what a 448-line spec was doing,
-//!    and it is what this replaces.
-//!
-//! Recovery matters as much as prevention: one bad field in 16 KB of free-form DSL
-//! means regenerating the whole card — nondeterministically different elsewhere —
-//! whereas an invalid plan field is rejected at the field. The equivalent plan is
-//! ~600 bytes against ~16 KB of card, so the surface is ~27x smaller and typed.
-//!
-//! ## Scope
-//!
-//! Weather only, deliberately. It is the domain whose failure modes are documented
-//! and whose lowered output can be diffed against a card verified on device. A
-//! stocks plan lowers in the prototype (`docs/prototype-semantic-plan/`) but needs
-//! state/actions/views, which want the identity bridge in
-//! `docs/CARD-STATE-IDENTITY.md` first.
+//! The domain whose failure modes are documented, so it went first. See the module
+//! doc on [`super`] for the rule every domain follows.
 
+use super::common::{locale_tag, photo_root, theme};
 use serde::Deserialize;
 
 /// A plan the model emitted. Unknown fields are REJECTED rather than ignored:
@@ -123,46 +84,15 @@ fn tile_spec(k: &str) -> Option<(&'static str, &'static str, &'static str, &'sta
 /// value here restyles every card with no model call — which is the other half of
 /// the point: a look change costs a token edit, not a 45-second regeneration that
 /// may alter unrelated things.
-mod theme {
-    pub const BASE: &str = "#0a0e14";
-    pub const SCRIM: &str = "#00000066";
-    pub const PANEL: &str = "#00000055";
-    pub const TILE: &str = "#ffffff1f";
-    pub const TEXT: &str = "#ffffff";
-    pub const TEXT_SOFT: &str = "#ffffffe6";
-    pub const TEXT_DIM: &str = "#ffffffb3";
-    pub const TEXT_FAINT: &str = "#ffffff99";
-    pub const ROW_DIM: &str = "#ffffff88";
-    /// A FIXED height taller than the content. A `Fit` Overlay takes its tallest
-    /// child, so a photo shorter than the column ends in a hard edge of bare BASE
-    /// partway down the card.
-    pub const PHOTO_H: u32 = 2000;
-    pub const PAGE_PAD: &str = "Inset{left: 22 top: 54 right: 22 bottom: 8}";
-    pub const PANEL_RADIUS: &str = "20.0";
-    pub const TILE_RADIUS: &str = "18.0";
-    pub const ROW_H: u32 = 40;
-    pub const DAY_W: u32 = 92;
-    pub const ICON_W: u32 = 34;
-    pub const TEMP_W: u32 = 46;
-    /// A right-aligned label sets its text flush to the box edge and `°` overhangs
-    /// the clip, rendering as `29ᶜ`. Widening the box does not help — alignment
-    /// moves the text with the edge. This padding pulls the digits back inside AND
-    /// makes the gaps either side of the bar equal.
-    pub const TEMP_PAD: u32 = 5;
-    pub const BAR_MARGIN: u32 = 10;
-    pub const BAR_H: u32 = 8;
-    pub const GAP: u32 = 16;
-    pub const MAP_H: u32 = 190;
-}
 
 /// Lower a plan to Splash DSL, or explain why it cannot be lowered.
 ///
 /// The error strings are written for the repair loop: they name the offending
 /// field and the permitted values, so a retry is targeted rather than a whole-card
 /// regeneration.
-pub fn lower_plan(json: &str) -> Result<String, String> {
+pub fn lower(json: &str) -> Result<String, String> {
     let plan: Plan = serde_json::from_str(json)
-        .map_err(|e| format!("plan is not valid: {e}"))?;
+        .map_err(|e| format!("weather plan is not valid: {e}"))?;
     if plan.plan != "weather" {
         return Err(format!(
             "unsupported plan kind {:?} — only \"weather\" lowers today",
@@ -173,7 +103,7 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
         return Err("place.query is empty — name the place".to_string());
     }
     let zh = plan.locale.starts_with("zh");
-    let loc = if zh { "zh" } else { "en" };
+    let loc = locale_tag(&plan.locale);
     let place = &plan.place.query;
     // Coordinates are RESOLVED, never carried. Called inline at each use site:
     // a card's top-level `let` bindings evaluate once at build time, before any
@@ -201,25 +131,12 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
         body.push('\n');
     }
 
-    // EXACTLY ONE top-level node, by construction. Sibling top-level nodes lay out
-    // SIDE BY SIDE, so an extra background node does not sit behind the card — it
-    // takes half the width and squeezes the card into the other half.
-    Ok(format!(
-        "// name: weather-app\n\
-         // LOWERED from a semantic plan — do not edit.\n\
-         SolidView{{ width: Fill height: Fit flow: Overlay new_batch: true draw_bg.color: {base}\n\
-         \x20   Image{{ src: http_resource(sys.photo({photo:?})) fit: ImageFit.CropToFill width: Fill height: {ph} }}\n\
-         \x20   SolidView{{ width: Fill height: Fill draw_bg.color: {scrim} }}\n\
-         \x20   View{{ width: Fill height: Fit flow: Down padding: {pad}\n\
-         {body}\x20   }}\n\
-         }}\n",
-        base = theme::BASE,
-        photo = if plan.photo.trim().is_empty() { place.clone() } else { plan.photo.clone() },
-        ph = theme::PHOTO_H,
-        scrim = theme::SCRIM,
-        pad = theme::PAGE_PAD,
-        body = body,
-    ))
+    let photo = if plan.photo.trim().is_empty() {
+        place.clone()
+    } else {
+        plan.photo.clone()
+    };
+    Ok(photo_root("weather-app", &photo, &body))
 }
 
 fn current_conditions(ll: &str, place: &str, loc: &str) -> String {
@@ -279,7 +196,7 @@ fn forecast(a: &Args, ll: &str, loc: &str) -> String {
         "\x20       RoundedView{{ width: Fill height: Fit flow: Down new_batch: true \
          draw_bg.color: {panel} draw_bg.border_radius: {pr} margin: Inset{{top: {gap}}} \
          padding: Inset{{left: 16 right: 16 top: 10 bottom: 10}}\n{rows}\x20       }}",
-        panel = theme::PANEL,
+        panel = theme::PHOTO_PANEL,
         pr = theme::PANEL_RADIUS,
         gap = theme::GAP,
     )
@@ -324,7 +241,7 @@ fn sun_moon(ll: &str, zh: bool) -> String {
          \x20               }}\n\
          \x20           }}\n\
          \x20       }}",
-        panel = theme::PANEL,
+        panel = theme::PHOTO_PANEL,
         pr = theme::PANEL_RADIUS,
         gap = theme::GAP,
         faint = theme::TEXT_FAINT,
@@ -359,7 +276,7 @@ fn details(a: &Args, ll: &str, zh: bool, i: usize) -> Result<String, String> {
              \x20                   TextCaption{{ text: {cap:?} draw_text.color: {faint} }}\n\
              \x20                   TextValue{{ text: {value} draw_text.color: {text} }}\n\
              \x20               }}",
-            tile = theme::TILE,
+            tile = theme::PHOTO_TILE,
             tr = theme::TILE_RADIUS,
             faint = theme::TEXT_FAINT,
             text = theme::TEXT,
@@ -399,7 +316,7 @@ mod tests {
     /// lowering rather than a rule the model is asked to follow.
     #[test]
     fn lowered_card_holds_every_invariant() {
-        let out = lower_plan(KYOTO).expect("valid plan must lower");
+        let out = lower(KYOTO).expect("valid plan must lower");
 
         // Exactly one top-level node — a sibling would take half the screen width.
         assert_eq!(
@@ -431,7 +348,7 @@ mod tests {
     fn a_coordinate_cannot_even_be_expressed() {
         let bad = r#"{"plan":"weather","locale":"en",
             "place":{"query":"Kyoto","lat":35.0},"sections":[]}"#;
-        let err = lower_plan(bad).unwrap_err();
+        let err = lower(bad).unwrap_err();
         assert!(err.contains("lat"), "unknown field must be named: {err}");
     }
 
@@ -439,7 +356,7 @@ mod tests {
     fn unknown_block_is_rejected_with_the_permitted_set() {
         let bad = r#"{"plan":"weather","locale":"en","place":{"query":"Kyoto"},
             "sections":[{"block":"PollenChart"}]}"#;
-        let err = lower_plan(bad).unwrap_err();
+        let err = lower(bad).unwrap_err();
         assert!(err.contains("PollenChart") && err.contains("CurrentConditions"), "{err}");
     }
 
@@ -450,7 +367,7 @@ mod tests {
     fn the_weather_itself_cannot_be_stated_by_the_model() {
         let bad = r#"{"plan":"weather","locale":"en","place":{"query":"Kyoto"},
             "sections":[{"block":"CurrentConditions","args":{"condition":"cloudy"}}]}"#;
-        let err = lower_plan(bad).unwrap_err();
+        let err = lower(bad).unwrap_err();
         assert!(err.contains("condition"), "unknown field must be named: {err}");
     }
 
@@ -458,7 +375,7 @@ mod tests {
     /// disagree with each other or with the sky.
     #[test]
     fn condition_is_derived_from_the_live_code() {
-        let out = lower_plan(KYOTO).unwrap();
+        let out = lower(KYOTO).unwrap();
         assert!(out.contains("sys.weathercond("), "icon from the live code");
         assert!(out.contains("sys.weatherword("), "word from the live code");
         assert!(!out.contains("draw_bg.cond: 2"), "no literal icon index");
@@ -475,7 +392,7 @@ mod tests {
     #[test]
     fn locale_drives_every_label() {
         let zh = KYOTO.replace(r#""locale": "en""#, r#""locale": "zh""#);
-        let out = lower_plan(&zh).expect("zh plan must lower");
+        let out = lower(&zh).expect("zh plan must lower");
         assert!(out.contains("\"zh\""), "locale is threaded to the helpers");
         assert!(out.contains("空气质量图"));
         assert!(out.contains("name_zh"));
@@ -487,7 +404,7 @@ mod tests {
     /// reduction in error surface.
     #[test]
     fn plan_is_far_smaller_than_the_card() {
-        let out = lower_plan(KYOTO).unwrap();
+        let out = lower(KYOTO).unwrap();
         assert!(
             out.len() > KYOTO.len() * 8,
             "card {} vs plan {}",

@@ -545,24 +545,7 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
 /// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
 /// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
 /// they have no baked copy and rely on the deployed tree.
-/// Which domains hand the model a PLAN spec instead of a DSL spec.
-///
-/// A plan carries only what the model can be trusted with — which place, which
-/// condition, which sections — and `app::plan::lower_plan` supplies the rest. See
-/// that module for why: six silent failures in one domain, each fixed by adding a
-/// prohibition to a 448-line spec, all with the same shape.
-///
-/// ONE line to revert. Live generation on this path is not yet device-verified: the
-/// lowering, the schema and the pipeline are covered by tests (including that a
-/// lowered card is brace-balanced and survives `substitute_card_state`), but nobody
-/// has yet watched the on-device agent emit a plan and the card appear. If plans
-/// come back malformed, take a domain out of this list and it returns to the DSL
-/// path immediately — `card_splash_body` accepts either fence regardless.
-const PLAN_DOMAINS: &[&str] = &["weather"];
-
-fn domain_uses_plan(domain: &str) -> bool {
-    PLAN_DOMAINS.contains(&domain)
-}
+use crate::app::plan::{domain_uses_plan, PLAN_DOMAINS};
 
 fn baked_app_md(domain: &str) -> Option<&'static str> {
     Some(match domain {
@@ -573,8 +556,20 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
                 include_str!("../../../a2app/apps/weather/app.md")
             }
         }
-        "stock" => include_str!("../../../a2app/apps/stock/app.md"),
-        "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "stock" => {
+            if domain_uses_plan("stock") {
+                include_str!("../../../a2app/apps/stock/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/stock/app.md")
+            }
+        }
+        "news" => {
+            if domain_uses_plan("news") {
+                include_str!("../../../a2app/apps/news/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/news/app.md")
+            }
+        }
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
@@ -9193,13 +9188,13 @@ mod tests {
     #[test]
     fn splash_gen_prompt_is_self_contained() {
         // A DSL domain's prompt must inline the spec + manual and forbid the
-        // invented pseudo-DSL, since octos no longer injects app-cards. `stock` is
-        // used because `weather` now takes the PLAN path (see PLAN_DOMAINS).
-        assert!(!crate::domain_uses_plan("stock"), "this test needs a DSL domain");
-        let docs = "\n----- apps/stock/app.md — THIS IS YOUR SPEC -----\nmandatory: 10 movers via sys.movers\n";
-        let p = splash_gen_prompt("stock", "top gainers", docs);
-        assert!(p.contains("top gainers"), "carries the user intent");
-        assert!(p.contains("apps/stock/app.md"), "inlines the routed spec");
+        // invented pseudo-DSL, since octos no longer injects app-cards. `activity` is
+        // used because weather/news/stock now take the PLAN path (see PLAN_DOMAINS).
+        assert!(!crate::app::plan::domain_uses_plan("activity"), "this test needs a DSL domain");
+        let docs = "\n----- apps/activity/app.md — THIS IS YOUR SPEC -----\nmandatory: venues via sys.places\n";
+        let p = splash_gen_prompt("activity", "things to do nearby", docs);
+        assert!(p.contains("things to do nearby"), "carries the user intent");
+        assert!(p.contains("apps/activity/app.md"), "inlines the routed spec");
         assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
         assert!(p.contains("```runsplash"), "demands one runsplash block");
         // Directly targets the GLM-5.2 failure mode.
@@ -9216,7 +9211,7 @@ mod tests {
     /// write, and leaving them in would only invite it to write a card anyway.
     #[test]
     fn plan_domain_prompt_asks_for_a_plan_not_a_card() {
-        assert!(crate::domain_uses_plan("weather"), "weather is expected on the plan path");
+        assert!(crate::app::plan::domain_uses_plan("weather"), "weather is expected on the plan path");
         let docs = "\n----- apps/weather/plan.md — THIS IS YOUR SPEC -----\nblocks: Forecast\n";
         let p = splash_gen_prompt("weather", "weather in tokyo", docs);
         assert!(p.contains("weather in tokyo"), "carries the user intent");
@@ -9226,18 +9221,22 @@ mod tests {
         assert!(p.contains("REJECTED"), "tells the model a bad field is rejected");
     }
 
-    /// The spec a plan domain is handed must be the PLAN spec.
+    /// Every plan domain must be served its PLAN spec, and every other domain its DSL
+    /// spec. Asserting both directions means moving a domain in or out of PLAN_DOMAINS
+    /// cannot silently serve the wrong one.
     #[test]
     fn plan_domain_is_served_the_plan_spec() {
-        let md = baked_app_md("weather").expect("weather spec must be baked in");
-        assert!(md.contains("```runplan"), "weather must get plan.md");
-        assert!(md.contains("You do **not** write the card"));
-        // And a DSL domain still gets its DSL spec.
-        // A DSL domain still gets its DSL spec: no plan fence, and it still names
-        // the sys.* helpers a card binds directly.
-        let stock = baked_app_md("stock").expect("stock spec must be baked in");
-        assert!(!stock.contains("```runplan"), "stock must stay on the DSL path");
-        assert!(stock.contains("sys.stock"), "stock spec still binds helpers itself");
+        for d in crate::app::plan::PLAN_DOMAINS {
+            let md = baked_app_md(d).unwrap_or_else(|| panic!("{d} spec must be baked in"));
+            assert!(md.contains("```runplan"), "{d} must get plan.md");
+            assert!(
+                md.contains("You do **not** write the card"),
+                "{d} plan spec must say the runtime builds it"
+            );
+        }
+        // A DSL domain still gets its DSL spec.
+        let act = baked_app_md("activity").expect("activity spec must be baked in");
+        assert!(!act.contains("```runplan"), "activity must stay on the DSL path");
     }
 
     #[test]
