@@ -194,10 +194,18 @@ fn write_node(n: &Node, depth: usize, out: &mut String) {
     let pad = "    ".repeat(depth);
     out.push_str(&format!("{pad}{{t: {:?}", n.kind));
     for (k, v) in &n.attrs {
+        // A `*_expr` attribute carries a sys.* CALL and is emitted unquoted under its
+        // base name, so the VM evaluates it and the builder reads a number. Quoting it
+        // would render the call as literal text — the failure this naming exists to make
+        // impossible to introduce by accident.
+        let (name, force_expr) = match k.strip_suffix("_expr") {
+            Some(base) => (base, true),
+            None => (k.as_str(), false),
+        };
         match v {
-            Val::F(f) => out.push_str(&format!(", {k}: {f}")),
-            Val::S(s) if is_expr(s) => out.push_str(&format!(", {k}: {s}")),
-            Val::S(s) => out.push_str(&format!(", {k}: {s:?}")),
+            Val::F(f) => out.push_str(&format!(", {name}: {f}")),
+            Val::S(s) if force_expr || is_expr(s) => out.push_str(&format!(", {name}: {s}")),
+            Val::S(s) => out.push_str(&format!(", {name}: {s:?}")),
         }
     }
     if n.children.is_empty() {
@@ -325,7 +333,7 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                             .n("spacing", 8.0)
                             .kid(
                                 Node::new("weathericon")
-                                    .s("bind_cond", &format!("sys.weathercond({ll}, \"current.weather_code\")"))
+                                    .s("cond_expr", &format!("sys.weathercond({ll}, \"current.weather_code\")"))
                                     .n("w", 44.0)
                                     .n("h", 44.0),
                             )
@@ -363,19 +371,29 @@ fn weather(sections: &[serde_json::Value], place: &str, loc: &str, zh: bool) -> 
                             .kid(txt(role::ROW, &format!("sys.dayname({ll}, {d}, {loc:?})")).n("w", 74.0))
                             .kid(
                                 Node::new("weathericon")
-                                    .s("bind_cond", &format!("sys.weathercond({ll}, \"daily.weather_code.{d}\")"))
+                                    .s("cond_expr", &format!("sys.weathercond({ll}, \"daily.weather_code.{d}\")"))
                                     .n("w", 26.0)
                                     .n("h", 26.0),
                             )
                             .kid(
                                 txt(role::ROW, &format!("sys.weather({ll}, \"daily.temperature_2m_min.{d}\") + \"°\""))
-                                    
-                                    .n("w", 46.0),
+                                    .n("w", 44.0),
+                            )
+                            // The range bar. Its endpoints and the week's extent are all
+                            // live calls: a plan cannot state the week's range, because
+                            // the values are a fetch it never sees.
+                            .kid(
+                                Node::new("tempbar")
+                                    .s("lo_expr", &format!("sys.weathernum({ll}, \"daily.temperature_2m_min.{d}\")"))
+                                    .s("hi_expr", &format!("sys.weathernum({ll}, \"daily.temperature_2m_max.{d}\")"))
+                                    .s("wmin_expr", &format!("sys.weekmin({ll})"))
+                                    .s("wmax_expr", &format!("sys.weekmax({ll})"))
+                                    .n("h", 6.0)
+                                    .n("grow", 1.0),
                             )
                             .kid(
                                 txt(role::ROW, &format!("sys.weather({ll}, \"daily.temperature_2m_max.{d}\") + \"°\""))
-                                    
-                                    .n("w", 46.0),
+                                    .n("w", 44.0),
                             ),
                     );
                 }

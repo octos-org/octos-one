@@ -33,6 +33,35 @@ final class Builder {
     /** ARGB comes across as a double, because the wire format carries numbers as f64. */
     private static int argb(double v) { return (int) (long) v; }
 
+    /**
+     * A Material type token → (sp, bold).
+     *
+     * The lowering names a ROLE, never a size — that is the whole point of roles, and it
+     * is what lets the same plan look native on each backend. Ignoring the token was why
+     * an early build rendered every line at the same default size and read as flat: the
+     * card was saying "displayMedium" and the builder was hearing nothing.
+     */
+    private static float[] type(String variant) {
+        switch (variant == null ? "" : variant) {
+            case "displayLarge":  return new float[]{57, 0};
+            case "displayMedium": return new float[]{45, 0};
+            case "displaySmall":  return new float[]{36, 0};
+            case "headlineLarge": return new float[]{32, 0};
+            case "headlineMedium":return new float[]{28, 0};
+            case "headlineSmall": return new float[]{24, 0};
+            case "titleLarge":    return new float[]{22, 0};
+            case "titleMedium":   return new float[]{16, 1};
+            case "titleSmall":    return new float[]{14, 1};
+            case "bodyLarge":     return new float[]{16, 0};
+            case "bodyMedium":    return new float[]{14, 0};
+            case "bodySmall":     return new float[]{12, 0};
+            case "labelLarge":    return new float[]{14, 1};
+            case "labelMedium":   return new float[]{12, 1};
+            case "labelSmall":    return new float[]{11, 1};
+            default:              return new float[]{14, 0};
+        }
+    }
+
     View build(Node n) {
         if (n == null) return null;
         switch (n.kind) {
@@ -82,11 +111,41 @@ final class Builder {
             case "text": {
                 TextView t = new TextView(ctx);
                 t.setText(n.s("text", ""));
-                t.setTextSize(TypedValue.COMPLEX_UNIT_SP, n.f("size", 14));
-                t.setTextColor(n.has("color") ? argb(n.f("color", 0)) : Color.WHITE);
-                // The DSL's weight is a 1..9 scale; anything at 6 or above reads as bold.
-                if (n.f("weight", 4) >= 6) t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
+                float[] ty = type(n.s("variant"));
+                // An explicit size wins; otherwise the role decides. A role-only card is
+                // the normal case and must not fall back to one flat size.
+                t.setTextSize(TypedValue.COMPLEX_UNIT_SP, n.has("size") ? n.f("size", 14) : ty[0]);
+                boolean bold = ty[1] > 0 || n.f("weight", 4) >= 6;
+                if (bold) t.setTypeface(t.getTypeface(), android.graphics.Typeface.BOLD);
+                // Captions and labels recede; everything else is primary. Colour is the
+                // theme's, not the card's, so the card stays legible on any background.
+                int fg = Color.WHITE;
+                String v = n.s("variant", "");
+                if (v.startsWith("label") || "bodySmall".equals(v)) fg = 0x99FFFFFF;
+                else if ("bodyMedium".equals(v)) fg = 0xCCFFFFFF;
+                t.setTextColor(n.has("color") ? argb(n.f("color", 0)) : fg);
+                if (ty[0] >= 36) t.setLetterSpacing(-0.02f);
                 return t;
+            }
+            case "weathericon": {
+                // The condition glyph. A drawn icon rather than the "[weathericon]"
+                // placeholder an unknown kind gets — a weather card whose weather is a
+                // bracketed word is not a weather card.
+                WeatherIconView w = new WeatherIconView(ctx, (int) n.f("cond", n.f("bind_cond", 1)));
+                return w;
+            }
+            case "tempbar": {
+                // The forecast range bar. A gradient keyed to POSITION IN THE WEEK, not
+                // to absolute degrees: a week spanning 26-37 keyed absolutely sits
+                // entirely in the warm half and every bar draws the same colour.
+                View v = new View(ctx);
+                GradientDrawable g = new GradientDrawable(
+                    GradientDrawable.Orientation.LEFT_RIGHT,
+                    new int[]{ ramp(n.f("lo", 0), n.f("wmin", 0), n.f("wmax", 1)),
+                               ramp(n.f("hi", 1), n.f("wmin", 0), n.f("wmax", 1)) });
+                g.setCornerRadius(dp(3));
+                v.setBackground(g);
+                return v;
             }
             case "spacer": {
                 View v = new View(ctx);
@@ -118,6 +177,27 @@ final class Builder {
                 return t;
             }
         }
+    }
+
+    /** Cool→warm by position in the week. Same nine-stop palette as the makepad TempBar. */
+    private static int ramp(double t, double wmin, double wmax) {
+        double span = Math.max(0.001, wmax - wmin);
+        double p = Math.max(0, Math.min(1, (t - wmin) / span));
+        int[] stops = {0xFF1E5CFF, 0xFF00A3FF, 0xFF00D9C0, 0xFF3FBF52, 0xFFC6E016,
+                       0xFFFFC400, 0xFFFF8A00, 0xFFFF4B10, 0xFFE01B1B};
+        double x = p * (stops.length - 1);
+        int i = Math.min((int) Math.floor(x), stops.length - 2);
+        double f = x - i;
+        return lerp(stops[i], stops[i + 1], f);
+    }
+
+    private static int lerp(int a, int b, double f) {
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        return 0xFF000000
+            | ((int) Math.round(ar + (br - ar) * f) << 16)
+            | ((int) Math.round(ag + (bg - ag) * f) << 8)
+            | (int) Math.round(ab + (bb - ab) * f);
     }
 
     /** Explicit w/h win; otherwise a child fills the cross axis and wraps the main one. */

@@ -72,11 +72,6 @@ public class MainActivity extends Activity {
 
         runOnUiThread(() -> {
             root.removeAllViews();
-            // A provenance header, so a screenshot cannot be mistaken for a mock-up.
-            note("card: " + name + "  —  " + origin);
-            note("VM: ymote/Splash (splash-core)   render: android.widget.*   makepad: none");
-            note("fetch: " + stats);
-            if (diag != null && !diag.isEmpty()) note("diag: " + diag);
             if (bb == null) {
                 note("render returned nothing — that is a bug, not an empty card");
                 return;
@@ -93,7 +88,14 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "build failed", t);
                 note("build failed: " + t);
             }
-            note("sys.* available here: " + caps);
+            // Provenance LAST: it is evidence for a reviewer, not chrome for a user. A
+            // card whose first three lines are diagnostics reads as a debug screen.
+            note("");
+            note("card: " + name + " — " + origin);
+            note("VM: ymote/Splash (splash-core) · render: android.widget.* · makepad: none");
+            note("fetch: " + stats);
+            if (diag != null && !diag.isEmpty()) note("diag: " + diag);
+            note("sys.*: " + caps);
         });
     }
 

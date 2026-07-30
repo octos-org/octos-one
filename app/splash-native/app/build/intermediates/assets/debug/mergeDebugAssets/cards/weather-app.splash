@@ -5,7 +5,7 @@
         {t: "text", text: sys.geocode("Kyoto", "name"), variant: "headlineSmall"},
         {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "current.temperature_2m") + "°", variant: "displayMedium"},
         {t: "row", spacing: 8, c: [
-            {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "current.weather_code"), w: 44, h: 44},
+            {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "current.weather_code"), w: 44, h: 44},
             {t: "text", text: sys.weatherword(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "current.weather_code", "en"), variant: "titleMedium"}
         ]},
         {t: "text", text: "↑" + sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.0") + "°   ↓" + sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.0") + "°   ≈" + sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "current.apparent_temperature") + "°", variant: "bodyMedium"}
@@ -14,45 +14,52 @@
         {t: "col", spacing: 6, c: [
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 0, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.0"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.0") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.0") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.0"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.0") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.0"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.0"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.0") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 1, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.1"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.1") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.1") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.1"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.1") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.1"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.1"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.1") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 2, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.2"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.2") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.2") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.2"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.2") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.2"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.2"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.2") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 3, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.3"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.3") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.3") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.3"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.3") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.3"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.3"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.3") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 4, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.4"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.4") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.4") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.4"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.4") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.4"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.4"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.4") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 5, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.5"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.5") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.5") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.5"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.5") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.5"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.5"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.5") + "°", variant: "bodyLarge", w: 44}
             ]},
             {t: "row", spacing: 10, c: [
                 {t: "text", text: sys.dayname(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), 6, "en"), variant: "bodyLarge", w: 74},
-                {t: "weathericon", bind_cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.6"), w: 26, h: 26},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.6") + "°", variant: "bodyLarge", w: 46},
-                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.6") + "°", variant: "bodyLarge", w: 46}
+                {t: "weathericon", cond: sys.weathercond(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.weather_code.6"), w: 26, h: 26},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.6") + "°", variant: "bodyLarge", w: 44},
+                {t: "tempbar", lo: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_min.6"), hi: sys.weathernum(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.6"), wmin: sys.weekmin(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), wmax: sys.weekmax(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon")), h: 6, grow: 1},
+                {t: "text", text: sys.weather(sys.geocodenum("Kyoto", "lat"), sys.geocodenum("Kyoto", "lon"), "daily.temperature_2m_max.6") + "°", variant: "bodyLarge", w: 44}
             ]}
         ]}
     ]},
