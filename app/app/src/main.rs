@@ -545,9 +545,34 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
 /// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
 /// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
 /// they have no baked copy and rely on the deployed tree.
+/// Which domains hand the model a PLAN spec instead of a DSL spec.
+///
+/// A plan carries only what the model can be trusted with — which place, which
+/// condition, which sections — and `app::plan::lower_plan` supplies the rest. See
+/// that module for why: six silent failures in one domain, each fixed by adding a
+/// prohibition to a 448-line spec, all with the same shape.
+///
+/// ONE line to revert. Live generation on this path is not yet device-verified: the
+/// lowering, the schema and the pipeline are covered by tests (including that a
+/// lowered card is brace-balanced and survives `substitute_card_state`), but nobody
+/// has yet watched the on-device agent emit a plan and the card appear. If plans
+/// come back malformed, take a domain out of this list and it returns to the DSL
+/// path immediately — `card_splash_body` accepts either fence regardless.
+const PLAN_DOMAINS: &[&str] = &["weather"];
+
+fn domain_uses_plan(domain: &str) -> bool {
+    PLAN_DOMAINS.contains(&domain)
+}
+
 fn baked_app_md(domain: &str) -> Option<&'static str> {
     Some(match domain {
-        "weather" => include_str!("../../../a2app/apps/weather/app.md"),
+        "weather" => {
+            if domain_uses_plan("weather") {
+                include_str!("../../../a2app/apps/weather/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/weather/app.md")
+            }
+        }
         "stock" => include_str!("../../../a2app/apps/stock/app.md"),
         "news" => include_str!("../../../a2app/apps/news/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
@@ -605,6 +630,24 @@ fn app_card_docs(domain: &str) -> String {
 /// "only real Splash syntax" clause targets the observed GLM-5.2 failure mode of
 /// inventing `Card {}` / `layout: {}` / `background:` pseudo-DSL.
 fn splash_gen_prompt(domain: &str, intent: &str, docs: &str) -> String {
+    if domain_uses_plan(domain) {
+        // A PLAN domain: the model emits typed intent, not a card. Almost all of
+        // the DSL prompt's warnings are about syntax it can no longer write, so
+        // they are omitted rather than left to confuse it.
+        return format!(
+            "You ARE the {domain} app agent. Your PLAN SPEC is INLINED BELOW — you \
+have everything you need, so do NOT claim anything is missing, do NOT read or fetch \
+files, and do NOT ask questions.\n\n\
+You do NOT write the card. You choose WHAT IT SHOWS and the runtime builds it. Emit \
+EXACTLY ONE ```runplan fenced block containing the JSON the spec describes, as your \
+ENTIRE final answer — no prose before or after, never truncated.\n\n\
+Only the fields the spec lists exist. Anything absent from the schema — a \
+coordinate, a temperature, a font, a colour, a size — is supplied by the runtime, \
+and a plan carrying one is REJECTED with the offending field named. Choose the \
+place, the condition words, the sections and the locale; nothing else.\n\
+{docs}\n\nUser request: {intent}"
+        );
+    }
     format!(
         "You ARE the {domain} app agent and you OWN the entire card generation. Your \
 SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
@@ -8971,6 +9014,44 @@ mod tests {
         );
     }
 
+    /// A LOWERED PLAN must be shippable through the same pipeline as a
+    /// model-written card. This is the verification that does not need a device:
+    /// `assert_shippable` catches the fatal class — an unbalanced brace crashes the
+    /// Splash eval outright — plus unexpanded embeds and unresolved tokens.
+    #[test]
+    fn lowered_plan_is_shippable_through_the_full_pipeline() {
+        let plan = r#"{
+            "plan": "weather", "locale": "en",
+            "place": { "query": "Kyoto" },
+            "photo": "kyoto city cloudy sky",
+            "sections": [
+                { "block": "CurrentConditions", "args": { "condition": "cloudy" } },
+                { "block": "Forecast", "args": { "days": 7 } },
+                { "block": "AirQualityField" },
+                { "block": "SunMoon" },
+                { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
+            ]
+        }"#;
+        let card = crate::app::plan::lower_plan(plan).expect("plan must lower");
+        let out = substitute_card_state(&card, 3, &BTreeMap::new());
+        assert_shippable(&out);
+        // And it must survive as a `runplan` fence in a message, which is how it
+        // actually arrives.
+        let msg = format!("```runplan\n{plan}\n```");
+        let body = crate::card_splash_body(&msg).expect("runplan fence must lower");
+        assert_shippable(&substitute_card_state(&body, 4, &BTreeMap::new()));
+        assert!(body.contains("// name: weather-app"), "needs the name line to be saved");
+    }
+
+    /// A rejected plan must yield NO card rather than a partial one — half a card
+    /// looks complete and is not.
+    #[test]
+    fn a_rejected_plan_yields_no_card() {
+        let bad = "```runplan\n{\"plan\":\"weather\",\"locale\":\"en\",\
+            \"place\":{\"query\":\"Kyoto\",\"lat\":35.0},\"sections\":[]}\n```";
+        assert!(crate::card_splash_body(bad).is_none(), "a coordinate must reject the whole plan");
+    }
+
     #[test]
     fn compose_navigate_to_x_full_pipeline() {
         // "navigate to NVIDIA": one-line host embeds nav.navigate, dest seeded
@@ -9111,12 +9192,14 @@ mod tests {
 
     #[test]
     fn splash_gen_prompt_is_self_contained() {
-        // The routed generation prompt must inline the spec + manual and forbid
-        // the invented pseudo-DSL, since octos no longer injects app-cards.
-        let docs = "\n----- apps/weather/app.md — THIS IS YOUR SPEC -----\nmandatory: 7-day forecast via sys.weather\n";
-        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
-        assert!(p.contains("weather in tokyo"), "carries the user intent");
-        assert!(p.contains("apps/weather/app.md"), "inlines the routed spec");
+        // A DSL domain's prompt must inline the spec + manual and forbid the
+        // invented pseudo-DSL, since octos no longer injects app-cards. `stock` is
+        // used because `weather` now takes the PLAN path (see PLAN_DOMAINS).
+        assert!(!crate::domain_uses_plan("stock"), "this test needs a DSL domain");
+        let docs = "\n----- apps/stock/app.md — THIS IS YOUR SPEC -----\nmandatory: 10 movers via sys.movers\n";
+        let p = splash_gen_prompt("stock", "top gainers", docs);
+        assert!(p.contains("top gainers"), "carries the user intent");
+        assert!(p.contains("apps/stock/app.md"), "inlines the routed spec");
         assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
         assert!(p.contains("```runsplash"), "demands one runsplash block");
         // Directly targets the GLM-5.2 failure mode.
@@ -9126,6 +9209,35 @@ mod tests {
             !p.contains("in your memory"),
             "must NOT rely on the dead memory injection"
         );
+    }
+
+    /// A PLAN domain gets a different prompt: emit typed intent, not a card. It must
+    /// NOT carry the DSL warnings — they are about syntax the model can no longer
+    /// write, and leaving them in would only invite it to write a card anyway.
+    #[test]
+    fn plan_domain_prompt_asks_for_a_plan_not_a_card() {
+        assert!(crate::domain_uses_plan("weather"), "weather is expected on the plan path");
+        let docs = "\n----- apps/weather/plan.md — THIS IS YOUR SPEC -----\nblocks: Forecast\n";
+        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
+        assert!(p.contains("weather in tokyo"), "carries the user intent");
+        assert!(p.contains("```runplan"), "demands one runplan block");
+        assert!(!p.contains("```runsplash"), "must not ask for a card");
+        assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the plan path");
+        assert!(p.contains("REJECTED"), "tells the model a bad field is rejected");
+    }
+
+    /// The spec a plan domain is handed must be the PLAN spec.
+    #[test]
+    fn plan_domain_is_served_the_plan_spec() {
+        let md = baked_app_md("weather").expect("weather spec must be baked in");
+        assert!(md.contains("```runplan"), "weather must get plan.md");
+        assert!(md.contains("You do **not** write the card"));
+        // And a DSL domain still gets its DSL spec.
+        // A DSL domain still gets its DSL spec: no plan fence, and it still names
+        // the sys.* helpers a card binds directly.
+        let stock = baked_app_md("stock").expect("stock spec must be baked in");
+        assert!(!stock.contains("```runplan"), "stock must stay on the DSL path");
+        assert!(stock.contains("sys.stock"), "stock spec still binds helpers itself");
     }
 
     #[test]
