@@ -631,8 +631,7 @@ shape, from single runs against live APIs, with no repetitions, distributions, c
 intervals, TTL-expiry tests, routing tests, concurrent cold-start tests or production traces.
 They demonstrate a **mechanism** — a stable prefix caches, mutation destroys it, the saving
 falls on prefill — not a hit *probability* over time or under load. The scripts currently live
-in a session scratchpad and are **not yet reproducible in-repo**; they should be checked in
-alongside `docs/tools/card-metrics.sh`.
+in `docs/tools/cache/`, with a README stating what the numbers are and are not.
 
 ### 9.1 The one rule
 
