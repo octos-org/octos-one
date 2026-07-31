@@ -32,7 +32,7 @@ copy pts      { class: vocabulary, en: "pts",         zh: "分" }
 copy comments { class: vocabulary, en: "comments",    zh: "评论" }
 copy by       { class: vocabulary, en: "by",          zh: "作者" }
 
-view root  Surface(pad: page) {
+view root  Surface(pad: .page) {
              when selected == "" { stream }
              when selected != "" { story }
            }
@@ -51,7 +51,7 @@ view masthead  Col {
 # The lead story, given room. Every field is live.
 view headline  Card(on_tap: open_story, value: lead.0.id) {
                  TextCaption(text: copy.lead)
-                 TextBody(text: lead.0.title, width: fill)
+                 TextBody(text: lead.0.title, width: .fill)
                  Row(gap: 6) {
                    TextCaption(value: lead.0.points,   suffix: copy.pts)
                    TextCaption(value: lead.0.comments, suffix: copy.comments)
@@ -67,14 +67,14 @@ view headline  Card(on_tap: open_story, value: lead.0.id) {
 #   - reads card-scope `copy` directly (§5.3 permits copy and source, not state)
 #   - has no local state, so its schema id is empty and it never resets
 #
-# The prop is `position`, not `rank`: `width: rank` is a layout token, and a
+# The prop is `position`, not `rank`: `width: .rank` is a layout token, and a
 # prop of the same name would collide. See finding #9.
 component StoryRow(story: record, position: number, on_open: event) {
   view Col {
-         Row(align: center, on_tap: on_open, value: story.id) {
-           TextRow(text: position, width: rank)
+         Row(align: .center, on_tap: on_open, value: story.id) {
+           TextRow(text: position, width: .rank)
            Col(gap: 3) {
-             TextRow(text: story.title, width: fill)
+             TextRow(text: story.title, width: .fill)
              Row(gap: 6) {
                TextCaption(value: story.points, suffix: copy.pts)
                TextCaption(text: story.author)
@@ -98,7 +98,7 @@ view latest  Col {
 
 view story  Col {
               Row(on_tap: back) { TextCaption(glyph: "‹") }
-              TextTitle(text: article.title, width: fill)
+              TextTitle(text: article.title, width: .fill)
               Row(gap: 6) {
                 TextCaption(value: article.points, suffix: copy.pts)
                 TextCaption(text: copy.by)

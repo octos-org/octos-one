@@ -27,7 +27,7 @@ state units { shape: enum[c, f], initial: env.locale.temp_unit }
 state days  { shape: number, initial: 7 }
 
 # ── events: total transitions, applied atomically ────────────────────────────
-event toggle_units { units: cycle(c, f) }
+event toggle_units { units: cycle(.c, .f) }
 event pick_city    { city: set($value) }
 
 # ── copy: declared literals, all host-owned vocabulary ───────────────────────
@@ -42,7 +42,7 @@ copy sunrise    { class: vocabulary, en: "Sunrise",      zh: "日出" }
 copy sunset     { class: vocabulary, en: "Sunset",       zh: "日落" }
 
 # ── view ─────────────────────────────────────────────────────────────────────
-view root  Photo(src: scene, pad: page) {
+view root  Photo(src: scene, pad: .page) {
              current
              forecast
              airfield
@@ -50,9 +50,9 @@ view root  Photo(src: scene, pad: page) {
              details
            }
 
-view current  Col(align: center) {
+view current  Col(align: .center) {
                 TextTitle(text: place.name)
-                WeatherIcon(cond: now.cond, size: hero)
+                WeatherIcon(cond: now.cond, size: .hero)
                 TextHero(value: now.temp, unit: units, on_tap: toggle_units)
                 Row(gap: 8) {
                   TextCaption(glyph: "↑", value: now.hi, unit: units)
@@ -69,14 +69,14 @@ view current  Col(align: center) {
 #     that keeps the dependency visible to the tracker
 #   - the transition is `toggle`, a total form, not `!expanded` (§3)
 #
-# Prop named `item`, not `day`: `width: day` is a layout token. See finding #9.
+# Prop named `item`, not `day`: `width: .day` is a layout token. See finding #9.
 component ForecastRow(item: record, unit: enum[c, f]) {
   state expanded { shape: bool, initial: false }
   event toggle   { expanded: toggle }
   view Col {
-         Row(align: center, on_tap: toggle) {
-           TextRow(text: item.dayname, width: day)
-           WeatherIcon(cond: item.cond, size: row)
+         Row(align: .center, on_tap: toggle) {
+           TextRow(text: item.dayname, width: .day)
+           WeatherIcon(cond: item.cond, size: .row)
            TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
            TextValue(value: item.hi, unit: unit)
          }
@@ -102,9 +102,9 @@ view airfield  Panel {
 
 view sunmoon  Panel {
                 Row {
-                  Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: time) }
+                  Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: .time) }
                   SunArc(rise: sun.rise, set: sun.set, now: sun.now)
-                  Col { TextCaption(text: copy.sunset)  TextStat(value: sun.set,  format: time) }
+                  Col { TextCaption(text: copy.sunset)  TextStat(value: sun.set,  format: .time) }
                 }
                 MoonPhase(phase: moon.phase, illum: moon.illumination)
               }
@@ -114,9 +114,9 @@ view sunmoon  Panel {
 # it removes a loop over a model-authored list.
 view details  Grid(cols: 2) {
                 Tile(label: copy.feels,      value: now.feels,      unit: units)
-                Tile(label: copy.humidity,   value: now.humidity,   unit: pct)
-                Tile(label: copy.wind,       value: now.wind,       unit: speed)
-                Tile(label: copy.pressure,   value: now.pressure,   unit: pressure)
-                Tile(label: copy.uv,         value: now.uv,         unit: index)
-                Tile(label: copy.visibility, value: now.visibility, unit: distance)
+                Tile(label: copy.humidity,   value: now.humidity,   unit: .pct)
+                Tile(label: copy.wind,       value: now.wind,       unit: .speed)
+                Tile(label: copy.pressure,   value: now.pressure,   unit: .pressure)
+                Tile(label: copy.uv,         value: now.uv,         unit: .index)
+                Tile(label: copy.visibility, value: now.visibility, unit: .distance)
               }
