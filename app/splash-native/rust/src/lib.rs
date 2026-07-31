@@ -175,6 +175,11 @@ fn text_node(kind_hint: &str, msg: &str) -> Node {
 /// octos-one's `sys.*` helpers, because the CARD IS OCTOS-ONE'S and calls them by name.
 /// That is the whole point of reading the real card rather than a transcription: if a
 /// helper is missing here, the card says so instead of quietly rendering an em dash.
+/// Matches `SPLASH_EVAL_INSTRUCTION_LIMIT` on the makepad path. The streaming
+/// parse+execute loop counts compile-fed opcodes too, so the budget scales with body
+/// size rather than executed work; 1M covers roughly a 100 KB card.
+const EVAL_INSTRUCTION_LIMIT: usize = 1_000_000;
+
 fn eval_to_nodes(src: &str) -> Node {
     // The VM is built by hand rather than via a constructor: `ScriptVm` borrows its
     // host and std slots, so they must outlive it on the caller's stack.
@@ -187,14 +192,21 @@ fn eval_to_nodes(src: &str) -> Node {
     };
     fetch::register(vm);
 
-    let value = vm.eval(ScriptMod {
-        cargo_manifest_path: String::new(),
-        module_path: String::from("octos"),
-        file: String::from("card.splash"),
-        line: 0,
-        column: 0,
-        code: src.to_string(),
-        values: Vec::new(),
+    // BOUNDED. The card is LLM-generated, so an unbounded `eval` lets `while true {}`
+    // hang the render thread with no way back. The shipping makepad path has had this
+    // since `splash.rs` wrapped its own eval; this path is the raw VM and had nothing.
+    //
+    // The limit is uncatchable by design: `try/catch` in the card cannot swallow it.
+    let value = vm.with_instruction_limit(EVAL_INSTRUCTION_LIMIT, |vm| {
+        vm.eval(ScriptMod {
+            cargo_manifest_path: String::new(),
+            module_path: String::from("octos"),
+            file: String::from("card.splash"),
+            line: 0,
+            column: 0,
+            code: src.to_string(),
+            values: Vec::new(),
+        })
     });
     if value.is_err() || value.is_nil() {
         diag("the card evaluated to nil or an error");

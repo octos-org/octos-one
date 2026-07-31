@@ -1979,9 +1979,18 @@ fn normalize_splash_for_scan(s: &str) -> String {
 /// (`.http_request`, `.socket`) on ANY receiver — that catches module aliasing
 /// (`let n = net; n.http_request(...)`) too — plus the `net.HttpMethod` enum.
 /// Scans the comment/whitespace-normalized body (see normalize_splash_for_scan).
-/// NOT a hard boundary: a determined model could still build the call by exotic
-/// means the Splash VM might support; the real fix is VM-level capability
-/// gating. This stops the naive/observed cases.
+///
+/// A LINT, not the boundary. The boundary it used to ask for now exists: card
+/// isolates are built with `script_mod_sandboxed`, so `fs`, `run`, `net` and
+/// `cx.quit` are never registered and the names simply do not resolve
+/// (`aichat/widgets/src/widget_async.rs`, `alloc_splash_vm`).
+///
+/// This is kept because a card tripping it is worth surfacing early with a
+/// readable message rather than as a nil deref at eval time — and because a
+/// denylist that has stopped being load-bearing is cheap to keep and expensive
+/// to have removed if a future host wires the full surface back in by accident.
+/// Its previous note read "NOT a hard boundary … the real fix is VM-level
+/// capability gating"; that fix has landed.
 fn runsplash_body_forbidden(body: &str) -> Option<&'static str> {
     let n = normalize_splash_for_scan(body).to_ascii_lowercase();
     if n.contains(".http_request")
