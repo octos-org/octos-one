@@ -505,10 +505,21 @@ fn tag_notify_calls(body: &str, item_id: usize) -> String {
 }
 ```
 
-**Per-card state isolation is a source-text rewrite.** It matches only a literal-string first
-argument, so a card building its event id in a variable escapes tagging; the host then
-dispatches by substring. Mediated, so lower severity than §7.1 — but the same class of
-mistake: a textual guard on a language that can compute.
+**Event attribution is a source-text rewrite.** It matches only a literal-string first
+argument, so a card building its event id in a variable escapes tagging.
+
+**Corrected from R7:** that revision called this a *state isolation* failure. It is not.
+Per-card state writes are already gated on an attributed `card_id`, so an untagged event
+resolves to `None` and **fails safe** — it cannot reach another card's state. What was
+genuinely exposed was one branch that ran *before* that gate and would navigate on an
+unattributable event; it is now gated too, and an untagged notify is logged and dropped.
+
+The residual is that dispatch matches event names by substring, so `inc` also matches
+`since`. That leniency looks deliberate — it absorbs model variation in event naming — and
+tightening it risks breaking working cards, so it is recorded rather than changed.
+
+The class of mistake still stands: a textual guard on a language that can compute. Binding
+identity in the runtime, from the card's own VM, remains the right fix.
 
 **This does not exist at L0**, where `on` is a declared transition with a name the grammar
 fixes. Event identity should be bound by the runtime at dispatch for all levels.

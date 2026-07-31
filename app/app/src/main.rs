@@ -7234,7 +7234,15 @@ impl MatchEvent for App {
                 // Navigation: a weather-list row fires agent.notify("city",
                 // {value:"<name>|<lat>|<lon>|<cond>"}). Render that city's REAL-glass
                 // detail card directly (no LLM) and tail to it.
-                if ev.contains("city") {
+                // An event the runtime cannot attribute to a card is not
+                // trustworthy: `tag_notify_calls` only rewrites a LITERAL first
+                // argument, so a card that builds its event id dynamically
+                // arrives untagged. State writes below are already gated on
+                // `card_id` and so fail safe; this branch was not, and would
+                // navigate on an unattributable event.
+                if card_id.is_none() {
+                    log!("[splash] ignoring untagged agent.notify({ev:?})");
+                } else if ev.contains("city") {
                     if let Some(v) = value.as_deref() {
                         let p: Vec<&str> = v.split('|').collect();
                         if p.len() == 4 {
