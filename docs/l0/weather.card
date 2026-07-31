@@ -61,14 +61,37 @@ view current  Col(align: center) {
                 }
               }
 
+# Exercises the other half of the component contracts:
+#   - LOCAL state and a local event (§5.7) — seven rows, seven `expanded` cells,
+#     keyed by (declaration path, loop key), none of them in the ledger
+#   - reads card-scope `source` directly (week.min_lo) — permitted by §5.3
+#   - takes `unit` as a PROP, because card state may not be read directly;
+#     that keeps the dependency visible to the tracker
+#   - the transition is `toggle`, a total form, not `!expanded` (§3)
+#
+# Prop named `item`, not `day`: `width: day` is a layout token. See finding #9.
+component ForecastRow(item: record, unit: enum[c, f]) {
+  state expanded { shape: bool, initial: false }
+  event toggle   { expanded: toggle }
+  view Col {
+         Row(align: center, on_tap: toggle) {
+           TextRow(text: item.dayname, width: day)
+           WeatherIcon(cond: item.cond, size: row)
+           TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+           TextValue(value: item.hi, unit: unit)
+         }
+         when expanded {
+           Row(gap: 8) {
+             TextCaption(glyph: "↓", value: item.lo, unit: unit)
+             TextCaption(text: item.cond)
+           }
+         }
+       }
+}
+
 view forecast  Panel {
                  for d in week key d.dayname {
-                   Row(align: center) {
-                     TextRow(text: d.dayname, width: day)
-                     WeatherIcon(cond: d.cond, size: row)
-                     TempBar(lo: d.lo, hi: d.hi, min: week.min_lo, max: week.max_hi)
-                     TextValue(value: d.hi, unit: units)
-                   }
+                   ForecastRow(item: d, unit: units)
                  }
                }
 
