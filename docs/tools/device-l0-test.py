@@ -19,6 +19,7 @@ failure go away — a golden updated without looking is a test that asserts
 whatever the code currently does.
 """
 
+import io
 import json
 import subprocess
 import sys
@@ -35,10 +36,15 @@ DEVICE = "bf0a4730"  # OnePlus 6T
 PKG = "dev.makepad.octos_app"
 CARDS = f"/storage/emulated/0/Android/media/{PKG}/cards"
 
-# Status bar carries a clock and battery; the nav bar and FAB move. Comparing
-# them would fail on the minute rather than on the card.
+# Status bar carries a clock and battery; the nav bar, FAB and composer move.
+# Comparing them would fail on the minute rather than on the card.
+#
+# 180 was measured before the harness learned to dismiss the keyboard, and left
+# 13 rows of the composer bar in frame — enough to fail news at 0.54% on a card
+# that rendered correctly. 195 excludes it. The cost is real but small: the last
+# card content sits at ~row 2035 of the crop, so nothing rendered is lost.
 CROP_TOP = 90
-CROP_BOTTOM = 180
+CROP_BOTTOM = 195
 
 # Cases: (name, card, data, event, payload). An event means "dispatch this
 # first", so a case can assert a post-interaction state — the thing a static
@@ -57,6 +63,12 @@ CASES = [
 # failing on a layout change.
 PIXEL_TOLERANCE = 24
 FAIL_FRACTION = 0.005
+
+# Seconds to wait for the app's own "SEED_CARD injected" marker, then for the
+# frame to stop changing. Both poll rather than sleep, so the common case is
+# faster than the 13s fixed sleep these replaced and the slow case still waits.
+LOAD_TIMEOUT = 20
+SETTLE_TIMEOUT = 20
 
 
 def adb(*args, **kw):
@@ -85,22 +97,89 @@ def lower(case):
     return out.stdout
 
 
-def render(name, dsl):
-    """Push, launch, settle, screenshot. Returns the cropped card region."""
+class LaunchFailed(Exception):
+    """The app never loaded the card. Distinct from the card rendering wrongly."""
+
+
+def dismiss_ime():
+    """Close the soft keyboard if it is up.
+
+    The app's composer keeps focus across a force-stop, so the IME can be
+    covering the bottom 40% of the screen when the card renders — which the
+    comparison reports as a 40% drift on a card that is in fact correct. The
+    goldens were captured with no keyboard, so make that true before capturing
+    rather than encoding a keyboard into them.
+    """
+    for _ in range(3):
+        state = adb("shell", "dumpsys", "input_method").stdout.decode("utf-8", "replace")
+        if "mIsInputViewShown=true" not in state:
+            return
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        subprocess.run(["sleep", "1"])
+
+
+def grab():
+    """One cropped screenshot."""
+    shot = adb("exec-out", "screencap", "-p").stdout
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    return img.crop((0, CROP_TOP, img.width, img.height - CROP_BOTTOM))
+
+
+def render(name, dsl, attempts=3):
+    """Push, launch, wait for the card to actually load, settle, screenshot.
+
+    A fixed sleep used to stand in for all of this, and it lied in the expensive
+    direction: when the launch raced, the app showed its own splash and the
+    comparison reported "40% of pixels differ" — a number that looks exactly
+    like a layout regression. Re-running made it pass, which is the habit that
+    lets a real regression through. So wait for the app's own load marker, and
+    when it never arrives say THAT instead of producing a pixel percentage.
+    """
     local = Path(f"/tmp/l0-{name}.splash")
     local.write_text(dsl)
-    adb("push", str(local), f"{CARDS}/l0-{name}.splash")
-    adb("shell", "am", "force-stop", PKG)
-    adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
-    adb("shell", f"am start -n {PKG}/.MakepadApp "
-                 f"--es makepad.SEED_CARD_FILE {CARDS}/l0-{name}.splash")
-    # The photo backdrop is fetched over the network; settle before capturing.
-    subprocess.run(["sleep", "13"])
-    shot = adb("exec-out", "screencap", "-p").stdout
-    path = Path(f"/tmp/shot-{name}.png")
-    path.write_bytes(shot)
-    img = Image.open(path).convert("RGB")
-    return img.crop((0, CROP_TOP, img.width, img.height - CROP_BOTTOM))
+    remote = f"{CARDS}/l0-{name}.splash"
+    adb("push", str(local), remote)
+
+    for attempt in range(1, attempts + 1):
+        adb("shell", "am", "force-stop", PKG)
+        adb("logcat", "-c")
+        adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        adb("shell", f"am start -n {PKG}/.MakepadApp "
+                     f"--es makepad.SEED_CARD_FILE {remote}")
+
+        # The app logs the seed it injected. Waiting for that marker rather than
+        # for a duration is the difference between "the card is up" and "enough
+        # time has probably passed".
+        for _ in range(LOAD_TIMEOUT):
+            subprocess.run(["sleep", "1"])
+            log = adb("logcat", "-d").stdout.decode("utf-8", "replace")
+            if "SEED_CARD injected" in log and remote in log:
+                break
+        else:
+            print(f"    {name}: card not loaded (attempt {attempt}/{attempts})")
+            continue
+
+        # Loaded. Clear the keyboard, then wait for the frame to stop changing —
+        # the photo backdrop arrives over the network, so "loaded" and "finished
+        # drawing" are different moments.
+        dismiss_ime()
+        previous = grab()
+        stable = 0
+        for _ in range(SETTLE_TIMEOUT):
+            subprocess.run(["sleep", "1"])
+            current = grab()
+            # Three consecutive identical frames, not two: an intermediate state
+            # can hold still for a second, and returning on the first match is
+            # how a half-drawn card becomes the answer.
+            stable = stable + 1 if compare(previous, current) == 0.0 else 0
+            previous = current
+            if stable >= 2:
+                return current
+        return previous
+
+    raise LaunchFailed(
+        f"{name}: the app never logged loading {remote} after {attempts} attempts"
+    )
 
 
 def compare(a, b):
@@ -123,7 +202,12 @@ def main():
     failures = []
     for case in cases:
         name = case[0]
-        shot = render(name, lower(case))
+        try:
+            shot = render(name, lower(case))
+        except LaunchFailed as e:
+            print(f"  ERR  {name:<14} {e}")
+            failures.append(str(e))
+            continue
         gold_path = GOLDEN / f"{name}.png"
 
         if mode == "capture":
