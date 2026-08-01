@@ -101,6 +101,28 @@ class LaunchFailed(Exception):
     """The app never loaded the card. Distinct from the card rendering wrongly."""
 
 
+# Above this, a diff is not a rendering change — it is app chrome covering the
+# card. Three classes have done it so far: the soft keyboard (40%), the composer
+# bar (0.54%, at the crop edge) and the navigation drawer (85%). A real layout
+# regression moved a card by 1.8%, and the injected 8px padding change by 4.8%,
+# so there is a wide gap between "the card changed" and "something is on top of
+# it".
+CHROME_SUSPICION = 0.40
+
+
+def dismiss_chrome():
+    """Close anything covering the card: keyboard, drawer, dialog.
+
+    Unlike `dismiss_ime` this does not ask what is open — it presses BACK and
+    lets the app close whatever is topmost. That is safe here because the card
+    was just seeded and BACK on a bare card is a no-op, and it is the only
+    approach that generalises: the drawer has no `dumpsys` flag as convenient as
+    `mIsInputViewShown`, and the next contaminant will not either.
+    """
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    subprocess.run(["sleep", "1"])
+
+
 def dismiss_ime():
     """Close the soft keyboard if it is up.
 
@@ -219,7 +241,23 @@ def main():
             failures.append(f"{name}: no golden; run `capture` and review it")
             continue
 
-        drift = compare(shot, Image.open(gold_path).convert("RGB"))
+        gold = Image.open(gold_path).convert("RGB")
+        drift = compare(shot, gold)
+
+        # A diff this large is chrome, not layout. Take ONE corrective pass —
+        # press BACK, recapture — and report what happened either way.
+        #
+        # This is not "re-run until green". The retry performs a specific
+        # corrective action for a specific known cause, it happens once, and a
+        # genuine regression fails both times because BACK does not change what
+        # the card renders. Re-running on any failure is the habit that lets a
+        # real regression through; this is narrower on purpose.
+        if drift > CHROME_SUSPICION:
+            print(f"  ...  {name:<14} {drift * 100:5.2f}% — chrome suspected, clearing")
+            dismiss_chrome()
+            shot = grab()
+            drift = compare(shot, gold)
+
         ok = drift <= FAIL_FRACTION
         print(f"  {'ok  ' if ok else 'FAIL'} {name:<14} {drift * 100:5.2f}% pixels differ")
         if not ok:
