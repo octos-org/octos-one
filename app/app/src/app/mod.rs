@@ -13,6 +13,7 @@ pub mod coding;
 pub mod content_browser;
 pub mod diagram_safety;
 pub mod l0_card;
+pub mod l0_eval;
 pub mod login;
 pub mod octo_thinking;
 pub mod plan;
