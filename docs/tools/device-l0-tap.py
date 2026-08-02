@@ -94,11 +94,11 @@ def seed_ledger(card, data):
     return settle()
 
 
-def main():
-    print("seeding the stock ledger on", H.DEVICE)
+def attempt():
+    """One seed-tap-compare cycle. Returns (ok, message)."""
     before = seed_ledger("stock.card", "stock.json")
     if before is None:
-        return 1
+        return False, "the app never reported seeding the ledger"
 
     # The list must be up before tapping, or the tap lands on whatever is.
     list_golden = H.GOLDEN / "stock-list.png"
@@ -106,9 +106,8 @@ def main():
         drift = H.compare(open_golden(list_golden), before)
         print(f"  list view: {drift * 100:.2f}% from the stock-list golden")
         if drift > H.FAIL_FRACTION:
-            print("  the seeded ledger did not render the list; not tapping.")
             before.save("/tmp/l0-tap-before.png")
-            return 1
+            return False, "the seeded ledger did not render the list"
 
     # Tap the NVDA row. The coordinate is READ OFF the stock-list golden rather
     # than guessed: the row's "$184.20 +1.7%" line sits at y≈474 in that image,
@@ -123,14 +122,11 @@ def main():
 
     log = wait_for("[l0]", timeout=10)
     if log is None:
-        print("  FAIL: the tap produced no [l0] log line at all.")
-        print("  The hit target never fired -- the overlay button is not receiving.")
-        return 1
+        return False, "the tap produced no [l0] log line -- the hit target never fired"
     line = next((l for l in log.splitlines() if "[l0]" in l), "")
     print(f"  device says: {line.strip()[-110:]}")
     if "applied to nothing" in line or "failed" in line:
-        print("  FAIL: the event reached the host but did not apply.")
-        return 1
+        return False, "the event reached the host but did not apply"
 
     after = settle()
     after.save("/tmp/l0-tap-after.png")
@@ -138,17 +134,36 @@ def main():
     # The oracle: the Mac-side dispatch of the same event, already recorded.
     golden = H.GOLDEN / "stock-detail.png"
     if not golden.exists():
-        print(f"  no golden at {golden}; wrote /tmp/l0-tap-after.png for review")
-        return 1
+        return False, f"no golden at {golden}; wrote /tmp/l0-tap-after.png"
     drift = H.compare(open_golden(golden), after)
     print(f"  detail view: {drift * 100:.2f}% from the stock-detail golden")
     if drift > H.FAIL_FRACTION:
-        print("  FAIL: the tap changed the screen, but not to what dispatch produces.")
-        print("  Compare /tmp/l0-tap-after.png against docs/tools/golden/stock-detail.png")
-        return 1
+        return False, ("the tap changed the screen, but not to what dispatch produces -- "
+                       "compare /tmp/l0-tap-after.png against golden/stock-detail.png")
+    return True, ""
 
-    print("\n  a tap on device produced the same screen as the reference dispatch.")
-    return 0
+
+def main(attempts=3):
+    """Retry the whole cycle, as the render harness does.
+
+    A one-shot check on a device that can race reports false failures, and this
+    harness produced one on its second run: the tap fired correctly by hand a
+    minute later. `device-l0-test.py` already retries three times for exactly
+    this reason and says so; not copying that was the bug.
+
+    A retry cannot hide a real failure here, because the failure is not a pixel
+    percentage that might drift under the threshold -- it is "the event fired
+    and matched" or it is not.
+    """
+    for n in range(1, attempts + 1):
+        print(f"seeding the stock ledger on {H.DEVICE} (attempt {n}/{attempts})")
+        ok, why = attempt()
+        if ok:
+            print("\n  a tap on device produced the same screen as the reference dispatch.")
+            return 0
+        print(f"  attempt {n} failed: {why}")
+    print(f"\n  FAILED after {attempts} attempts.")
+    return 1
 
 
 if __name__ == "__main__":
