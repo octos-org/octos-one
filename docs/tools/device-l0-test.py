@@ -46,14 +46,27 @@ CARDS = f"/storage/emulated/0/Android/media/{PKG}/cards"
 CROP_TOP = 90
 CROP_BOTTOM = 195
 
-# Cases: (name, card, data, event, payload). An event means "dispatch this
-# first", so a case can assert a post-interaction state — the thing a static
-# screenshot cannot reach.
+# Cases: (name, card, data, event, payload, static_band). An event means
+# "dispatch this first", so a case can assert a post-interaction state — the
+# thing a static screenshot cannot reach.
+#
+# `static_band` is (top, bottom) in golden coordinates, and it exists because a
+# card can now be LIVE. Where a source lowers to a `sys.*` call the backend
+# answers, the rendered number is today's, not the seeded blob's — so a pixel
+# golden over the whole screen asserts a share price and fails tomorrow. That is
+# not a test, it is a time bomb.
+#
+# For such a case the comparison is restricted to a band that is still
+# deterministic. Everything outside it is checked only for "the card rendered at
+# all", which is weaker and honest; a whole-screen golden would have been
+# stronger and false.
 CASES = [
-    ("weather", "weather.card", "weather.json", None, None),
-    ("stock-list", "stock.card", "stock.json", None, None),
-    ("stock-detail", "stock.card", "stock.json", "open_quote", "NVDA"),
-    ("news", "news.card", "news.json", None, None),
+    ("weather", "weather.card", "weather.json", None, None, None),
+    ("stock-list", "stock.card", "stock.json", None, None, None),
+    # Name, price, change %, high, low and the chart are live. The Mkt Cap / P/E
+    # row is not: `sys.stock` exposes neither, so both keep their seeded value.
+    ("stock-detail", "stock.card", "stock.json", "open_quote", "NVDA", (1740, 2010)),
+    ("news", "news.card", "news.json", None, None, None),
 ]
 
 # Measured, not guessed: a clean re-run of all four cases differs by 0.00%, so
@@ -77,7 +90,7 @@ def adb(*args, **kw):
 
 def lower(case):
     """Realize a card (optionally after one event) and return the DSL."""
-    _, card, data, event, payload = case
+    _, card, data, event, payload = case[:5]
     card_path = SPLASH / "crates/splash-ui-l0/tests/fixtures" / card
     data_path = Path(__file__).parent / "data" / data
 
@@ -212,6 +225,20 @@ def compare(a, b):
     return float((d.max(axis=2) > PIXEL_TOLERANCE).mean())
 
 
+def crop_band(shot, gold, band):
+    """Both images narrowed to a case's deterministic band, or unchanged.
+
+    A live card's numbers change between runs, so only the band a case declares
+    static can be compared. Returning both images keeps the caller's `compare`
+    symmetric and makes it impossible to compare a crop against a full frame.
+    """
+    if band is None:
+        return shot, gold
+    top, bottom = band
+    box = (0, top, shot.width, min(bottom, shot.height))
+    return shot.crop(box), gold.crop((0, top, gold.width, min(bottom, gold.height)))
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "run"
     wanted = sys.argv[2:]
@@ -242,7 +269,8 @@ def main():
             continue
 
         gold = Image.open(gold_path).convert("RGB")
-        drift = compare(shot, gold)
+        band = case[5] if len(case) > 5 else None
+        drift = compare(*crop_band(shot, gold, band))
 
         # A diff this large is chrome, not layout. Take ONE corrective pass —
         # press BACK, recapture — and report what happened either way.
@@ -256,7 +284,7 @@ def main():
             print(f"  ...  {name:<14} {drift * 100:5.2f}% — chrome suspected, clearing")
             dismiss_chrome()
             shot = grab()
-            drift = compare(shot, gold)
+            drift = compare(*crop_band(shot, gold, band))
 
         ok = drift <= FAIL_FRACTION
         print(f"  {'ok  ' if ok else 'FAIL'} {name:<14} {drift * 100:5.2f}% pixels differ")

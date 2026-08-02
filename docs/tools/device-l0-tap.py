@@ -135,8 +135,15 @@ def attempt():
     golden = H.GOLDEN / "stock-detail.png"
     if not golden.exists():
         return False, f"no golden at {golden}; wrote /tmp/l0-tap-after.png"
-    drift = H.compare(open_golden(golden), after)
-    print(f"  detail view: {drift * 100:.2f}% from the stock-detail golden")
+    # The detail view is LIVE: name, price, change %, high and low lower to
+    # `sys.*` calls the backend answers, so their pixels are today's and a
+    # whole-screen golden would assert a share price. Compare the band the
+    # render harness declares static for the same case — the Mkt Cap / P/E row,
+    # which `sys.stock` cannot answer and which therefore stays seeded.
+    band = next((c[5] for c in H.CASES if c[0] == "stock-detail" and len(c) > 5), None)
+    drift = H.compare(*H.crop_band(after, open_golden(golden), band))
+    print(f"  detail view: {drift * 100:.2f}% from the stock-detail golden"
+          f"{' (static band)' if band else ''}")
     if drift > H.FAIL_FRACTION:
         return False, ("the tap changed the screen, but not to what dispatch produces -- "
                        "compare /tmp/l0-tap-after.png against golden/stock-detail.png")
