@@ -26,6 +26,19 @@ use makepad_widgets::makepad_draw::makepad_platform::makepad_script::traits::*;
 use makepad_widgets::makepad_draw::makepad_platform::makepad_script::*;
 use splash_node::{Attrs, NodeKind, UiNode};
 
+/// Evaluate `src` with this app's capabilities registered.
+///
+/// The kit lowers a source the backend can answer into a live call, so a card
+/// evaluated on a bare VM does not merely miss data — `sys.stock(…)` is
+/// undefined, and the concatenation around it yields `$[Error:WrongValue]`,
+/// which then renders as the price. Loud rather than silent, and still wrong.
+///
+/// `register_agent_module` installs the whole `sys` module, the same one the
+/// existing Splash widget evaluates cards against.
+pub fn build_with_capabilities(src: &str) -> Option<UiNode> {
+    build(src, makepad_widgets::splash::register_agent_module)
+}
+
 /// Evaluate `src` and walk it into a `UiNode` tree.
 ///
 /// Returns `None` when the script evaluates to nil — a parse or runtime error —
@@ -345,6 +358,35 @@ mod tests {
         assert!(out[0].starts_with("l0:"), "the L0 prefix marks it: {out:?}");
         assert!(out[0].contains("for#0[NVDA]"), "instance key lost: {out:?}");
         assert!(out[0].contains("open_quote"), "event name lost: {out:?}");
+    }
+
+    /// A live source needs its capability registered, or it renders an ERROR.
+    ///
+    /// The kit lowers a source this backend can answer into a `sys.*` call, and
+    /// on a bare VM that call is undefined — the concatenation around it yields
+    /// `$[Error:WrongValue]`, which then draws where the price should be. Loud
+    /// rather than silent, and still wrong, so the capability registration is
+    /// part of the contract rather than an optimisation.
+    #[test]
+    fn a_live_source_without_its_capability_is_visibly_wrong() {
+        let mut store = splash_ui_l0::InstanceStore::default();
+        splash_ui_l0::dispatch_with(
+            STOCK, &mut store, "root", "open_quote",
+            Some(&serde_json::Value::String("NVDA".into())));
+        let r = splash_ui_l0::realize_with_state(STOCK, &stock_data(), &store, RealizeLimits::default());
+        let src = format!("{KIT}\n{}", kit::lower(&r.root.expect("root")));
+
+        let bare = super::build(&src, |_vm| {}).expect("still evaluates");
+        let mut out = Vec::new();
+        fn words(n: &splash_node::UiNode, out: &mut Vec<String>) {
+            if let Some(t) = n.attrs.text.as_deref() { out.push(t.to_owned()); }
+            for c in &n.children { words(c, out); }
+        }
+        words(&bare, &mut out);
+        assert!(
+            out.iter().any(|w| w.contains("Error")),
+            "an unregistered capability must be VISIBLE, not silently empty: {out:?}"
+        );
     }
 
     /// An unknown root tag is `None`, never an empty tree.
