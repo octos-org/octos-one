@@ -107,10 +107,14 @@ fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
         pad: f32_prop(vm, value, id!(pad)),
         padx: f32_prop(vm, value, id!(padx)),
         pady: f32_prop(vm, value, id!(pady)),
+        padtop: f32_prop(vm, value, id!(padtop)),
+        padbottom: f32_prop(vm, value, id!(padbottom)),
         spacing: f32_prop(vm, value, id!(spacing)),
         margin: f32_prop(vm, value, id!(margin)),
         marginx: f32_prop(vm, value, id!(marginx)),
         marginy: f32_prop(vm, value, id!(marginy)),
+        margintop: f32_prop(vm, value, id!(margintop)),
+        marginbottom: f32_prop(vm, value, id!(marginbottom)),
         border: f32_prop(vm, value, id!(border)),
         bordercolor: u32_prop(vm, value, id!(bordercolor)),
         variant: string_prop(vm, value, id!(variant)),
@@ -149,6 +153,19 @@ fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
         rotation: num_prop(vm, value, id!(rotation)),
         x: num_prop(vm, value, id!(x)),
         y: num_prop(vm, value, id!(y)),
+        // The data-visualisation parameters. The compiler enforces this mirror:
+        // `Attrs` is exhaustive here, so a field added to the shared model
+        // cannot be silently ignored by this evaluator.
+        lo: f32_prop(vm, value, id!(lo)),
+        hi: f32_prop(vm, value, id!(hi)),
+        rise: f32_prop(vm, value, id!(rise)),
+        set: f32_prop(vm, value, id!(set)),
+        now: f32_prop(vm, value, id!(now)),
+        phase: f32_prop(vm, value, id!(phase)),
+        illum: f32_prop(vm, value, id!(illum)),
+        span: f32_prop(vm, value, id!(span)),
+        symbol: string_prop(vm, value, id!(symbol)),
+        range: string_prop(vm, value, id!(range)),
     };
 
     let mut children = Vec::new();

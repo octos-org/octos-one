@@ -13,7 +13,7 @@
 //!   tap  ->  agent.notify("l0", {key, event, value})   (lowered hit target)
 //!        ->  SplashAction::Notify                       (host receives)
 //!        ->  dispatch_with_data                         (transition applies)
-//!        ->  realize_with_state + makepad::lower        (new tree)
+//!        ->  realize + kit::lower + kit + eval + widgets   (new tree)
 //!        ->  replace the card body, redraw
 //! ```
 //!
@@ -24,6 +24,44 @@
 //! for reasons having nothing to do with that question.
 
 use std::sync::RwLock;
+
+/// The theme kit, baked in. §1.1's middle layer: the card names roles and this
+/// answers them, so no colour or size is decided in Rust.
+const KIT: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+
+/// Realize, lower to role calls, evaluate, and render as widgets.
+///
+/// This is §1.1 end to end. What it replaces — `makepad::lower` — went straight
+/// from a realized tree to this backend's widget dialect with ten hardcoded
+/// colours and a font-size ramp, so it decided what a theme decides and reached
+/// one backend of three.
+fn render_through_kit(
+    source: &str,
+    data: &serde_json::Value,
+    store: &splash_ui_l0::InstanceStore,
+) -> Result<String, String> {
+    let report = splash_ui_l0::realize_with_state(
+        source,
+        data,
+        store,
+        splash_ui_l0::RealizeLimits::default(),
+    );
+    let Some(root) = report.root else {
+        return Err(report
+            .diagnostics
+            .iter()
+            .map(|d| d.message.clone())
+            .collect::<Vec<_>>()
+            .join("; "));
+    };
+    let src = format!("{KIT}\n{}", splash_ui_l0::kit::lower(&root));
+    // With capabilities: the kit lowers a source this backend can answer into a
+    // `sys.*` call, and on a bare VM that call is undefined — the concatenation
+    // around it yields `$[Error:WrongValue]`, which then draws as the price.
+    let tree = super::l0_eval::build_with_capabilities(&src)
+        .ok_or_else(|| "the lowered card evaluated to nil".to_owned())?;
+    Ok(super::l0_widgets::to_dsl(&tree))
+}
 
 /// The card, its data, and its live state.
 ///
@@ -50,22 +88,12 @@ static SESSION: RwLock<Option<L0Session>> = RwLock::new(None);
 /// Diagnostics are returned rather than logged because a card that fails to
 /// realize on device is otherwise a blank screen with the reason in logcat,
 /// which is precisely the failure mode the device harness exists to catch.
-pub fn render(source: &str, data: &serde_json::Value, store: &splash_ui_l0::InstanceStore) -> Result<String, String> {
-    let report = splash_ui_l0::realize_with_state(
-        source,
-        data,
-        store,
-        splash_ui_l0::RealizeLimits::default(),
-    );
-    match report.root {
-        Some(root) => Ok(splash_ui_l0::makepad::lower(&root)),
-        None => Err(report
-            .diagnostics
-            .iter()
-            .map(|d| d.message.clone())
-            .collect::<Vec<_>>()
-            .join("; ")),
-    }
+pub fn render(
+    source: &str,
+    data: &serde_json::Value,
+    store: &splash_ui_l0::InstanceStore,
+) -> Result<String, String> {
+    render_through_kit(source, data, store)
 }
 
 /// Record the card that was just seeded, so its taps have somewhere to land.
@@ -124,7 +152,12 @@ pub fn tap(key: &str, event: &str, value: &str) -> Result<Option<(usize, String)
             .collect::<Vec<_>>()
             .join("; "));
     };
-    let body = splash_ui_l0::makepad::lower(&root);
+    let body = {
+        let src = format!("{KIT}\n{}", splash_ui_l0::kit::lower(&root));
+        let tree = super::l0_eval::build_with_capabilities(&src)
+            .ok_or_else(|| "the lowered card evaluated to nil".to_owned())?;
+        super::l0_widgets::to_dsl(&tree)
+    };
     session.store.prune(&report.live_keys);
     Ok(Some((session.item, body)))
 }

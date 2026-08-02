@@ -33,6 +33,19 @@ pub fn to_dsl(root: &UiNode) -> String {
 /// integer through unchanged renders the alpha as red, which on this palette
 /// turns a barely-there panel fill into an opaque block — a plausible-looking
 /// card with every surface wrong.
+/// A numeric parameter, trimmed of a trailing `.0`.
+///
+/// Missing is `0`, not omitted: these widgets have required uniforms, and one
+/// left unset reads as whatever was in the buffer.
+fn num(v: Option<f32>) -> String {
+    let v = v.unwrap_or(0.0);
+    if v.fract() == 0.0 {
+        format!("{}", v as i64)
+    } else {
+        format!("{v}")
+    }
+}
+
 fn hex(argb: u32) -> String {
     let (a, r, g, b) = (argb >> 24 & 255, argb >> 16 & 255, argb >> 8 & 255, argb & 255);
     format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
@@ -52,6 +65,14 @@ fn widget(kind: NodeKind) -> &'static str {
         // does not draw one.
         NodeKind::Divider => "SolidView",
         NodeKind::WeatherIcon => "WeatherIcon",
+        // The five data visualisations. This backend already ships all six as
+        // native widgets — which is why §1.1 says to prove the pipeline here
+        // first and let the vocabulary be whatever that requires.
+        NodeKind::TempBar => "TempBar",
+        NodeKind::SunArc => "SunArc",
+        NodeKind::MoonPhase => "MoonPhase",
+        NodeKind::AqiContour => "AqiContour",
+        NodeKind::StockPlot => "StockPlot",
         NodeKind::Scroll => "ScrollYView",
         _ => "View",
     }
@@ -75,6 +96,25 @@ fn flow(kind: NodeKind) -> Option<&'static str> {
 /// intent. A node that says nothing gets nothing — forcing `Fill` on a hero
 /// wrapped "Top Movers" one character per line on device, and forcing it on a
 /// chip made the first chip eat the row.
+fn sizing_of(kind: NodeKind, a: &Attrs, out: &mut String) {
+    sizing(a, out);
+    // A CONTAINER with no stated height gets `Fit`, not nothing.
+    //
+    // The kit says `{t: "row", fillw: 1, …}` and leaves height to the backend,
+    // because a row's height is whatever its contents need — that is what "fit"
+    // means and it is not worth restating on every node. This emitter wrote no
+    // height at all, and a makepad View with no height is zero: the stock list
+    // rendered as a panel containing four hairlines, the dividers being the only
+    // things with an intrinsic size.
+    //
+    // `makepad::lower` wrote `height: Fit` on every container, which is why it
+    // never hit this. The default belongs here rather than in the kit: it is
+    // this backend's convention, and the kit is shared.
+    if flow(kind).is_some() && a.h.is_none() && a.fillh.is_none() && a.fith.is_none() {
+        out.push_str(" height: Fit");
+    }
+}
+
 fn sizing(a: &Attrs, out: &mut String) {
     match (a.w, a.fillw, a.fitw) {
         (Some(w), _, _) => {
@@ -96,23 +136,32 @@ fn sizing(a: &Attrs, out: &mut String) {
 
 /// Padding and spacing, in the shapes this DSL takes them.
 fn box_model(a: &Attrs, out: &mut String) {
-    match (a.pad, a.padx, a.pady) {
-        (Some(p), _, _) => {
+    // `padtop`/`padbottom` override `pady`, because a page's top padding clears
+    // the status bar and its bottom clears the gesture bar — different numbers,
+    // and a single symmetric `pady` sat the whole card 30px too high.
+    let top = a.padtop.or(a.pady);
+    let bottom = a.padbottom.or(a.pady);
+    match (a.pad, a.padx, top, bottom) {
+        (Some(p), None, None, None) => {
             let _ = write!(out, " padding: {p}");
         }
-        (_, x, y) if x.is_some() || y.is_some() => {
-            let (x, y) = (x.unwrap_or(0.0), y.unwrap_or(0.0));
-            let _ = write!(out, " padding: Inset{{left: {x} right: {x} top: {y} bottom: {y}}}");
+        (_, x, t, b) if x.is_some() || t.is_some() || b.is_some() => {
+            let (x, t, b) = (x.unwrap_or(0.0), t.unwrap_or(0.0), b.unwrap_or(0.0));
+            let _ = write!(out, " padding: Inset{{left: {x} right: {x} top: {t} bottom: {b}}}");
         }
         _ => {}
     }
-    match (a.margin, a.marginx, a.marginy) {
-        (Some(m), _, _) => {
+    // Same asymmetry as padding: a panel separates itself from what is ABOVE it,
+    // and repeating that below doubles the gap between two stacked panels.
+    let mt = a.margintop.or(a.marginy);
+    let mb = a.marginbottom.or(a.marginy);
+    match (a.margin, a.marginx, mt, mb) {
+        (Some(m), None, None, None) => {
             let _ = write!(out, " margin: {m}");
         }
-        (_, x, y) if x.is_some() || y.is_some() => {
-            let (x, y) = (x.unwrap_or(0.0), y.unwrap_or(0.0));
-            let _ = write!(out, " margin: Inset{{left: {x} right: {x} top: {y} bottom: {y}}}");
+        (_, x, t, b) if x.is_some() || t.is_some() || b.is_some() => {
+            let (x, t, b) = (x.unwrap_or(0.0), t.unwrap_or(0.0), b.unwrap_or(0.0));
+            let _ = write!(out, " margin: Inset{{left: {x} right: {x} top: {t} bottom: {b}}}");
         }
         _ => {}
     }
@@ -166,7 +215,7 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if let Some(f) = flow(node.kind) {
         let _ = write!(out, " flow: {f}");
     }
-    sizing(a, out);
+    sizing_of(node.kind, a, out);
     box_model(a, out);
 
     if let Some(bg) = a.bg {
@@ -196,6 +245,47 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         if let Some(src) = a.src.as_deref() {
             let _ = write!(out, " src: http_resource({src:?})");
         }
+    }
+    // A visualisation's parameters. The attribute names are this backend's, not
+    // the model's: `lo` becomes `draw_bg.tlo` because the shader's uniform is
+    // called that, and a mismatch draws a bar against zero — which looks like
+    // data rather than like a bug.
+    match node.kind {
+        NodeKind::TempBar => {
+            let _ = write!(
+                out,
+                " draw_bg.tlo: {} draw_bg.thi: {} draw_bg.wmin: {} draw_bg.wmax: {}",
+                num(a.lo), num(a.hi), num(a.min), num(a.max)
+            );
+        }
+        NodeKind::SunArc => {
+            let _ = write!(
+                out,
+                " draw_bg.rise: {} draw_bg.set: {} draw_bg.now: {}",
+                num(a.rise), num(a.set), num(a.now)
+            );
+        }
+        NodeKind::MoonPhase => {
+            let _ = write!(out, " draw_bg.phase: {}", num(a.phase));
+        }
+        NodeKind::AqiContour => {
+            let _ = write!(
+                out,
+                " lat: {} lon: {} span: {}",
+                num(a.lat.map(|v| v as f32)),
+                num(a.lon.map(|v| v as f32)),
+                num(a.span)
+            );
+        }
+        NodeKind::StockPlot => {
+            let _ = write!(
+                out,
+                " symbol: {:?} range: {:?}",
+                a.symbol.as_deref().unwrap_or(""),
+                a.range.as_deref().unwrap_or("")
+            );
+        }
+        _ => {}
     }
     if node.kind == NodeKind::WeatherIcon {
         if let Some(v) = a.variant.as_deref() {
