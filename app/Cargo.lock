@@ -1789,6 +1789,7 @@ dependencies = [
  "robius-open",
  "serde",
  "serde_json",
+ "splash-ui-l0",
  "streaming-markdown-kit",
  "tokio",
  "url",
@@ -2631,6 +2632,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.11.1",
+]
+
+[[package]]
+name = "splash-ui-l0"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

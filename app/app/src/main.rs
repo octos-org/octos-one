@@ -7242,6 +7242,36 @@ impl MatchEvent for App {
                 // navigate on an unattributable event.
                 if card_id.is_none() {
                     log!("[splash] ignoring untagged agent.notify({ev:?})");
+                } else if ev == "l0" {
+                    // A tap on an L0 card. The payload carries the instance key
+                    // (WHICH row), the event name, and the value — the event
+                    // travels in the payload because `tag_notify_calls` rewrites
+                    // only a literal channel, and an untagged notify is dropped
+                    // above as unattributable.
+                    let l0_key = pj.get("key").and_then(|v| v.as_str()).unwrap_or_default();
+                    let l0_event = pj.get("event").and_then(|v| v.as_str()).unwrap_or_default();
+                    let l0_value = pj.get("value").and_then(|v| v.as_str()).unwrap_or_default();
+                    match app::l0_card::tap(l0_key, l0_event, l0_value) {
+                        Ok(Some((item, body))) => {
+                            if let Ok(mut chat) = CHAT_DATA.write() {
+                                if let Some(msg) = chat.messages.get_mut(item) {
+                                    msg.text = format!("```runsplash\n{body}\n```");
+                                }
+                            }
+                            // The render cache is keyed by (item, raw text,
+                            // state); the text changed, so it misses on its own.
+                            // The generation bump is what makes the list rebuild
+                            // the item rather than reuse its widget tree.
+                            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            cx.redraw_all();
+                            log!("[l0] {l0_event} on {l0_key} -> redrew item {item}");
+                        }
+                        // Distinguishable on purpose: "applied to nothing" and
+                        // "refused" look identical on screen and are completely
+                        // different to whoever is debugging.
+                        Ok(None) => log!("[l0] {l0_event} on {l0_key} applied to nothing"),
+                        Err(why) => log!("[l0] {l0_event} failed: {why}"),
+                    }
                 } else if ev.contains("city") {
                     if let Some(v) = value.as_deref() {
                         let p: Vec<&str> = v.split('|').collect();
@@ -8119,6 +8149,59 @@ impl MatchEvent for App {
                     log::info!("SEED_CARD injected {} bytes from {path}", body.len());
                 }
                 Err(e) => log::warn!("SEED_CARD_FILE read failed: {e}"),
+            }
+        }
+
+        // `--es makepad.SEED_L0_FILE <card> --es makepad.SEED_L0_DATA <json>`
+        // seeds an L0 LEDGER rather than a lowered card, so the app holds the
+        // source and can re-realize it when a tap arrives. SEED_CARD_FILE above
+        // pushes already-lowered DSL, which is inert by construction: nothing on
+        // device knows what card produced it or what a tap would mean.
+        if let Ok(card_path) = std::env::var("MAKEPAD_SEED_L0_FILE") {
+            let data_path = std::env::var("MAKEPAD_SEED_L0_DATA").unwrap_or_default();
+            let card = std::fs::read_to_string(&card_path);
+            let blob = std::fs::read_to_string(&data_path);
+            match (card, blob) {
+                (Ok(source), Ok(raw)) => {
+                    let data: serde_json::Value =
+                        serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+                    let store = splash_ui_l0::InstanceStore::default();
+                    match app::l0_card::render(&source, &data, &store) {
+                        Ok(body) => {
+                            let item = if let Ok(mut chat) = CHAT_DATA.write() {
+                                chat.messages.push(ChatMessage {
+                                    role: ChatRole::Assistant,
+                                    text: format!("```runsplash\n{body}\n```"),
+                                });
+                                chat.messages.len() - 1
+                            } else {
+                                0
+                            };
+                            app::l0_card::begin(source, data, item);
+                            self.update_empty_state_visibility(cx);
+                            cx.redraw_all();
+                            log::info!("SEED_L0 injected from {card_path} as item {item}");
+                        }
+                        // A card that does not realize is a blank screen with
+                        // the reason in logcat, so say the reason on screen.
+                        Err(why) => {
+                            if let Ok(mut chat) = CHAT_DATA.write() {
+                                chat.messages.push(ChatMessage {
+                                    role: ChatRole::Assistant,
+                                    text: format!("L0 card did not realize: {why}"),
+                                });
+                            }
+                            self.update_empty_state_visibility(cx);
+                            cx.redraw_all();
+                            log::warn!("SEED_L0 realize failed: {why}");
+                        }
+                    }
+                }
+                (card, blob) => log::warn!(
+                    "SEED_L0 read failed: card={:?} data={:?}",
+                    card.err(),
+                    blob.err()
+                ),
             }
         }
 
