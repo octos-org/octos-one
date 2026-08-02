@@ -1789,6 +1789,7 @@ dependencies = [
  "robius-open",
  "serde",
  "serde_json",
+ "splash-node",
  "splash-ui-l0",
  "streaming-markdown-kit",
  "tokio",
@@ -2633,6 +2634,10 @@ checksum = "eda41003dc44290527a59b13432d4a0379379fa074b70174882adfbdfd917844"
 dependencies = [
  "bitflags 2.11.1",
 ]
+
+[[package]]
+name = "splash-node"
+version = "0.1.0"
 
 [[package]]
 name = "splash-ui-l0"

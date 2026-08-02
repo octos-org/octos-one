@@ -128,3 +128,35 @@ pub fn tap(key: &str, event: &str, value: &str) -> Result<Option<(usize, String)
     session.store.prune(&report.live_keys);
     Ok(Some((session.item, body)))
 }
+
+/// §1.1's branch point, adopted here.
+///
+/// `splash-node` carries the `UiNode` model the profile names as the point where
+/// one card reaches three backends. Taking `splash-render` instead fails on
+/// `makepad-error-log v1.0.0` existing at two paths — the same collision that
+/// forced `splash-ui-l0` out of `splash-core` — so the model had to be split
+/// from its evaluator before this app could hold it at all.
+///
+/// Nothing renders through it yet. What it establishes is that it CAN: the
+/// evaluator and the widget mapping are the remaining work, and neither is
+/// blocked on a lockfile any more.
+pub use splash_node::{Attrs, NodeKind, UiNode};
+
+#[cfg(test)]
+mod tests {
+    /// The branch point is linked, not merely resolved.
+    ///
+    /// A path dependency that resolves can still fail to compile or link, and
+    /// the whole question here was whether this binary can hold the model at
+    /// all. Naming a variant proves the type crossed the boundary.
+    #[test]
+    fn the_branch_point_is_usable_from_this_binary() {
+        assert_eq!(
+            super::NodeKind::from_tag("column"),
+            Some(super::NodeKind::Column)
+        );
+        // A tag outside the table is None rather than a default — an unknown
+        // kind must be reported, never silently rendered as something else.
+        assert_eq!(super::NodeKind::from_tag("hologram"), None);
+    }
+}
