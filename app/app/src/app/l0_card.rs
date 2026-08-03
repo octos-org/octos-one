@@ -193,3 +193,160 @@ mod tests {
         assert_eq!(super::NodeKind::from_tag("hologram"), None);
     }
 }
+
+/// Turn every ```` ```runl0 ```` block in a message into a rendered card.
+///
+/// The model emits an L0 LEDGER; everything downstream — the markdown widget,
+/// `tag_notify_calls`, the render cache — speaks the backend's widget DSL. So
+/// the ledger is realized, lowered through the theme kit and evaluated here, and
+/// what continues down the pipe is a ```` ```runsplash ```` block. Nothing after
+/// this point needs to know L0 exists.
+///
+/// A card that does not check or does not realize is replaced by its
+/// DIAGNOSTICS, as a card. That is the whole reason to do this at render time
+/// rather than at generation time: a rejected card should say why on screen,
+/// where the person who asked for it can see it, and the reasons are what a
+/// second attempt would need.
+pub fn resolve_l0_blocks(text: &str, item: usize) -> String {
+    const FENCE: &str = "```runl0";
+    if !text.contains(FENCE) {
+        return text.to_owned();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find(FENCE) {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + FENCE.len()..];
+        let body_start = after.find('\n').map(|n| n + 1).unwrap_or(after.len());
+        let body_and_rest = &after[body_start..];
+        let (body, tail) = match body_and_rest.find("```") {
+            Some(close) => (&body_and_rest[..close], &body_and_rest[close + 3..]),
+            // An unclosed block is still streaming. Leave it alone rather than
+            // rendering half a ledger as a card.
+            None => {
+                out.push_str(&rest[open..]);
+                return out;
+            }
+        };
+        out.push_str("```runsplash\n");
+        out.push_str(&render_ledger(body, item));
+        out.push_str("\n```");
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+/// One ledger, as widget DSL — or as a card saying why it could not be.
+fn render_ledger(source: &str, item: usize) -> String {
+    // Check first. `realize` is tolerant where the profile is not, so a card
+    // that realizes is not necessarily a card that was admissible, and shipping
+    // an inadmissible one would make the checker decorative.
+    let report = splash_ui_l0::check_ui_l0_named("card", source);
+    if !report.valid {
+        let why: Vec<String> = report
+            .diagnostics
+            .iter()
+            .map(|d| format!("line {}: {}", d.line, d.message))
+            .collect();
+        return diagnostics_card("This card was refused", &why);
+    }
+
+    // No data blob. Sources the backend can answer become live calls; the rest
+    // resolve to nothing and render an em dash, which is honest — the card asked
+    // for something this backend cannot supply.
+    let data = serde_json::Value::Object(Default::default());
+    let store = splash_ui_l0::InstanceStore::default();
+    match render(source, &data, &store) {
+        Ok(dsl) => {
+            begin(source.to_owned(), data, item);
+            dsl
+        }
+        Err(why) => diagnostics_card("This card did not realize", &[why]),
+    }
+}
+
+/// The reasons, as a card. A blank screen reads as a layout bug; the reasons
+/// read as a rejected card, and they are what a retry would need.
+fn diagnostics_card(headline: &str, reasons: &[String]) -> String {
+    let mut out = String::from(
+        "SolidView{ width: Fill height: Fit flow: Down new_batch: true \
+         draw_bg.color: #0a0e14 padding: Inset{left: 20 top: 54 right: 20 bottom: 24}\n",
+    );
+    out.push_str(&format!(
+        "  TextTitle{{ text: {headline:?} draw_text.color: #ffffff }}\n"
+    ));
+    for r in reasons.iter().take(8) {
+        let line = r.replace('\\', " ").replace('"', "'");
+        out.push_str(&format!(
+            "  TextBody{{ width: Fill text: {line:?} draw_text.color: #ffffff99 }}\n"
+        ));
+    }
+    out.push('}');
+    out
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    /// The fence is consumed and the ledger does not survive into the output.
+    ///
+    /// WHAT THIS CANNOT CHECK. Evaluating the lowered card needs the VM's
+    /// capabilities, and those need makepad's `Cx` — which a unit test does not
+    /// have, so `sys.movers` panics rather than returning. The full path is
+    /// covered where it can run: `splash-ui-l0`'s
+    /// `a_live_source_survives_a_loop` asserts the lowering emits per-index
+    /// calls, and the device harness renders the result on a phone.
+    ///
+    /// So this asserts the FENCE handling, which is this module's own logic, and
+    /// leaves evaluation to the tests that can actually evaluate.
+    #[test]
+    fn a_ledger_fence_is_consumed() {
+        // A ledger that checks but cannot evaluate here still reports through
+        // the diagnostics path, so assert on a deliberately refused one — its
+        // route through this function is identical up to the fence rewrite.
+        let msg = "here you go\n\n```runl0\nview root Hologram()\n```\ntrailing";
+        let out = super::resolve_l0_blocks(msg, 0);
+        assert!(!out.contains("```runl0"), "the ledger must be consumed:\n{out}");
+        assert!(out.contains("```runsplash"), "and replaced by a card:\n{out}");
+        assert!(out.contains("here you go"), "prose before is preserved");
+        assert!(out.contains("trailing"), "and prose after");
+        assert!(
+            !out.contains("view root"),
+            "the ledger source must not survive into the card:\n{out}"
+        );
+    }
+
+    /// A card that does not check shows its REASONS, not a blank screen.
+    ///
+    /// This is why resolution happens at render time. A rejected card should say
+    /// why where the person who asked can see it, and those reasons are exactly
+    /// what a second attempt needs.
+    #[test]
+    fn a_refused_card_renders_its_diagnostics() {
+        let bad = "```runl0\nview root Hologram()\n```";
+        let out = super::resolve_l0_blocks(bad, 0);
+        assert!(out.contains("```runsplash"), "still a card:\n{out}");
+        assert!(out.contains("refused"), "it must say it was refused:\n{out}");
+        assert!(
+            out.contains("Hologram"),
+            "and name what it choked on:\n{out}"
+        );
+    }
+
+    /// An unclosed block is still streaming and is left alone.
+    ///
+    /// Rendering half a ledger produces a card missing whatever had not arrived,
+    /// which looks like a card the model got wrong.
+    #[test]
+    fn an_unclosed_block_is_left_alone() {
+        let partial = "```runl0\nsource now sys.weather(lat: 1.0, lon: 2.0";
+        assert_eq!(super::resolve_l0_blocks(partial, 0), partial);
+    }
+
+    /// A message with no ledger is untouched, cheaply.
+    #[test]
+    fn a_message_without_a_ledger_is_unchanged() {
+        let msg = "just prose, and a ```runsplash\nView{}\n``` card";
+        assert_eq!(super::resolve_l0_blocks(msg, 0), msg);
+    }
+}

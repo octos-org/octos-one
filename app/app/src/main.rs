@@ -45,6 +45,65 @@ const OCTOS_PLACEHOLDER_SYSTEM_PROMPT: &str = "";
 // very first build.
 const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 
+/// The L0 memory — what an app agent is given instead of the Splash manual.
+///
+/// 706 lines against the old memory's 5,919, and the difference is not
+/// compression: most of that manual taught things L0 does not have. A language
+/// with no expression form needs no chapter on building strings, on when a `let`
+/// freezes, or on reading a `-9999` sentinel.
+const L0_FRAMEWORK: &str = include_str!("../../../a2app-l0/framework.md");
+const L0_LANGUAGE: &str = include_str!("../../../a2app-l0/framework/l0.md");
+const L0_CATALOG: &str = include_str!("../../../a2app-l0/framework/catalog.md");
+
+/// Per-app: the requirements, and a card that meets them.
+///
+/// The exemplar is not an illustration — every one reports `valid = true,
+/// level = L0` from the same checker that will judge what the model writes.
+const L0_APPS: &[(&str, &str, &str)] = &[
+    ("weather", include_str!("../../../a2app-l0/apps/weather/app.md"),
+     include_str!("../../../a2app-l0/apps/weather/exemplar.card")),
+    ("news", include_str!("../../../a2app-l0/apps/news/app.md"),
+     include_str!("../../../a2app-l0/apps/news/exemplar.card")),
+    ("stock", include_str!("../../../a2app-l0/apps/stock/app.md"),
+     include_str!("../../../a2app-l0/apps/stock/exemplar.card")),
+    ("activity", include_str!("../../../a2app-l0/apps/activity/app.md"),
+     include_str!("../../../a2app-l0/apps/activity/exemplar.card")),
+    ("nav", include_str!("../../../a2app-l0/apps/nav/app.md"),
+     include_str!("../../../a2app-l0/apps/nav/exemplar.card")),
+];
+
+/// The prompt for an app that has an L0 spec, or `None` for one that does not.
+///
+/// `None` falls through to the Splash-DSL path, so an app without an L0 spec
+/// keeps working exactly as before. That is what makes this switchable rather
+/// than a cutover.
+fn l0_prompt_for(domain: &str, intent: &str) -> Option<String> {
+    let (_, spec, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == domain)?;
+    Some(format!(
+        "You ARE the {domain} app agent. Everything you need is INLINED BELOW — do \
+NOT claim anything is missing, do NOT read or fetch files, and do NOT ask questions.\n\n\
+Write an L0 CARD. It is not a program: it DECLARES what data it needs, what state it \
+keeps, what a tap does, and what to show. There is no arithmetic, no string building, \
+no `if`, no `let`, no functions. Everything you would reach for those with has a \
+declared form — read the language reference before writing.\n\n\
+NEVER write a fact. Not a temperature, a price, a headline, a venue or a distance. \
+Every one comes from a declared `source`. A card with a number typed into it is wrong \
+the moment the world changes, and nothing downstream can tell it from a card that is \
+right.\n\n\
+NEVER write a colour, a font size or a pixel dimension. You say what a thing IS; a \
+theme decides what it looks like.\n\n\
+Emit EXACTLY ONE ```runl0 fenced block as your ENTIRE answer — the complete card, no \
+prose before or after, never truncated. A card that names anything outside the catalog \
+is REFUSED and the reasons are shown instead of your card.\n\n\
+===== FRAMEWORK =====\n{L0_FRAMEWORK}\n\
+===== LANGUAGE =====\n{L0_LANGUAGE}\n\
+===== CATALOG =====\n{L0_CATALOG}\n\
+===== REQUIREMENTS: {domain} =====\n{spec}\n\
+===== A CARD THAT MEETS THEM =====\n{exemplar}\n\
+===== END REFERENCE =====\n\nUser request: {intent}"
+    ))
+}
+
 /// Build the message actually sent to the LLM in Splash mode: instructions +
 /// the Splash manual + the user's request. The chat bubble still shows only
 /// the user's original `request` text.
@@ -643,6 +702,13 @@ place, the condition words, the sections and the locale; nothing else.\n\
 {docs}\n\nUser request: {intent}"
         );
     }
+    // An app with an L0 spec is generated as an L0 card. One without falls
+    // through to the Splash-DSL path below and keeps working unchanged — which
+    // is what makes this switchable per app rather than a cutover.
+    if let Some(l0) = l0_prompt_for(domain, intent) {
+        return l0;
+    }
+
     format!(
         "You ARE the {domain} app agent and you OWN the entire card generation. Your \
 SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
@@ -1871,6 +1937,12 @@ fn substitute_card_state(body: &str, item_id: usize, state: &CardState) -> Strin
 /// state, and rewriting them was a bug (`{{state.count}}` in an explanation
 /// became `0`). No-op for normal messages: no runsplash block ⇒ nothing to do.
 fn resolve_a2app_card(text: &str, item_id: usize, state: &CardState) -> String {
+    // An L0 ledger becomes a rendered card first, so everything below this line
+    // — the state substitution, `tag_notify_calls`, the render cache — sees the
+    // widget DSL it already understands and needs no knowledge of L0.
+    let resolved = app::l0_card::resolve_l0_blocks(text, item_id);
+    let text: &str = &resolved;
+
     if !text.contains("```runsplash") {
         return text.to_string();
     }
@@ -9341,24 +9413,38 @@ mod tests {
     }
 
     #[test]
-    fn splash_gen_prompt_is_self_contained() {
-        // A DSL domain's prompt must inline the spec + manual and forbid the
-        // invented pseudo-DSL, since octos no longer injects app-cards. `activity` is
-        // used because weather/news/stock now take the PLAN path (see PLAN_DOMAINS).
-        assert!(!crate::app::plan::domain_uses_plan("activity"), "this test needs a DSL domain");
-        let docs = "\n----- apps/activity/app.md — THIS IS YOUR SPEC -----\nmandatory: venues via sys.places\n";
-        let p = splash_gen_prompt("activity", "things to do nearby", docs);
+    fn an_l0_domain_gets_the_l0_memory_and_not_the_splash_manual() {
+        // `activity` has an L0 spec, so its prompt must teach L0 — and must NOT
+        // carry the Splash manual, which describes a language the card cannot
+        // use. A prompt with both is worse than either: the model has two
+        // grammars and no way to know which one is enforced.
+        let p = splash_gen_prompt("activity", "things to do nearby", "");
         assert!(p.contains("things to do nearby"), "carries the user intent");
-        assert!(p.contains("apps/activity/app.md"), "inlines the routed spec");
+        assert!(p.contains("```runl0"), "demands one runl0 block");
+        assert!(p.contains("===== LANGUAGE ====="), "inlines the language");
+        assert!(p.contains("===== CATALOG ====="), "inlines the catalog");
+        assert!(p.contains("source parks"), "inlines a card that meets the spec");
+        assert!(
+            !p.contains("SPLASH SYNTAX MANUAL"),
+            "must not carry the manual for a language this card cannot write"
+        );
+        assert!(
+            !p.contains("```runsplash"),
+            "and must not ask for a Splash card"
+        );
+    }
+
+    #[test]
+    fn a_domain_without_an_l0_spec_still_gets_the_splash_path() {
+        // What makes this switchable per app rather than a cutover: an app with
+        // no L0 spec keeps the prompt it always had. If this ever fails, an app
+        // lost its generation path rather than gaining one.
+        let docs = "\n----- apps/web/app.md -----\nmandatory: one runhtml block\n";
+        let p = splash_gen_prompt("web", "make me a todo app", docs);
         assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
         assert!(p.contains("```runsplash"), "demands one runsplash block");
-        // Directly targets the GLM-5.2 failure mode.
-        assert!(p.contains("Card {"), "names the forbidden pseudo-DSL");
-        assert!(p.contains("layout:"), "names the forbidden pseudo-DSL");
-        assert!(
-            !p.contains("in your memory"),
-            "must NOT rely on the dead memory injection"
-        );
+        assert!(p.contains("Card {"), "still names the forbidden pseudo-DSL");
+        assert!(!p.contains("```runl0"), "and does not ask for an L0 card");
     }
 
     /// A PLAN domain gets a different prompt: emit typed intent, not a card. It must
