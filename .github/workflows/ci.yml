@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    # macOS, not ubuntu: clippy runs makepad's build scripts, and the host
+    # system-dependency set is only verified on macOS (what the dev machines
+    # run). Ubuntu would need an untested apt package list for makepad's
+    # Linux backend.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # The pinned makepad's workspace lists examples/splash_runtime and
+      # examples/material_catalog as members, but those dirs don't exist at
+      # the pin — cargo refuses to parse the workspace until they're dropped.
+      - name: Drop absent members from pinned makepad workspace
+        run: sed -i '' -e '/^    "examples\/splash_runtime",$/d' -e '/^    "examples\/material_catalog",$/d' makepad/Cargo.toml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: octos-one-app
+
+      # -p + --no-deps scopes the lint gate to this repo's own crates:
+      # aichat/makepad are pinned third-party trees whose warnings are not
+      # ours to gate (71 at last count), but they are still fully compiled
+      # here — so this step is also the compile check for the whole app.
+      - name: Clippy (own crates; makepad/aichat compile but don't lint)
+        working-directory: app
+        run: cargo clippy -p octos-app -p octos-app-store -p octos-app-transport -p octos-app-render --all-targets --no-deps -- -D warnings
