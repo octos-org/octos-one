@@ -34,6 +34,10 @@ pub enum ProducerKind {
 }
 
 impl ProducerKind {
+    /// Screen-header label. Kept for the producer screens (their DSL
+    /// templates are removed in this build; `draw_producer` is the only
+    /// non-test caller).
+    #[allow(dead_code)]
     pub fn to_label(self) -> &'static str {
         match self {
             Self::Studio => "Studio",
@@ -45,6 +49,8 @@ impl ProducerKind {
     /// Server-side system-prompt context id. **Placeholder** — wire this
     /// into `system_prompt_id` on turn create once the producer tools
     /// are reachable (W07 brief § "Where this differs from chat").
+    /// Only caller today is the unwired `draw_producer` header pill.
+    #[allow(dead_code)]
     pub fn system_prompt_context_id(self) -> &'static str {
         match self {
             Self::Studio => "studio.system_prompt.v1",
@@ -80,7 +86,10 @@ pub struct ProjectMeta {
 /// optional URL to hand off via `robius_open`. The store-side
 /// `StudioOutput` / slide manifest / site preview-url shapes live in the
 /// W04 store crate; we don't duplicate them here for the M3 pass.
+/// Fields are read by `draw_producer` / `handle_producer_event`, which are
+/// kept but unwired in this build (screen DSL templates removed).
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct GenerationOutput {
     pub title: String,
     /// e.g. "summary" / "podcast" / "slides" / "site".
@@ -101,7 +110,9 @@ pub struct ProducerState {
     pub projects: Vec<ProjectMeta>,
     /// User-pasted source rows (URL or text). Local-only until upload lands.
     pub sources: Vec<String>,
-    /// Latest first; rendered via PortalList.
+    /// Latest first; rendered via PortalList. Read by the (currently
+    /// unwired) producer screen draw/event path — kept for W07.
+    #[allow(dead_code)]
     pub generation_history: Vec<GenerationOutput>,
     /// Stash for the source TextInput so typing survives redraws.
     pub source_input_buffer: String,
@@ -116,6 +127,9 @@ pub static SITES_STATE: LazyLock<RwLock<ProducerState>> =
 
 /// Borrow the per-kind slice. Match arms each call into the kind's
 /// `LazyLock` so callers don't have to import three statics.
+/// Only called from `draw_producer` / `handle_producer_event` (kept but
+/// unwired in this build; screen DSL templates removed).
+#[allow(dead_code)]
 fn with_state<R>(kind: ProducerKind, f: impl FnOnce(&ProducerState) -> R) -> Option<R> {
     let g = match kind {
         ProducerKind::Studio => STUDIO_STATE.read(),
@@ -123,7 +137,7 @@ fn with_state<R>(kind: ProducerKind, f: impl FnOnce(&ProducerState) -> R) -> Opt
         ProducerKind::Sites => SITES_STATE.read(),
     }
     .ok()?;
-    Some(f(&*g))
+    Some(f(&g))
 }
 
 fn with_state_mut<R>(kind: ProducerKind, f: impl FnOnce(&mut ProducerState) -> R) -> Option<R> {
@@ -133,7 +147,7 @@ fn with_state_mut<R>(kind: ProducerKind, f: impl FnOnce(&mut ProducerState) -> R
         ProducerKind::Sites => SITES_STATE.write(),
     }
     .ok()?;
-    Some(f(&mut *g))
+    Some(f(&mut g))
 }
 
 /// Click on a generation history "Open" button. Empty `open_url` —
@@ -206,6 +220,10 @@ impl Widget for GenerationCardWidget {
 /// Triptych screen draw helper. Three thin per-kind wrappers below
 /// share this body so the DSL prototype name dispatch (Studio / Slides
 /// / Sites) maps to the right state slice.
+/// Kept but unwired: the Studio/Slides/Sites DSL templates are removed in
+/// this build (`main.rs` script_mod! — "templates removed — unsupported in
+/// this build"), so the screen widgets below are never constructed.
+#[allow(dead_code)]
 fn draw_producer(view: &mut View, kind: ProducerKind, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let (sources, history) = with_state(kind, |s| {
         (s.sources.clone(), s.generation_history.clone())
@@ -260,6 +278,8 @@ fn draw_producer(view: &mut View, kind: ProducerKind, cx: &mut Cx2d, scope: &mut
     DrawStep::done()
 }
 
+/// Kept but unwired in this build — see `draw_producer` above.
+#[allow(dead_code)]
 fn handle_producer_event(
     view: &mut View,
     kind: ProducerKind,
@@ -322,6 +342,10 @@ fn handle_producer_event(
 /// `draw_producer` / `handle_producer_event` helpers.
 macro_rules! decl_producer_screen {
     ($name:ident, $kind:expr) => {
+        // Kept but never constructed in this build: the matching DSL
+        // templates were removed from `main.rs`'s script_mod! (W07
+        // follow-up will re-register them).
+        #[allow(dead_code)]
         #[derive(Script, ScriptHook, Widget)]
         pub struct $name {
             #[deref]

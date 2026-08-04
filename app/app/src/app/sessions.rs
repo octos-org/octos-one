@@ -291,6 +291,10 @@ impl Widget for SessionList {
 /// released before `set_text` / `draw` calls land.
 struct RowSnapshot {
     title: String,
+    /// Kept for the session-row preview line — dropped with the row's
+    /// nested Labels (see the `row_click` note in `draw_walk`); may
+    /// return when the row template regains a second line.
+    #[allow(dead_code)]
     preview: Option<String>,
     is_active: bool,
     is_selected: bool,
