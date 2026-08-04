@@ -127,6 +127,7 @@ async fn live_smoke_session_open_and_turn() {
             topic: None,
             rewrite_for: None,
             reasoning_effort: None,
+            tool_context: None,
             live_video: false,
         }))
         .await
