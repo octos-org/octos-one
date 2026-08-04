@@ -35,9 +35,13 @@ jobs:
         with:
           components: clippy
 
+      # workspaces: app — the workspace root (Cargo.toml) lives in app/;
+      # without this the cache save fails with "could not find Cargo.toml"
+      # and every run would compile cold.
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: octos-one-app
+          workspaces: app
 
       # -p + --no-deps scopes the lint gate to this repo's own crates:
       # aichat/makepad are pinned third-party trees whose warnings are not
