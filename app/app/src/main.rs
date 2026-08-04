@@ -9137,6 +9137,7 @@ mod tests {
             "nav",
             "web",
             "youtube",
+            "quake",
         ] {
             let md = baked_app_md(domain)
                 .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
@@ -9155,6 +9156,7 @@ mod tests {
             "interaction",
             "sys-helpers",
             "weather-icon",
+            "map-pane",
         ] {
             assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
         }

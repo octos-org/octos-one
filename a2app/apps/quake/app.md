@@ -65,6 +65,9 @@ uses the default font; no custom fonts.
      `"z" + "{{state.zoom|8}}"` indicator plus the THREE stepper buttons
      `−` / `8` / `+` (dec / set-default / inc on `key: "zoom"`, with
      `step: "1"`, `min: "5"`, `max: "14"`, `default: "8"`).
+   - Immediately below the pane, the REQUIRED tile attribution:
+     `Label{ text: "© OpenStreetMap contributors © CARTO" }` (11px,
+     `#ffffff66`). The keyless CARTO tiles mandate this credit.
 
 4. **Section label** — `Label{ text: "EARLIER TODAY" }` (11px, `#ffffff66`).
 
@@ -107,5 +110,7 @@ Any of these is a FAILED generation:
   dead-center overlay (align 0.5/0.5, bottom-margin 22);
 - any overlay in the map pane other than the mosaic, the pin View and the
   bottom control bar;
+- missing the `© OpenStreetMap contributors © CARTO` attribution line below
+  the map pane;
 - more than ONE ```runsplash block, or prose outside the fence;
 - block over 12,000 bytes.

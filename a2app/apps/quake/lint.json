@@ -74,6 +74,11 @@
       "desc": "every pane sys call + indicator uses the defaulted zoom slot",
       "pattern": "{{state.zoom|8}}",
       "min": 7
+    },
+    {
+      "desc": "the required OSM/CARTO tile attribution below the map pane",
+      "pattern": "© OpenStreetMap contributors © CARTO",
+      "min": 1
     }
   ]
 }

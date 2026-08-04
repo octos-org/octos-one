@@ -86,5 +86,9 @@ RoundedView{ width: Fill height: 372 draw_bg.border_radius: 20 flow: Overlay new
   offsets; it must not move when the zoom changes.
 - The ONLY overlay children are the mosaic, the pin View, and the bottom
   control bar — no caption pills, no scrims. Captions go OUTSIDE the pane.
+- The pane MUST be followed by the tile attribution line OUTSIDE the pane:
+  `Label{ text: "© OpenStreetMap contributors © CARTO" }` (11px, the app's
+  tertiary text color). The keyless CARTO basemap tiles require this credit
+  in the UI — never drop it, never shrink it into the Overlay.
 - Exactly THREE control buttons (−, the default level, +) with
   `step`/`min`/`max`/`default` payloads as above; min/max within 5–14.
