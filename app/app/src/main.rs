@@ -504,18 +504,37 @@ fn youtube_reference_card() -> String {
     html
 }
 
+/// The embedded kernel's HOME on Android: `<app files dir>/octos-home`.
+/// Derived from the HOME env var (set at startup from `cx.get_data_dir()`),
+/// NOT a hard-coded package path: the same sources build several package ids
+/// (`dev.makepad.octos_app`, `dev.makepad.octos_one`, …), and a hard-coded
+/// path that names a DIFFERENT installed package points at that app's
+/// private dir, which per-app SELinux isolation makes inaccessible —
+/// `create_dir_all` fails and `Command::spawn`'s chdir then dies with
+/// EACCES ("Permission denied"), so the embedded kernel never starts even
+/// though the binary is fine. The literal below is only a fallback for an
+/// unset/empty HOME (i.e. startup never ran — already broken).
+#[cfg(target_os = "android")]
+fn kernel_home() -> std::path::PathBuf {
+    if let Ok(h) = std::env::var("HOME") {
+        if !h.is_empty() {
+            return std::path::PathBuf::from(h).join("octos-home");
+        }
+    }
+    std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home")
+}
+
 /// Root of the deployed app-cards tree on device. The current octos main this
 /// branch builds against no longer assembles/injects app-cards as agent memory,
 /// so the app reads the routed app's spec + shared widget docs from here and
 /// INLINES them into the generation prompt (`app_card_docs` + `splash_gen_prompt`)
 /// — the same self-contained pattern the youtube/weather-style paths already use.
-#[cfg(target_os = "android")]
-const APP_CARDS_ROOT: &str = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards";
-
 fn app_cards_root_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "android")]
     {
-        Some(std::path::PathBuf::from(APP_CARDS_ROOT))
+        Some(
+            kernel_home().join(".octos/profiles/_main/data/memory/app-cards"),
+        )
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -5438,7 +5457,7 @@ impl App {
     /// decision in `handle_startup`).
     #[cfg(target_os = "android")]
     fn has_embedded_kernel() -> bool {
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         Self::native_lib_dir()
             .map(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home).is_some())
             .unwrap_or(false)
@@ -5447,7 +5466,7 @@ impl App {
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
         let lib_dir = Self::native_lib_dir()?;
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         let Some(program) = Self::find_embedded_kernel(&lib_dir, &home) else {
             log::warn!(
                 "stdio: bundled octos not found under {}; using WebSocket transport",
@@ -5768,11 +5787,11 @@ impl App {
     fn app_cards_memory_dir() -> Option<String> {
         #[cfg(target_os = "android")]
         {
-            let p = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards/apps";
+            let p = kernel_home().join(".octos/profiles/_main/data/memory/app-cards/apps");
             // The dir must EXIST for the kernel's cwd validation to accept the
             // hint (validate_session_workspace_allowed canonicalizes it).
-            let _ = std::fs::create_dir_all(p);
-            Some(p.to_string())
+            let _ = std::fs::create_dir_all(&p);
+            Some(p.to_string_lossy().into_owned())
         }
         #[cfg(not(target_os = "android"))]
         {
@@ -7888,9 +7907,7 @@ impl MatchEvent for App {
         // memory tree onto a device that can't be written via su/run-as.
         #[cfg(target_os = "android")]
         if let Ok(src) = std::env::var("MAKEPAD_PROVISION_DIR") {
-            let home = std::path::PathBuf::from(
-                "/data/user/0/dev.makepad.octos_app/files/octos-home",
-            );
+            let home = kernel_home();
             match deploy_provision(std::path::Path::new(&src), &home) {
                 Ok(n) => log::info!("provision: deployed {n} files from {src}"),
                 Err(e) => log::warn!("provision: deploy from {src} failed: {e}"),
