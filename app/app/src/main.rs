@@ -60,7 +60,7 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, quake, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; earthquakes / seismic activity ('recent quakes', '地震') → `quake`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). A BARE request for the navigation/maps app itself with NO destination ('navigation app', 'open navigation', 'maps', '导航') is ALSO `nav` — it opens the empty trip planner; leave from/to empty. When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
@@ -537,6 +537,7 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
         "interaction" => include_str!("../../../a2app/widgets/interaction.md"),
         "sys-helpers" => include_str!("../../../a2app/widgets/sys-helpers.md"),
         "weather-icon" => include_str!("../../../a2app/widgets/weather-icon.md"),
+        "map-pane" => include_str!("../../../a2app/widgets/map-pane.md"),
         _ => return None,
     })
 }
@@ -550,6 +551,7 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
         "weather" => include_str!("../../../a2app/apps/weather/app.md"),
         "stock" => include_str!("../../../a2app/apps/stock/app.md"),
         "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "quake" => include_str!("../../../a2app/apps/quake/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
@@ -577,6 +579,7 @@ fn app_card_docs(domain: &str) -> String {
         "interaction",
         "sys-helpers",
         "weather-icon",
+        "map-pane",
     ] {
         let body = root
             .as_ref()
@@ -1161,8 +1164,17 @@ fn substitute_state_keys(text: &str, state: &CardState) -> String {
         out.push_str(&rest[..pos]);
         let after = &rest[pos + "{{state.".len()..];
         if let Some(end) = after.find("}}") {
-            let key = after[..end].trim();
-            out.push_str(state.get(key).map(String::as_str).unwrap_or("0"));
+            // `{{state.key|default}}` — the default substitutes while the key
+            // is unset, so a slot can sit in a NUMERIC argument position
+            // (e.g. `sys.maptile(lat, lon, {{state.zoom|8}}, "tl")`) without
+            // the bare-unset "0" clamping it to nonsense. Plain `{{state.key}}`
+            // keeps the legacy "0" fallback.
+            let raw = after[..end].trim();
+            let (key, default) = match raw.split_once('|') {
+                Some((k, d)) => (k.trim(), d.trim()),
+                None => (raw, "0"),
+            };
+            out.push_str(state.get(key).map(String::as_str).unwrap_or(default));
             rest = &after[end + 2..];
         } else {
             out.push_str(&rest[pos..]);
@@ -5847,6 +5859,7 @@ impl App {
             let web = agent.create_session(cx, app_cfg());
             let youtube = agent.create_session(cx, app_cfg());
             let nav = agent.create_session(cx, app_cfg());
+            let quake = agent.create_session(cx, app_cfg());
             self.apps = vec![
                 AppRecord::with_domain(weather, "Weather", "weather"),
                 AppRecord::with_domain(stock, "Stock", "stock"),
@@ -5854,6 +5867,7 @@ impl App {
                 AppRecord::with_domain(web, "Web", "web"),
                 AppRecord::with_domain(youtube, "YouTube", "youtube"),
                 AppRecord::with_domain(nav, "Nav", "nav"),
+                AppRecord::with_domain(quake, "Quakes", "quake"),
             ];
             self.foreground = 0;
             self.pending_intent = None;
@@ -5872,7 +5886,7 @@ impl App {
                 ..Default::default()
             };
             self.ama_session = Some(agent.create_session(cx, ama_config));
-            log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
+            log::info!("AMA + 7 domain app agents (weather/stock/news/web/youtube/nav/quake) created concurrently");
         }
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -7122,22 +7136,38 @@ impl MatchEvent for App {
                     }
                     // fall through: ev "city" matches none of the counter ops below.
                 }
+                // Bounded-stepper knobs (all optional): {"step","min","max","default"}.
+                // Accept number or string forms — the script VM serializes both.
+                // `default` seeds the counter when the key is unset (so a card whose
+                // display slot is `{{state.zoom|8}}` steps from 8, not 0) and is what
+                // `reset` restores; `min`/`max` clamp the stepped value.
+                let num = |name: &str| -> Option<i64> {
+                    pj.get(name).and_then(|v| {
+                        v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+                    })
+                };
+                let step = num("step").unwrap_or(1);
+                let dfl = num("default").unwrap_or(0);
+                let clamp = |n: i64| -> i64 {
+                    let n = num("min").map_or(n, |lo| n.max(lo));
+                    num("max").map_or(n, |hi| n.min(hi))
+                };
                 let mut changed = false;
                 if let Some(card_id) = card_id {
                     if let Ok(mut data) = CHAT_DATA.write() {
                         let card = data.a2app_state.entry(card_id).or_default();
                         let cur = |c: &CardState| -> i64 {
-                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(0)
+                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(dfl)
                         };
                         changed = true;
                         if ev.contains("inc") || ev.contains("plus") || ev.contains("add") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n + 1).to_string());
+                            card.insert(key.clone(), clamp(n + step).to_string());
                         } else if ev.contains("dec") || ev.contains("minus") || ev.contains("sub") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n - 1).to_string());
+                            card.insert(key.clone(), clamp(n - step).to_string());
                         } else if ev.contains("reset") || ev.contains("clear") {
-                            card.insert(key.clone(), "0".to_owned());
+                            card.insert(key.clone(), dfl.to_string());
                         } else if ev.starts_with("set") {
                             // `set` last: "reset" also contains "set".
                             match value {
@@ -9107,6 +9137,7 @@ mod tests {
             "nav",
             "web",
             "youtube",
+            "quake",
         ] {
             let md = baked_app_md(domain)
                 .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
@@ -9125,6 +9156,7 @@ mod tests {
             "interaction",
             "sys-helpers",
             "weather-icon",
+            "map-pane",
         ] {
             assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
         }
