@@ -3,8 +3,6 @@ pub use makepad_code_editor;
 // `mod.widgets.DiagramView`. Without this `pub use`, the DSL can't resolve
 // the template below.
 pub use makepad_diagram_kit;
-pub use makepad_widgets;
-
 mod app;
 mod backend;
 
@@ -732,6 +730,9 @@ other app type.\n\nUser request: {intent}"
     }
 }
 
+// Kept: legacy Splash prompt builder, superseded by `splash_gen_prompt`
+// (still referenced from the `SPLASH_MANUAL` docs above).
+#[allow(dead_code)]
 fn app_splash_prompt(request: &str) -> String {
     format!(
         "You are a UI-generation agent. Respond with EXACTLY ONE ```runsplash \
@@ -1762,6 +1763,9 @@ fn save_completed_stream_cards(
 }
 
 /// Load saved cards as `(name, dsl)`, newest-modified first, capped at `max`.
+/// Kept: saved-cards prompt section has no caller after the
+/// `splash_gen_prompt` rework; the loader stays for the W08 card library.
+#[allow(dead_code)]
 fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
     let Some(dir) = a2app_cards_dir() else {
         return Vec::new();
@@ -1786,7 +1790,7 @@ fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
             }
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     entries.into_iter().take(max).map(|(_, n, d)| (n, d)).collect()
 }
 
@@ -2080,6 +2084,9 @@ fn extract_html_card_name(body: &str) -> Option<String> {
 /// Short A2App directive for follow-up requests in a session that already has
 /// the Splash manual in its history (see `App::splash_primed`). Avoids
 /// re-sending the ~85KB manual every turn.
+/// Kept: no caller after the `splash_gen_prompt` rework (same as
+/// `app_splash_prompt` above).
+#[allow(dead_code)]
 fn app_splash_followup(request: &str) -> String {
     format!(
         "Respond with EXACTLY ONE ```runsplash fenced block (Makepad Splash \
@@ -3970,6 +3977,9 @@ pub static CHAT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// a2app memory tree) from a world-readable staging dir (`/data/local/tmp`,
 /// which `adb push` can write) into the app-private octos-home — the only way
 /// to provision a non-rooted, non-debuggable device. Returns files copied.
+/// Wired for the Android build only (the `MAKEPAD_PROVISION_DIR` call site is
+/// `#[cfg(target_os = "android")]`).
+#[allow(dead_code)]
 fn deploy_provision(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<usize> {
     let mut n = 0;
     std::fs::create_dir_all(dst)?;
@@ -7057,6 +7067,10 @@ fn run_blocking_solo_login(
 /// one `ActionTrait` (auto-derived from `Debug + 'static` per
 /// `aichat/platform/src/action.rs:21`) keeps the `Cx::post_action`
 /// boilerplate down.
+// The `Reply` postfix mirrors the login RPC direction (async reply landing
+// on the UI thread); renaming the variants would churn the handlers for no
+// real gain.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
 enum LoginAsyncEvent {
     SendCodeReply,
@@ -8044,7 +8058,7 @@ impl AppMain for App {
         // NOTE: `agent.notify(...)` for A2App/Splash button callbacks is
         // registered inside `makepad_widgets::script_mod` so it reaches the
         // isolated Splash VMs too (see aichat/widgets/src/lib.rs).
-        crate::makepad_widgets::script_mod(vm);
+        makepad_widgets::script_mod(vm);
         crate::makepad_code_editor::script_mod(vm);
         crate::makepad_diagram_kit::script_mod(vm);
         // W08 — register the LoginScreen DSL prototype before this file's
@@ -8792,8 +8806,12 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                     AgentEvent::ToolRequest { .. } => {}
-                    AgentEvent::TextAuthoritative { .. } => {}
-                    _ => {}
+                    // `TextAuthoritative` is handled by its real arm above
+                    // (the one binding `prompt_id`/`text`); the earlier
+                    // duplicate `{ .. } => {}` arm here was unreachable.
+                    // No `_` arm: all `AgentEvent` variants are covered
+                    // explicitly, so a new upstream variant fails the build
+                    // instead of being silently dropped.
                 }
             }
         }

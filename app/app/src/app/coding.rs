@@ -102,6 +102,9 @@ pub struct TaskOutputAction {
 /// stable now so the call sites don't churn.
 #[derive(Debug)]
 #[allow(dead_code)]
+// `Loaded` carries the full protocol result inline; boxing the enum is not
+// worth it for a two-variant UI action (matches the workspace lint policy).
+#[allow(clippy::large_enum_variant)]
 pub enum TaskOutputOutcome {
     Loaded(TaskOutputReadResult),
     Failed(String),
@@ -112,6 +115,10 @@ pub enum TaskOutputOutcome {
 /// pivot (W06 § "Task output drill-down"); empty in M3.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+// The shared `Select` prefix reads better at the `Cx::post_action` call
+// sites than the clippy-suggested renames; these are UI actions, not a
+// wire protocol.
+#[allow(clippy::enum_variant_names)]
 pub enum CodingUiAction {
     SelectApproval(ApprovalId),
     SelectHistory(ApprovalId),
