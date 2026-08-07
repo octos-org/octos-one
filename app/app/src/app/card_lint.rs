@@ -23,50 +23,78 @@ pub struct LintRule {
 
 /// Load `apps/<domain>/lint.json` from the deployed a2app memory tree.
 /// Prefers the profile memory location (the tree the kernel injects), then
-/// the `octos-home/a2app` skill zone. `None` — including on desktop, where
-/// neither path exists — disables linting entirely; no rules, no repair.
+/// the `octos-home/a2app` skill zone, then the copy BAKED into the binary —
+/// so a plain build+install enforces the shipped rules even on a device with
+/// an empty octos-home (a missing baked file too disables linting: no rules,
+/// no repair — e.g. composed apps the AMA authored at runtime).
 pub fn load_rules(domain: &str) -> Option<Vec<LintRule>> {
-    let home = std::env::var("HOME").ok()?;
-    let base = std::path::Path::new(&home).join("octos-home");
-    let candidates = [
-        base.join(".octos/profiles/_main/data/memory/app-cards/apps")
-            .join(domain)
-            .join("lint.json"),
-        base.join("a2app/apps").join(domain).join("lint.json"),
-    ];
-    // Try EACH candidate and return the first that parses into a non-empty
-    // rule set. A malformed preferred file (e.g. a half-written AMA-authored
-    // lint) must not disable a valid shipped fallback — parse-then-fall-through
-    // rather than picking the first readable file and giving up on it.
-    candidates.iter().find_map(|p| {
-        let bytes = std::fs::read(p).ok()?;
-        let root: serde_json::Value = match serde_json::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("card lint: unparseable {}: {e}", p.display());
-                return None;
+    if let Some(home) = std::env::var("HOME").ok() {
+        let base = std::path::Path::new(&home).join("octos-home");
+        let candidates = [
+            base.join(".octos/profiles/_main/data/memory/app-cards/apps")
+                .join(domain)
+                .join("lint.json"),
+            base.join("a2app/apps").join(domain).join("lint.json"),
+        ];
+        // Try EACH candidate and return the first that parses into a non-empty
+        // rule set. A malformed preferred file (e.g. a half-written AMA-authored
+        // lint) must not disable a valid shipped fallback — parse-then-fall-through
+        // rather than picking the first readable file and giving up on it.
+        if let Some(rules) = candidates.iter().find_map(|p| {
+            let bytes = std::fs::read(p).ok()?;
+            match parse_rules(&bytes) {
+                None => {
+                    log::warn!("card lint: unparseable/malformed {}", p.display());
+                    None
+                }
+                some => some,
             }
-        };
-        // Parse ALL rules strictly: if ANY rule is malformed (missing/wrong
-        // desc/pattern), reject the WHOLE file and fall through to the next
-        // candidate — a half-written rule must not silently reduce enforcement
-        // while the file still yields a non-empty set. `min` accepts ints and
-        // JSON floats (`22.0`); a missing/invalid min defaults to 1.
-        let arr = root.get("rules")?.as_array()?;
-        let mut rules = Vec::with_capacity(arr.len());
-        for r in arr {
-            let desc = r.get("desc")?.as_str()?.to_string();
-            let pattern = r.get("pattern")?.as_str()?.to_string();
-            let min = r
-                .get("min")
-                .and_then(|m| m.as_f64())
-                .filter(|n| n.is_finite() && *n >= 0.0)
-                .map(|n| n as usize)
-                .unwrap_or(1);
-            rules.push(LintRule { desc, pattern, min });
+        }) {
+            return Some(rules);
         }
-        if rules.is_empty() { None } else { Some(rules) }
+    }
+    baked_lint_json(domain).and_then(|s| parse_rules(s.as_bytes()))
+}
+
+/// The lint.json copies compiled into the binary — the last-resort candidate.
+fn baked_lint_json(domain: &str) -> Option<&'static str> {
+    Some(match domain {
+        "weather" => include_str!("../../../../a2app/apps/weather/lint.json"),
+        "stock" => include_str!("../../../../a2app/apps/stock/lint.json"),
+        "news" => include_str!("../../../../a2app/apps/news/lint.json"),
+        "activity" => include_str!("../../../../a2app/apps/activity/lint.json"),
+        "weather-activity" => {
+            include_str!("../../../../a2app/apps/weather-activity/lint.json")
+        }
+        "clock" => include_str!("../../../../a2app/apps/clock/lint.json"),
+        "timer" => include_str!("../../../../a2app/apps/timer/lint.json"),
+        "calc" => include_str!("../../../../a2app/apps/calc/lint.json"),
+        "convert" => include_str!("../../../../a2app/apps/convert/lint.json"),
+        _ => return None,
     })
+}
+
+/// Parse a lint.json body. ALL rules strictly: if ANY rule is malformed
+/// (missing/wrong desc/pattern), reject the WHOLE file — a half-written rule
+/// must not silently reduce enforcement while the file still yields a
+/// non-empty set. `min` accepts ints and JSON floats (`22.0`); a
+/// missing/invalid min defaults to 1. None for malformed OR empty rule sets.
+fn parse_rules(bytes: &[u8]) -> Option<Vec<LintRule>> {
+    let root: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let arr = root.get("rules")?.as_array()?;
+    let mut rules = Vec::with_capacity(arr.len());
+    for r in arr {
+        let desc = r.get("desc")?.as_str()?.to_string();
+        let pattern = r.get("pattern")?.as_str()?.to_string();
+        let min = r
+            .get("min")
+            .and_then(|m| m.as_f64())
+            .filter(|n| n.is_finite() && *n >= 0.0)
+            .map(|n| n as usize)
+            .unwrap_or(1);
+        rules.push(LintRule { desc, pattern, min });
+    }
+    if rules.is_empty() { None } else { Some(rules) }
 }
 
 /// Count each rule's pattern in the card body; return the violated rules as

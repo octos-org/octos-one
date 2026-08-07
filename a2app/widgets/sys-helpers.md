@@ -285,3 +285,63 @@ Button{ width: Fill height: Fill draw_bg.color: #00000000 text: ""
 The app catches `notify("open", {ticker})` and generates the DETAIL card for that
 ticker. The row container must have a FIXED height (not `Fit`) so the `Fill` Button
 resolves inside the `Overlay`.
+
+## sys.citytime(lat, lon, "field") — the LIVE wall-clock time at a place
+
+The current time AT THOSE COORDINATES, DST-correct (the UTC offset is ONE
+cached ~300-byte fetch per place; the time itself is the device clock plus
+that offset — reading it every second in `fn tick()` costs nothing).
+
+| field | example |
+|---|---|
+| `"hm"` | `14:05` |
+| `"hms"` | `14:05:09` |
+| `"h12"` | `2:05 PM` |
+| `"day"` / `"day_zh"` | `Mon` / `周一` |
+| `"date"` / `"date_zh"` | `Aug 4` / `8月4日` |
+| `"offset"` | `UTC+9`, `UTC+5:30`, `UTC-7` |
+| `"tz"` | `Asia/Tokyo` |
+
+Returns `—` while the offset fetch loads; the card re-evaluates when it lands.
+Chain the coordinates from `sys.geocodenum` exactly like the weather card —
+NEVER type lat/lon digits, and NEVER compute a city's time yourself (you do
+not know today's DST state anywhere).
+
+`sys.citytimenum(lat, lon, "field")` — the same clock as a NUMBER for script
+conditions: `"hour"` 0-23, `"hour12"` 1-12, `"minute"`, `"second"`,
+`"offsecs"`. -9999 while loading. Day/night row theming:
+
+```
+if sys.citytimenum(LATN, LONN, "hour") >= 19 || sys.citytimenum(LATN, LONN, "hour") < 6 {
+    /* night styling */
+}
+```
+
+## sys.fx("FROM", "TO") — LIVE currency exchange rate (keyless, ~160 currencies)
+
+`sys.fx("USD", "EUR")` -> `"0.8669"` as a display string; `sys.fxnum` -> the
+raw NUMBER for math. ONE cached fetch per currency PAIR (Yahoo intraday FX).
+ISO codes, case-insensitive. `—` / -9999 while loading — gate converted
+amounts on `sys.fxnum(...) >= 0`.
+
+```
+Label{ text: "1 USD = " + sys.fx("USD", "EUR") + " EUR" }
+// in a fn:  ui.result.set_text(sys.fmtnum(app.amt * sys.fxnum("USD", "EUR"), 2))
+```
+
+NEVER write a literal exchange rate into a card — rates move daily and cards
+are persisted and re-served.
+
+## sys.fmtdur(secs) + sys.fmtnum(x, maxdecimals) — display formatters (pure)
+
+The script engine has NO floor/round/% — ALL numeric display formatting goes
+through these two:
+
+- `sys.fmtdur(secs)` -> `"04:35"` under an hour, `"1:04:35"` from an hour up;
+  negatives clamp to `"00:00"`. THE timer/stopwatch formatter.
+- `sys.fmtnum(x, maxdecimals)` -> at most that many decimals, trailing zeros
+  trimmed: `sys.fmtnum(42.0, 6)` -> `"42"`, `sys.fmtnum(0.866934, 4)` ->
+  `"0.8669"`. THE calculator-display / converted-amount formatter.
+
+Both are pure math: no fetch, no re-evaluation, safe anywhere including
+inside `fn tick()`.

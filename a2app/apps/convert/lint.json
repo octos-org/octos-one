@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: convert-app`",
+      "pattern": "// name: convert-app",
+      "min": 1
+    },
+    {
+      "desc": "the state object opens the script",
+      "pattern": "let conv = {",
+      "min": 1
+    },
+    {
+      "desc": "recalc drives every repaint (defined once; keypad fns and swap end in it; units flavor may have one fewer site)",
+      "pattern": "recalc()",
+      "min": 4
+    },
+    {
+      "desc": "swap flips direction",
+      "pattern": "fn swap(",
+      "min": 1
+    },
+    {
+      "desc": "tick repaints when the async rate lands",
+      "pattern": "fn tick(",
+      "min": 1
+    },
+    {
+      "desc": "amounts and rates formatted, never raw floats (amount + result + rateline)",
+      "pattern": "sys.fmtnum(",
+      "min": 3
+    },
+    {
+      "desc": "keypad digits route through fn digit",
+      "pattern": "digit(",
+      "min": 11
+    },
+    {
+      "desc": "expression-form click handlers on every key",
+      "pattern": "on_click: ||",
+      "min": 13
+    }
+  ]
+}

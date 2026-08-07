@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: clock-app`",
+      "pattern": "// name: clock-app",
+      "min": 1
+    },
+    {
+      "desc": "the 1-second heartbeat that keeps every clock label current",
+      "pattern": "fn tick(",
+      "min": 1
+    },
+    {
+      "desc": "every time/day/date/offset string comes from sys.citytime (hero hms+sub, 4 rows x time+sub, doubled body+tick bindings)",
+      "pattern": "sys.citytime(",
+      "min": 16
+    },
+    {
+      "desc": "every coordinate resolves via sys.geocodenum, never typed digits",
+      "pattern": "sys.geocodenum(",
+      "min": 16
+    },
+    {
+      "desc": "tick() mutates the named labels in place",
+      "pattern": ".set_text(",
+      "min": 8
+    },
+    {
+      "desc": "named time labels (hero + 4 rows) for tick() to target",
+      "pattern": "_time :=",
+      "min": 5
+    },
+    {
+      "desc": "hairline separators between the city rows",
+      "pattern": "#ffffff14",
+      "min": 3
+    }
+  ]
+}
