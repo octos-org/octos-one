@@ -28,7 +28,7 @@ pub struct LintRule {
 /// an empty octos-home (a missing baked file too disables linting: no rules,
 /// no repair — e.g. composed apps the AMA authored at runtime).
 pub fn load_rules(domain: &str) -> Option<Vec<LintRule>> {
-    if let Some(home) = std::env::var("HOME").ok() {
+    if let Ok(home) = std::env::var("HOME") {
         let base = std::path::Path::new(&home).join("octos-home");
         let candidates = [
             base.join(".octos/profiles/_main/data/memory/app-cards/apps")

@@ -3,8 +3,6 @@ pub use makepad_code_editor;
 // `mod.widgets.DiagramView`. Without this `pub use`, the DSL can't resolve
 // the template below.
 pub use makepad_diagram_kit;
-pub use makepad_widgets;
-
 mod app;
 mod backend;
 
@@ -60,7 +58,7 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, clock, timer, calc, convert, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. What TIME it is somewhere / world clock ('what time is it in tokyo', '现在几点') → `clock`; a countdown timer / stopwatch / pomodoro ('5 minute timer', 'stopwatch', '计时器', '秒表') → `timer` (NOT `web`); a calculator or bare arithmetic → `calc`; currency or unit conversion ('100 usd to eur', 'km to miles', '汇率') → `convert`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, quake, activity, weather-activity, nav, clock, timer, calc, convert, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; earthquakes / seismic activity ('recent quakes', '地震') → `quake`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). A BARE request for the navigation/maps app itself with NO destination ('navigation app', 'open navigation', 'maps', '导航') is ALSO `nav` — it opens the empty trip planner; leave from/to empty. When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. What TIME it is somewhere / world clock ('what time is it in tokyo', '现在几点') → `clock`; a countdown timer / stopwatch / pomodoro ('5 minute timer', 'stopwatch', '计时器', '秒表') → `timer` (NOT `web`); a calculator or bare arithmetic → `calc`; currency or unit conversion ('100 usd to eur', 'km to miles', '汇率') → `convert`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
@@ -504,18 +502,37 @@ fn youtube_reference_card() -> String {
     html
 }
 
+/// The embedded kernel's HOME on Android: `<app files dir>/octos-home`.
+/// Derived from the HOME env var (set at startup from `cx.get_data_dir()`),
+/// NOT a hard-coded package path: the same sources build several package ids
+/// (`dev.makepad.octos_app`, `dev.makepad.octos_one`, …), and a hard-coded
+/// path that names a DIFFERENT installed package points at that app's
+/// private dir, which per-app SELinux isolation makes inaccessible —
+/// `create_dir_all` fails and `Command::spawn`'s chdir then dies with
+/// EACCES ("Permission denied"), so the embedded kernel never starts even
+/// though the binary is fine. The literal below is only a fallback for an
+/// unset/empty HOME (i.e. startup never ran — already broken).
+#[cfg(target_os = "android")]
+fn kernel_home() -> std::path::PathBuf {
+    if let Ok(h) = std::env::var("HOME") {
+        if !h.is_empty() {
+            return std::path::PathBuf::from(h).join("octos-home");
+        }
+    }
+    std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home")
+}
+
 /// Root of the deployed app-cards tree on device. The current octos main this
 /// branch builds against no longer assembles/injects app-cards as agent memory,
 /// so the app reads the routed app's spec + shared widget docs from here and
 /// INLINES them into the generation prompt (`app_card_docs` + `splash_gen_prompt`)
 /// — the same self-contained pattern the youtube/weather-style paths already use.
-#[cfg(target_os = "android")]
-const APP_CARDS_ROOT: &str = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards";
-
 fn app_cards_root_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "android")]
     {
-        Some(std::path::PathBuf::from(APP_CARDS_ROOT))
+        Some(
+            kernel_home().join(".octos/profiles/_main/data/memory/app-cards"),
+        )
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -537,6 +554,7 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
         "interaction" => include_str!("../../../a2app/widgets/interaction.md"),
         "sys-helpers" => include_str!("../../../a2app/widgets/sys-helpers.md"),
         "weather-icon" => include_str!("../../../a2app/widgets/weather-icon.md"),
+        "map-pane" => include_str!("../../../a2app/widgets/map-pane.md"),
         _ => return None,
     })
 }
@@ -550,6 +568,7 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
         "weather" => include_str!("../../../a2app/apps/weather/app.md"),
         "stock" => include_str!("../../../a2app/apps/stock/app.md"),
         "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "quake" => include_str!("../../../a2app/apps/quake/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
@@ -581,6 +600,7 @@ fn app_card_docs(domain: &str) -> String {
         "interaction",
         "sys-helpers",
         "weather-icon",
+        "map-pane",
     ] {
         let body = root
             .as_ref()
@@ -714,6 +734,9 @@ other app type.\n\nUser request: {intent}"
     }
 }
 
+// Kept: legacy Splash prompt builder, superseded by `splash_gen_prompt`
+// (still referenced from the `SPLASH_MANUAL` docs above).
+#[allow(dead_code)]
 fn app_splash_prompt(request: &str) -> String {
     format!(
         "You are a UI-generation agent. Respond with EXACTLY ONE ```runsplash \
@@ -1165,8 +1188,17 @@ fn substitute_state_keys(text: &str, state: &CardState) -> String {
         out.push_str(&rest[..pos]);
         let after = &rest[pos + "{{state.".len()..];
         if let Some(end) = after.find("}}") {
-            let key = after[..end].trim();
-            out.push_str(state.get(key).map(String::as_str).unwrap_or("0"));
+            // `{{state.key|default}}` — the default substitutes while the key
+            // is unset, so a slot can sit in a NUMERIC argument position
+            // (e.g. `sys.maptile(lat, lon, {{state.zoom|8}}, "tl")`) without
+            // the bare-unset "0" clamping it to nonsense. Plain `{{state.key}}`
+            // keeps the legacy "0" fallback.
+            let raw = after[..end].trim();
+            let (key, default) = match raw.split_once('|') {
+                Some((k, d)) => (k.trim(), d.trim()),
+                None => (raw, "0"),
+            };
+            out.push_str(state.get(key).map(String::as_str).unwrap_or(default));
             rest = &after[end + 2..];
         } else {
             out.push_str(&rest[pos..]);
@@ -1735,6 +1767,9 @@ fn save_completed_stream_cards(
 }
 
 /// Load saved cards as `(name, dsl)`, newest-modified first, capped at `max`.
+/// Kept: saved-cards prompt section has no caller after the
+/// `splash_gen_prompt` rework; the loader stays for the W08 card library.
+#[allow(dead_code)]
 fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
     let Some(dir) = a2app_cards_dir() else {
         return Vec::new();
@@ -1759,7 +1794,7 @@ fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
             }
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     entries.into_iter().take(max).map(|(_, n, d)| (n, d)).collect()
 }
 
@@ -2053,6 +2088,9 @@ fn extract_html_card_name(body: &str) -> Option<String> {
 /// Short A2App directive for follow-up requests in a session that already has
 /// the Splash manual in its history (see `App::splash_primed`). Avoids
 /// re-sending the ~85KB manual every turn.
+/// Kept: no caller after the `splash_gen_prompt` rework (same as
+/// `app_splash_prompt` above).
+#[allow(dead_code)]
 fn app_splash_followup(request: &str) -> String {
     format!(
         "Respond with EXACTLY ONE ```runsplash fenced block (Makepad Splash \
@@ -3943,6 +3981,9 @@ pub static CHAT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// a2app memory tree) from a world-readable staging dir (`/data/local/tmp`,
 /// which `adb push` can write) into the app-private octos-home — the only way
 /// to provision a non-rooted, non-debuggable device. Returns files copied.
+/// Wired for the Android build only (the `MAKEPAD_PROVISION_DIR` call site is
+/// `#[cfg(target_os = "android")]`).
+#[allow(dead_code)]
 fn deploy_provision(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<usize> {
     let mut n = 0;
     std::fs::create_dir_all(dst)?;
@@ -5430,7 +5471,7 @@ impl App {
     /// decision in `handle_startup`).
     #[cfg(target_os = "android")]
     fn has_embedded_kernel() -> bool {
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         Self::native_lib_dir()
             .map(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home).is_some())
             .unwrap_or(false)
@@ -5439,7 +5480,7 @@ impl App {
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
         let lib_dir = Self::native_lib_dir()?;
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         let Some(program) = Self::find_embedded_kernel(&lib_dir, &home) else {
             log::warn!(
                 "stdio: bundled octos not found under {}; using WebSocket transport",
@@ -5760,11 +5801,11 @@ impl App {
     fn app_cards_memory_dir() -> Option<String> {
         #[cfg(target_os = "android")]
         {
-            let p = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards/apps";
+            let p = kernel_home().join(".octos/profiles/_main/data/memory/app-cards/apps");
             // The dir must EXIST for the kernel's cwd validation to accept the
             // hint (validate_session_workspace_allowed canonicalizes it).
-            let _ = std::fs::create_dir_all(p);
-            Some(p.to_string())
+            let _ = std::fs::create_dir_all(&p);
+            Some(p.to_string_lossy().into_owned())
         }
         #[cfg(not(target_os = "android"))]
         {
@@ -5851,6 +5892,7 @@ impl App {
             let web = agent.create_session(cx, app_cfg());
             let youtube = agent.create_session(cx, app_cfg());
             let nav = agent.create_session(cx, app_cfg());
+            let quake = agent.create_session(cx, app_cfg());
             let clock = agent.create_session(cx, app_cfg());
             let timer = agent.create_session(cx, app_cfg());
             let calc = agent.create_session(cx, app_cfg());
@@ -5862,6 +5904,7 @@ impl App {
                 AppRecord::with_domain(web, "Web", "web"),
                 AppRecord::with_domain(youtube, "YouTube", "youtube"),
                 AppRecord::with_domain(nav, "Nav", "nav"),
+                AppRecord::with_domain(quake, "Quakes", "quake"),
                 AppRecord::with_domain(clock, "Clock", "clock"),
                 AppRecord::with_domain(timer, "Timer", "timer"),
                 AppRecord::with_domain(calc, "Calculator", "calc"),
@@ -5884,7 +5927,7 @@ impl App {
                 ..Default::default()
             };
             self.ama_session = Some(agent.create_session(cx, ama_config));
-            log::info!("AMA + 10 domain app agents (weather/stock/news/web/youtube/nav/clock/timer/calc/convert) created concurrently");
+            log::info!("AMA + 11 domain app agents (weather/stock/news/web/youtube/nav/quake/clock/timer/calc/convert) created concurrently");
         }
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
@@ -7036,6 +7079,10 @@ fn run_blocking_solo_login(
 /// one `ActionTrait` (auto-derived from `Debug + 'static` per
 /// `aichat/platform/src/action.rs:21`) keeps the `Cx::post_action`
 /// boilerplate down.
+// The `Reply` postfix mirrors the login RPC direction (async reply landing
+// on the UI thread); renaming the variants would churn the handlers for no
+// real gain.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
 enum LoginAsyncEvent {
     SendCodeReply,
@@ -7134,22 +7181,38 @@ impl MatchEvent for App {
                     }
                     // fall through: ev "city" matches none of the counter ops below.
                 }
+                // Bounded-stepper knobs (all optional): {"step","min","max","default"}.
+                // Accept number or string forms — the script VM serializes both.
+                // `default` seeds the counter when the key is unset (so a card whose
+                // display slot is `{{state.zoom|8}}` steps from 8, not 0) and is what
+                // `reset` restores; `min`/`max` clamp the stepped value.
+                let num = |name: &str| -> Option<i64> {
+                    pj.get(name).and_then(|v| {
+                        v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+                    })
+                };
+                let step = num("step").unwrap_or(1);
+                let dfl = num("default").unwrap_or(0);
+                let clamp = |n: i64| -> i64 {
+                    let n = num("min").map_or(n, |lo| n.max(lo));
+                    num("max").map_or(n, |hi| n.min(hi))
+                };
                 let mut changed = false;
                 if let Some(card_id) = card_id {
                     if let Ok(mut data) = CHAT_DATA.write() {
                         let card = data.a2app_state.entry(card_id).or_default();
                         let cur = |c: &CardState| -> i64 {
-                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(0)
+                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(dfl)
                         };
                         changed = true;
                         if ev.contains("inc") || ev.contains("plus") || ev.contains("add") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n + 1).to_string());
+                            card.insert(key.clone(), clamp(n + step).to_string());
                         } else if ev.contains("dec") || ev.contains("minus") || ev.contains("sub") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n - 1).to_string());
+                            card.insert(key.clone(), clamp(n - step).to_string());
                         } else if ev.contains("reset") || ev.contains("clear") {
-                            card.insert(key.clone(), "0".to_owned());
+                            card.insert(key.clone(), dfl.to_string());
                         } else if ev.starts_with("set") {
                             // `set` last: "reset" also contains "set".
                             match value {
@@ -7870,9 +7933,7 @@ impl MatchEvent for App {
         // memory tree onto a device that can't be written via su/run-as.
         #[cfg(target_os = "android")]
         if let Ok(src) = std::env::var("MAKEPAD_PROVISION_DIR") {
-            let home = std::path::PathBuf::from(
-                "/data/user/0/dev.makepad.octos_app/files/octos-home",
-            );
+            let home = kernel_home();
             match deploy_provision(std::path::Path::new(&src), &home) {
                 Ok(n) => log::info!("provision: deployed {n} files from {src}"),
                 Err(e) => log::warn!("provision: deploy from {src} failed: {e}"),
@@ -8009,7 +8070,7 @@ impl AppMain for App {
         // NOTE: `agent.notify(...)` for A2App/Splash button callbacks is
         // registered inside `makepad_widgets::script_mod` so it reaches the
         // isolated Splash VMs too (see aichat/widgets/src/lib.rs).
-        crate::makepad_widgets::script_mod(vm);
+        makepad_widgets::script_mod(vm);
         crate::makepad_code_editor::script_mod(vm);
         crate::makepad_diagram_kit::script_mod(vm);
         // W08 — register the LoginScreen DSL prototype before this file's
@@ -8757,8 +8818,12 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                     AgentEvent::ToolRequest { .. } => {}
-                    AgentEvent::TextAuthoritative { .. } => {}
-                    _ => {}
+                    // `TextAuthoritative` is handled by its real arm above
+                    // (the one binding `prompt_id`/`text`); the earlier
+                    // duplicate `{ .. } => {}` arm here was unreachable.
+                    // No `_` arm: all `AgentEvent` variants are covered
+                    // explicitly, so a new upstream variant fails the build
+                    // instead of being silently dropped.
                 }
             }
         }
@@ -9119,6 +9184,7 @@ mod tests {
             "nav",
             "web",
             "youtube",
+            "quake",
         ] {
             let md = baked_app_md(domain)
                 .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
@@ -9137,6 +9203,7 @@ mod tests {
             "interaction",
             "sys-helpers",
             "weather-icon",
+            "map-pane",
         ] {
             assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
         }

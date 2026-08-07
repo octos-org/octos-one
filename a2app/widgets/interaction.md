@@ -14,7 +14,10 @@ let tab = "{{state.tab}}"
 if tab == "" || tab == "a" { View{ /* view A */ } } else { View{ /* view B */ } }
 ```
 
-- An unset key renders as `""` — treat `""` as your default in every condition.
+- An unset key renders as `"0"` — treat that as your default in conditions.
+- Need a real default (esp. in a NUMERIC argument position)? Write
+  `{{state.key|default}}` — e.g. `sys.maptile(lat, lon, {{state.zoom|8}}, "tl")`
+  renders `8` until a button writes the key (see `widgets/map-pane.md`).
 - Branch WHOLE views with `if/else`; both branches must be complete views.
 
 ## Writing state: any Button
@@ -26,6 +29,19 @@ Button{ text: "Go" on_click: || agent.notify("set", {key: "tab", value: "b"}) }
 An invisible tap target is a transparent Button: `draw_bg.color: #00000000
 draw_bg.color_hover: #00000000 draw_bg.color_focus: #00000000
 draw_bg.color_down: #00000000 draw_bg.border_size: 0.0`.
+
+## Numeric stepper: inc / dec (bounded)
+
+`agent.notify("inc", {...})` / `agent.notify("dec", {...})` step a numeric
+key. The payload takes optional knobs (numbers or numeric strings):
+`step` (per-tap delta, default 1), `min`/`max` (the result is clamped),
+and `default` — the value an UNSET key steps from, which MUST equal the
+display slot's default (`{{state.zoom|8}}` ⇒ `default: "8"`), and is also
+what `agent.notify("reset", {key})` restores:
+
+```
+Button{ text: "+" on_click: || agent.notify("inc", {key: "zoom", step: "1", min: "5", max: "14", default: "8"}) }
+```
 
 ## Tappable list row (overlay pattern)
 

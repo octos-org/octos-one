@@ -828,7 +828,7 @@ SolidView{ width: Fill height: 812 flow: Overlay new_batch: true draw_bg.color: 
       View{ width: Fill height: Fit flow: Down align: Align{x: 0.5 y: 1.0} padding: Inset{left: 4 right: 4}
         RoundedView{ width: Fill height: Fit flow: Down draw_bg.color: #0c1420 draw_bg.border_radius: 16 padding: Inset{left: 18 top: 7 right: 18 bottom: 12} spacing: 4
           View{ width: Fill height: Fit flow: Overlay
-            View{ width: Fill height: Fit flow: Down spacing: 4
+            View{ width: Fill height: Fit flow: Down spacing: 4 align: Align{x: 0.5}
               View{ width: Fill height: 6 flow: Right align: Align{x: 0.5 y: 0.5}
                 RoundedView{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }
               }
