@@ -35,8 +35,8 @@ use splash_node::{Attrs, NodeKind, UiNode};
 ///
 /// `register_agent_module` installs the whole `sys` module, the same one the
 /// existing Splash widget evaluates cards against.
-pub fn build_with_capabilities(src: &str) -> Option<UiNode> {
-    build(src, makepad_widgets::splash::register_agent_module)
+pub fn build_with_capabilities(cx: &mut makepad_widgets::Cx, src: &str) -> Option<UiNode> {
+    build(cx, src, makepad_widgets::splash::register_agent_module)
 }
 
 /// Evaluate `src` and walk it into a `UiNode` tree.
@@ -44,11 +44,21 @@ pub fn build_with_capabilities(src: &str) -> Option<UiNode> {
 /// Returns `None` when the script evaluates to nil — a parse or runtime error —
 /// or when the root tag is not one the model knows. A card must never render as
 /// a silent absence, so a caller reports `None` rather than drawing nothing.
-pub fn build(src: &str, register: impl FnOnce(&mut ScriptVm)) -> Option<UiNode> {
+pub fn build(
+    cx: &mut makepad_widgets::Cx,
+    src: &str,
+    register: impl FnOnce(&mut ScriptVm),
+) -> Option<UiNode> {
+    // The HOST is the app's `Cx`, not a placeholder.
+    //
+    // `splash-render`'s evaluator passes a dummy because nothing it evaluates
+    // touches one. This backend's capabilities do: `cx_mut()` downcasts the host
+    // to `&mut Cx` and unwraps, so a `sys.*` call on a VM built with anything
+    // else panics the app. Weather and news lower to literals and survived it;
+    // the stock card has live calls and took the process down.
     let mut std_slot = 0;
-    let mut host = 0;
     let vm = &mut ScriptVm {
-        host: &mut host,
+        host: cx,
         std: &mut std_slot,
         bx: Box::new(ScriptVmBase::new()),
     };
@@ -71,6 +81,37 @@ pub fn build(src: &str, register: impl FnOnce(&mut ScriptVm)) -> Option<UiNode> 
     walk(vm, value, 0)
 }
 
+/// Evaluate on a host that is NOT a `Cx`. Test-only, and unsafe for any card
+/// with a live call.
+///
+/// A capability downcasts the host and unwraps, so `sys.*` on this VM panics.
+/// That is fine for a card whose sources all resolve from data — which is what
+/// the walk tests exercise — and catastrophic for one that does not, which is
+/// why it is `cfg(test)` and named for what it lacks.
+#[cfg(test)]
+fn build_without_capabilities(src: &str) -> Option<UiNode> {
+    let mut host = 0;
+    let mut std_slot = 0;
+    let vm = &mut ScriptVm {
+        host: &mut host,
+        std: &mut std_slot,
+        bx: Box::new(ScriptVmBase::new()),
+    };
+    let value = vm.eval(ScriptMod {
+        cargo_manifest_path: String::new(),
+        module_path: String::from("splash"),
+        file: String::from("l0.splash"),
+        line: 0,
+        column: 0,
+        code: src.to_string(),
+        values: Vec::new(),
+    });
+    if value.is_nil() {
+        return None;
+    }
+    walk(vm, value, 0)
+}
+
 /// One DSL object → one `UiNode`, recursing into `c`.
 fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
     // A malformed script must not be able to blow the native stack. The card is
@@ -82,7 +123,18 @@ fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
     let kind = NodeKind::from_tag(&tag)?;
 
     let attrs = Attrs {
-        text: string_prop(vm, value, id!(text)),
+        // `text_prop`, not `string_prop`: a card may bind a declared NUMBER here.
+        //
+        // `string_prop` returns None for a number, so a node whose text was one
+        // arrived with no text at all and rendered as an empty row — present,
+        // laid out, and blank. Measured with a card reading `sys.gps`, which
+        // answers numbers: four labelled rows, four empty values, and nothing to
+        // say whether the device had a fix or the call had failed.
+        //
+        // The same fix was already made for `variant` after the kit's `variant: 2`
+        // arrived as nothing and every weather icon fell back to a default sun.
+        // This is the same defect one slot over.
+        text: text_prop(vm, value, id!(text)),
         label: string_prop(vm, value, id!(label)),
         placeholder: string_prop(vm, value, id!(placeholder)),
         id: string_prop(vm, value, id!(id)),
@@ -117,7 +169,7 @@ fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
         marginbottom: f32_prop(vm, value, id!(marginbottom)),
         border: f32_prop(vm, value, id!(border)),
         bordercolor: u32_prop(vm, value, id!(bordercolor)),
-        variant: string_prop(vm, value, id!(variant)),
+        variant: text_prop(vm, value, id!(variant)),
         enabled: int_prop(vm, value, id!(enabled)),
         key: string_prop(vm, value, id!(key)),
         action: string_prop(vm, value, id!(action)),
@@ -149,6 +201,10 @@ fn walk(vm: &mut ScriptVm, value: ScriptValue, depth: usize) -> Option<UiNode> {
         lat: num_prop(vm, value, id!(lat)),
         lon: num_prop(vm, value, id!(lon)),
         zoom: num_prop(vm, value, id!(zoom)),
+        changeto: string_prop(vm, value, id!(changeto)),
+        polyline: string_prop(vm, value, id!(polyline)),
+        markers: string_prop(vm, value, id!(markers)),
+        route_badge: string_prop(vm, value, id!(route_badge)),
         tilt: num_prop(vm, value, id!(tilt)),
         rotation: num_prop(vm, value, id!(rotation)),
         x: num_prop(vm, value, id!(x)),
@@ -189,6 +245,28 @@ fn prop(vm: &mut ScriptVm, obj: ScriptValue, key: LiveId) -> Option<ScriptValue>
 fn string_prop(vm: &mut ScriptVm, obj: ScriptValue, key: LiveId) -> Option<String> {
     let v = prop(vm, obj, key)?;
     vm.string_with(v, |_vm, s| s.to_string())
+}
+
+/// A property that may be text OR a number, read as text.
+///
+/// `variant` is the one slot on the shared model that carries a CODE rather than
+/// a word — a WeatherIcon's condition is the forecast's WMO number — and
+/// `string_prop` returns `None` for a number. So the kit set `variant: 2`, the
+/// node received nothing, and every weather icon on the card fell back to its
+/// default: seven identical suns over a week that was cloudy, rainy and clear.
+///
+/// Integral values print without a fraction, because this becomes a shader
+/// uniform and `2` reads as a code where `2.0` reads as a measurement.
+fn text_prop(vm: &mut ScriptVm, obj: ScriptValue, key: LiveId) -> Option<String> {
+    if let Some(s) = string_prop(vm, obj, key) {
+        return Some(s);
+    }
+    let n = num_prop(vm, obj, key)?;
+    Some(if n.fract() == 0.0 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n}")
+    })
 }
 
 /// A numeric property, via the VM's own coercion rather than by reading the
@@ -250,7 +328,7 @@ mod tests {
         );
         let root = report.root.expect("a realized tree");
         let src = format!("{KIT}\n{}", kit::lower(&root));
-        super::build(&src, |_vm| {}).expect("the lowered card evaluated to nil")
+        super::build_without_capabilities(&src).expect("the lowered card evaluated to nil")
     }
 
     fn news_data() -> serde_json::Value {
@@ -349,7 +427,16 @@ mod tests {
         let mut out = Vec::new();
         words(&build_card(NEWS, news_data()), &mut out);
         let text = out.join(" | ");
-        for expected in ["HACKER NEWS", "Top Stories", "Rust 1.95"] {
+        // The card's OWN words — `copy` declarations, authored in the ledger.
+        //
+        // A seeded headline used to be here too. It is not any more: `sys.news`
+        // is answered live now, so a story title lowers to the call rather than
+        // to the blob this test hands in, and a bare VM has no `sys` to run it.
+        // What this test guards is that words survive the second evaluator at
+        // all — a right-sized tree of empty nodes would pass the count check
+        // beside it — and the card's own copy proves that without depending on
+        // a value the backend now fetches.
+        for expected in ["HACKER NEWS", "Top Stories"] {
             assert!(text.contains(expected), "{expected:?} missing from: {text}");
         }
     }
@@ -393,7 +480,7 @@ mod tests {
         let r = splash_ui_l0::realize_with_state(STOCK, &stock_data(), &store, RealizeLimits::default());
         let src = format!("{KIT}\n{}", kit::lower(&r.root.expect("root")));
 
-        let bare = super::build(&src, |_vm| {}).expect("still evaluates");
+        let bare = super::build_without_capabilities(&src).expect("still evaluates");
         let mut out = Vec::new();
         fn words(n: &splash_node::UiNode, out: &mut Vec<String>) {
             if let Some(t) = n.attrs.text.as_deref() { out.push(t.to_owned()); }
@@ -412,8 +499,216 @@ mod tests {
     /// screen that looks like a layout bug rather than a rejected card.
     #[test]
     fn an_unknown_root_is_refused() {
-        assert!(super::build(r#"let n = {t:"hologram"}
-n
-"#, |_vm| {}).is_none());
+        assert!(super::build_without_capabilities("let n = {t:\"hologram\"}\nn\n").is_none());
+    }
+}
+
+#[cfg(test)]
+mod cond_tests {
+    /// A WeatherIcon's condition is a NUMBER, and it must survive both hops.
+    ///
+    /// The forecast returns a WMO code; the kit stores it as `variant`, which is
+    /// a `String` on the shared node model. Whether the VM coerces a number into
+    /// that slot is not something to assume — the card that got this wrong drew
+    /// seven identical icons over a week that was cloudy, rainy and clear, and
+    /// nothing distinguished that from a week of identical weather.
+    #[test]
+    fn a_numeric_condition_reaches_the_node() {
+        let tree = super::build_without_capabilities(
+            "let node = {t: \"weathericon\", variant: 2, w: 34, h: 34}\nnode\n",
+        )
+        .expect("evaluates");
+        assert_eq!(
+            tree.attrs.variant.as_deref(),
+            Some("2"),
+            "a numeric `variant` must reach the node as its digits"
+        );
+    }
+}
+
+#[cfg(test)]
+mod nav_dsl {
+    //! Emit the nav card's FINAL DSL through the DEVICE's own path.
+    //!
+    //! `kit::lower` -> `_kit.splash` -> this VM -> `l0_widgets::to_dsl` is what a
+    //! generated card becomes on a phone. `makepad::lower` is a different backend,
+    //! so verifying a layout fix there proves nothing about the device — which is
+    //! the mistake this exists to stop repeating: a map-card layout fix was
+    //! screenshot-verified through `makepad::lower` while the device path still
+    //! stacked the map in a column. Writing the DSL to a file lets it be pushed to
+    //! a running app with no rebuild.
+    use splash_ui_l0::{kit, realize, RealizeLimits};
+
+    const NAV: &str = include_str!(
+        "../../../../../Splash/crates/splash-ui-l0/tests/fixtures/nav.card"
+    );
+    const KIT: &str = super::super::l0_card::KIT_SRC;
+
+    fn data(screen: &str) -> serde_json::Value {
+        serde_json::json!({
+            "origin": "Saratoga High School", "dest": "Stanford University",
+            "query": "", "screen": screen, "found": [],
+            "here": { "lat": -9999, "lon": -9999, "accuracy": 0, "ok": 0 },
+            "origin_place": [{ "id": "o", "name": "S", "lat": -9999, "lon": -9999 }],
+            "dest_place": [{ "id": "d", "name": "S", "lat": -9999, "lon": -9999 }],
+            "trip": { "duration": "SEEDED", "distance": "SEEDED" },
+            "step": { "instruction": "SEEDED", "remaining": "SEEDED" },
+            "env": { "locale": { "lang": "en" } },
+            "copy": { "where": "Where to?", "from": "FROM", "to": "TO",
+                      "here_now": "Starting from…", "away": "away",
+                      "seeking": "Finding a route…", "start": "Go",
+                      "stop": "End", "left": "left" }
+        })
+    }
+
+    #[test]
+    #[ignore = "writes files for the device harness; run explicitly"]
+    fn write_nav_dsl() {
+        for (name, screen) in [("nav-plan", "plan"), ("nav-drive", "drive")] {
+            let report = realize(NAV, &data(screen), RealizeLimits::default());
+            assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
+            let root = report.root.expect("a realized tree");
+            let src = format!("{KIT}\n{}", kit::lower(&root));
+            let tree = super::build_without_capabilities(&src)
+                .expect("the lowered card evaluated to nil");
+            let dsl = super::super::l0_widgets::to_dsl(&tree);
+            let out = std::path::Path::new("/tmp").join(format!("kit-{name}.splash"));
+            std::fs::write(&out, format!("// name: l0-card\n{dsl}")).expect("write");
+            println!("--- {name}: {} bytes -> {}", dsl.len(), out.display());
+            for line in dsl.lines().take(4) {
+                println!("---   {}", line.chars().take(150).collect::<String>());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod kit_palette {
+    //! A role the kit fills must reach the tree with a fill.
+    //!
+    //! `l0_panel` was BOTH a palette colour and a role function in `_kit.splash`.
+    //! From `fn l0_panel`'s declaration onward the name resolved to the function,
+    //! and a function coerced to a colour is 0 — so `l0_chip` and `l0_field` both
+    //! asked for that fill and both got fully transparent. Uses inside
+    //! `l0_panel`'s own body still resolved to the colour, so panels looked right
+    //! and chips did not, which is why it read as a chip bug.
+    //!
+    //! On screen: a nav card's Go and End, and the stock card's unselected range
+    //! chips, rendered as bare text with no button under them. Nothing was missing
+    //! and nothing was misplaced — they just did not look tappable. Found by
+    //! live-testing on a phone, and invisible to every test here, because zero is
+    //! a perfectly valid colour.
+    //!
+    //! So this asserts the tree, where the collision is observable, and compares a
+    //! chip against a panel rather than against a constant: the two are meant to
+    //! carry the same fill, and a rename that misses one of them fails here.
+    use splash_ui_l0::{kit, realize, RealizeLimits};
+
+    fn find<'a>(n: &'a splash_node::UiNode, k: splash_node::NodeKind) -> Option<&'a splash_node::UiNode> {
+        if n.kind == k {
+            return Some(n);
+        }
+        n.children.iter().find_map(|c| find(c, k))
+    }
+
+    #[test]
+    fn a_filled_role_reaches_the_tree_with_its_fill() {
+        const CARD: &str = concat!(
+            "copy g { class: vocabulary, en: \"Go\" }\n",
+            "state s { shape: bool, initial: false }\n",
+            "event e { s: toggle }\n",
+            "view root Surface { Chip(text: copy.g, on_tap: e) Panel { Rule() } }\n"
+        );
+        let data = serde_json::json!({
+            "copy": { "g": "Go" }, "s": false, "env": { "locale": {} }
+        });
+        let root = realize(CARD, &data, RealizeLimits::default())
+            .root
+            .expect("realizes");
+        let src = format!(
+            "{}\n{}",
+            super::super::l0_card::KIT_SRC,
+            kit::lower(&root)
+        );
+        let tree = super::build_without_capabilities(&src).expect("evaluated to nil");
+
+        let chip = find(&tree, splash_node::NodeKind::Chip).expect("a chip");
+        let panel = find(&tree, splash_node::NodeKind::Card).expect("a panel");
+        assert_eq!(
+            chip.attrs.bg, panel.attrs.bg,
+            "a chip and a panel carry the same fill; a chip of {:?} against a panel \
+             of {:?} means the palette name was shadowed",
+            chip.attrs.bg, panel.attrs.bg
+        );
+        assert!(
+            chip.attrs.bg.is_some_and(|c| c != 0),
+            "and it must not be transparent — a chip with no fill is a label"
+        );
+    }
+}
+
+#[cfg(test)]
+mod numeric_text {
+    //! A card that binds a declared NUMBER to text renders the number.
+    //!
+    //! `string_prop` returns None for a number, so a text node whose value was one
+    //! arrived with no text: present, laid out, and blank. Found with a card
+    //! reading `sys.gps`, which answers numbers — four labelled rows, four empty
+    //! values, and no way to tell a missing fix from a broken call.
+    //!
+    //! The identical bug had already been fixed one slot over, for `variant`, after
+    //! the kit's `variant: 2` arrived as nothing and every weather icon fell back
+    //! to a default sun. Two slots on the same model take the same shape of value
+    //! and only one of them tolerated it.
+    //!
+    //! Built from a REAL card through `kit::lower`. The first version of this test
+    //! handed the VM a synthetic `l0_col([l0_value(42)])` tail, which evaluates to
+    //! nil there, so it took its own skip path and passed with the fix reverted.
+    use splash_ui_l0::{kit, realize, RealizeLimits};
+
+    #[test]
+    fn a_number_bound_to_text_reaches_the_tree_as_text() {
+        const CARD: &str = concat!(
+            "state n { shape: number, initial: 42 }\n",
+            "view root Surface { TextValue(value: n) }\n"
+        );
+        let data = serde_json::json!({ "n": 42.0, "env": { "locale": {} }, "copy": {} });
+        let root = realize(CARD, &data, RealizeLimits::default())
+            .root
+            .expect("realizes");
+        // The number has to be UNQUOTED in the kit source, and realization cannot
+        // produce that: it stringifies a declared value, so `TextValue(value: n)`
+        // lowers to `l0_value("42")` and reads identically through either property
+        // reader. The numeric case only arises from a live `sys.*` call, which a
+        // bare VM has no `sys` to run.
+        //
+        // So the quotes are removed from real lowered output. That is exactly the
+        // shape `sys.gps("lat")` hands the kit on a device, and it is the only way
+        // to reach it from here — the first two versions of this test passed with
+        // the fix reverted, one through a skip path and one because it was
+        // asserting on a string all along.
+        let lowered = kit::lower(&root).replace("l0_value(\"42\")", "l0_value(42)");
+        assert!(
+            lowered.contains("l0_value(42)"),
+            "the probe must actually carry a bare number:\n{lowered}"
+        );
+        let src = format!("{}\n{}", super::super::l0_card::KIT_SRC, lowered);
+        let tree = super::build_without_capabilities(&src).expect("evaluated to nil");
+
+        fn words(n: &splash_node::UiNode, out: &mut Vec<String>) {
+            if let Some(t) = n.attrs.text.as_deref() {
+                out.push(t.to_owned());
+            }
+            for c in &n.children {
+                words(c, out);
+            }
+        }
+        let mut out = Vec::new();
+        words(&tree, &mut out);
+        assert!(
+            out.iter().any(|w| w == "42"),
+            "a declared number must reach the tree as text, and print without a \
+             fraction; got {out:?}"
+        );
     }
 }

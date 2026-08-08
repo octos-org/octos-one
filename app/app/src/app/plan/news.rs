@@ -115,7 +115,11 @@ fn masthead(a: &Args, zh: bool) -> String {
          \x20       {ti}\n\
          \x20   }}",
         eb = text("TextCaption", &format!("{eyebrow:?}"), theme::ACCENT, ""),
-        ti = text("TextHero", &format!("{title:?}"), theme::TEXT, ""),
+        // `width: Fill`, as the stock title needs for the same reason: `TextHero`
+        // is a 76pt role meant for a hero NUMBER, and the masthead beside it is
+        // editorial text of any length. "News" fits; "Top Tech News" clipped
+        // mid-word on device.
+        ti = text("TextHero", &format!("{title:?}"), theme::TEXT, "width: Fill "),
     )
 }
 

@@ -36,6 +36,7 @@ use std::sync::Mutex;
 pub const CAPABILITIES: &[&str] = &[
     "sys.geocode",
     "sys.geocodenum",
+    "sys.poi",
     "sys.weather",
     "sys.weathernum",
     "sys.weathercond",
@@ -74,6 +75,9 @@ fn get(url: &str) -> Option<String> {
     }
     REQUESTS.fetch_add(1, Ordering::Relaxed);
     let body = ureq::get(url)
+        // Nominatim refuses an unidentified client outright, and Yahoo prefers
+        // one. A default ureq agent string is neither.
+        .set("User-Agent", "octos-card/1.0 (+https://github.com/octos-one)")
         .timeout(std::time::Duration::from_secs(15))
         .call()
         .ok()?
@@ -452,6 +456,63 @@ pub fn register(vm: &mut ScriptVm) {
     );
 
 
+    // ---- points of interest -----------------------------------------------
+    //
+    // `geocode` is open-meteo's gazetteer of POPULATED PLACES: it resolves
+    // Shanghai and the town of Zhujiajiao, and returns nothing for The Bund, Yu
+    // Garden, Tianzifang or Longhua Temple. Measured -- four of five attractions
+    // came back empty, which on screen is indistinguishable from a place the
+    // model invented. Nominatim knows landmarks, and still refuses the invented
+    // one, which is the property that matters: an attraction either resolves or
+    // is visibly unresolved.
+
+    fn poi_field(query: &str, field: &str, lang: &str) -> Option<String> {
+        let url = format!(
+            "https://nominatim.openstreetmap.org/search?q={}&format=json&limit=1\
+&addressdetails=1&accept-language={lang}",
+            enc(query)
+        );
+        let v = json(&url)?;
+        let r = v.get(0)?;
+        let out = match field.trim() {
+            // `name` is the localised label; `display_name` its first segment is
+            // the fallback when a feature carries no name tag.
+            "name" => r
+                .get("name")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    r.get("display_name")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.split(',').next())
+                        .map(str::to_string)
+                })?,
+            "kind" => r.get("type").and_then(|v| v.as_str())?.replace('_', " "),
+            "country" => r
+                .get("address")
+                .and_then(|a| a.get("country"))
+                .and_then(|v| v.as_str())?
+                .to_string(),
+            _ => return None,
+        };
+        Some(out)
+    }
+
+    vm.add_method(
+        sys,
+        id_lut!(poi),
+        script_args_def!(query = NIL, field = NIL, lang = NIL),
+        |vm, args| {
+            let q = sarg!(vm, args, query);
+            let field = sarg!(vm, args, field);
+            let lang = sarg!(vm, args, lang);
+            let lang = if lang.trim().is_empty() { "en".to_string() } else { lang };
+            let out = poi_field(&q, &field, &lang).unwrap_or_else(|| "—".into());
+            vm.bx.heap.new_string_from_str(&out)
+        },
+    );
+
     // ---- market data ------------------------------------------------------
     //
     // Yahoo Finance, the same source octos-one uses. `movers` needs no ticker: who is
@@ -465,20 +526,72 @@ pub fn register(vm: &mut ScriptVm) {
         at(&json(&url)?, "chart.result.0").cloned()
     }
 
-    fn movers_list() -> Option<serde_json::Value> {
-        let url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved\
+    /// Who is moving, over a universe.
+    ///
+    /// Empty `symbols` keeps the market-wide answer: Yahoo's `day_gainers`
+    /// screener, which is the only universe it has -- there is no `scrIds` for a
+    /// sector or a theme, so "top AI movers" was previously unanswerable and a
+    /// card titled that way would have shown market-wide gainers under an AI
+    /// headline.
+    ///
+    /// A named universe is built here instead, from quotes the model's own
+    /// symbols select. That split is the architecture's rule: which companies
+    /// count as "AI" is world knowledge and the model's job; who among them
+    /// actually moved, and by how much, is a fact and never the model's.
+    /// Sorted by change, so "movers" still means movers.
+    fn movers_list(symbols: &str) -> Option<serde_json::Value> {
+        if symbols.trim().is_empty() {
+            let url = "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved\
 ?scrIds=day_gainers&count=10";
-        at(&json(url)?, "finance.result.0.quotes").cloned()
+            return at(&json(url)?, "finance.result.0.quotes").cloned();
+        }
+        let mut rows: Vec<(f64, serde_json::Value)> = Vec::new();
+        for sym in symbols.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+            let Some(r) = yahoo_quote(sym) else { continue };
+            let Some(m) = at(&r, "meta") else { continue };
+            let price = m.get("regularMarketPrice").and_then(|v| v.as_f64());
+            let prev = m
+                .get("chartPreviousClose")
+                .or_else(|| m.get("previousClose"))
+                .and_then(|v| v.as_f64());
+            let (Some(price), Some(prev)) = (price, prev) else { continue };
+            if prev == 0.0 {
+                continue;
+            }
+            let change = price - prev;
+            let pct = change / prev * 100.0;
+            // Screener-shaped, so the field mapping below is the same either way.
+            rows.push((
+                pct,
+                serde_json::json!({
+                    "symbol": m.get("symbol").and_then(|v| v.as_str()).unwrap_or(sym),
+                    "shortName": m.get("shortName").and_then(|v| v.as_str())
+                        .or_else(|| m.get("longName").and_then(|v| v.as_str()))
+                        .unwrap_or(sym),
+                    "regularMarketPrice": price,
+                    "regularMarketChange": change,
+                    "regularMarketChangePercent": pct,
+                }),
+            ));
+        }
+        if rows.is_empty() {
+            return None;
+        }
+        rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+        Some(serde_json::Value::Array(
+            rows.into_iter().map(|(_, v)| v).collect(),
+        ))
     }
 
     vm.add_method(
         sys,
         id_lut!(movers),
-        script_args_def!(index = NIL, field = NIL),
+        script_args_def!(index = NIL, field = NIL, symbols = NIL),
         |vm, args| {
             let i = narg!(vm, args, index).max(0.0) as usize;
             let field = sarg!(vm, args, field);
-            let out = movers_list()
+            let symbols = sarg!(vm, args, symbols);
+            let out = movers_list(&symbols)
                 .and_then(|q| q.get(i).cloned())
                 .and_then(|row| {
                     let key = match field.trim() {

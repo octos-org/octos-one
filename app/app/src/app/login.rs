@@ -258,17 +258,24 @@ script_mod! {
 /// `~/Library/Application Support/octos-app/server.json`; on Linux to
 /// `~/.config/octos-app/server.json`. Falls back to `~/.octos-app/` if
 /// `dirs`-style discovery fails.
+/// `~/.config/octos-app/` — where this app's own files live.
+///
+/// Shared so the durable user store (§5.12) lands beside `server.json` rather
+/// than inventing a second location. Two config directories is how one of them
+/// ends up unbacked-up and the other undiscoverable.
+pub fn config_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let mut p = PathBuf::from(home);
+    // Match the W08 spec wording (`~/.config/octos-app/server.json`)
+    // verbatim — XDG dirs aren't worth a new dep here, and macOS users
+    // already use this layout for many CLI tools.
+    p.push(".config");
+    p.push("octos-app");
+    Some(p)
+}
+
 fn server_config_path() -> Option<PathBuf> {
-    if let Some(home) = std::env::var_os("HOME") {
-        let mut p = PathBuf::from(home);
-        // Match the W08 spec wording (`~/.config/octos-app/server.json`)
-        // verbatim — XDG dirs aren't worth a new dep here, and macOS users
-        // already use this layout for many CLI tools.
-        p.push(".config");
-        p.push("octos-app");
-        return Some(p.join("server.json"));
-    }
-    None
+    Some(config_dir()?.join("server.json"))
 }
 
 /// On-disk shape of the server config file. Kept in this module so we don't

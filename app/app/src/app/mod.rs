@@ -18,6 +18,7 @@ pub mod l0_widgets;
 pub mod login;
 pub mod octo_thinking;
 pub mod plan;
+pub mod user_store;
 pub mod producers;
 pub mod sessions;
 pub mod task_dock;

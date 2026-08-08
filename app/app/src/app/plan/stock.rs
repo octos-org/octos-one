@@ -68,6 +68,16 @@ pub struct Args {
     /// Which stat tiles, from a closed set.
     #[serde(default)]
     pub stats: Vec<String>,
+    /// The universe to rank, as tickers. Empty means the whole market.
+    ///
+    /// Which companies count as "AI" is world knowledge and so the model's job --
+    /// the same job as resolving "apple" to `AAPL`. Who among them actually
+    /// moved, and by how much, is a fact and stays with the runtime. Without
+    /// this the only universe was Yahoo's `day_gainers` screener, so "top AI
+    /// movers" could only be answered by putting an AI headline over market-wide
+    /// gainers -- confidently wrong, with nothing able to contradict it.
+    #[serde(default)]
+    pub symbols: Vec<String>,
 }
 
 const RANGES: &[&str] = &["1d", "5d", "1mo", "6mo", "1y"];
@@ -116,7 +126,22 @@ pub fn lower(json: &str) -> Result<String, String> {
     for (i, sec) in plan.sections.iter().enumerate() {
         let a = &sec.args;
         let s = match sec.block.as_str() {
-            "MoversList" => movers_list(a, zh),
+            "MoversList" => {
+                // Typed, so a malformed universe is named before lowering rather
+                // than rendering ten em-dashes.
+                for t in &a.symbols {
+                    if t.is_empty()
+                        || t.len() > 6
+                        || !t.bytes().all(|b| b.is_ascii_uppercase() || b == b'.')
+                    {
+                        return Err(format!(
+                            "sections[{i}]: {t:?} is not a ticker — \
+                             uppercase letters and dots, up to 6 characters"
+                        ));
+                    }
+                }
+                movers_list(a, zh)
+            }
             "QuoteHeader" => {
                 validate_ticker(&a.ticker, i, "QuoteHeader")?;
                 quote_header(a, zh)
@@ -144,6 +169,7 @@ pub fn lower(json: &str) -> Result<String, String> {
 
 fn movers_list(a: &Args, zh: bool) -> String {
     let n = a.count.unwrap_or(10).clamp(1, 10) as usize;
+    let universe = a.symbols.join(",");
     let eyebrow = if a.label.is_empty() {
         if zh { "今日涨幅榜" } else { "TODAY · TOP GAINERS" }.to_string()
     } else {
@@ -178,19 +204,19 @@ fn movers_list(a: &Args, zh: bool) -> String {
             ),
             sym = text(
                 "TextRow",
-                &format!("sys.movers({r}, \"symbol\")"),
+                &format!("sys.movers({r}, \"symbol\", {universe:?})"),
                 theme::TEXT,
                 ""
             ),
             name = text(
                 "TextCaption",
-                &format!("sys.movers({r}, \"name\")"),
+                &format!("sys.movers({r}, \"name\", {universe:?})"),
                 theme::TEXT_MUTED,
                 ""
             ),
             price = text(
                 "TextRow",
-                &format!("\"$\" + sys.movers({r}, \"price\")"),
+                &format!("\"$\" + sys.movers({r}, \"price\", {universe:?})"),
                 theme::TEXT,
                 ""
             ),
@@ -198,7 +224,7 @@ fn movers_list(a: &Args, zh: bool) -> String {
             // guess — unlike a named quote, whose direction must be fetched.
             pct = text(
                 "TextCaption",
-                &format!("sys.movers({r}, \"changepct\")"),
+                &format!("sys.movers({r}, \"changepct\", {universe:?})"),
                 theme::UP,
                 ""
             ),
@@ -214,7 +240,11 @@ fn movers_list(a: &Args, zh: bool) -> String {
          draw_bg.color: {panel} draw_bg.border_radius: {r} margin: Inset{{top: {gap}}} \
          padding: Inset{{left: 14 right: 14 top: 4 bottom: 4}}\n{rows}\x20   }}",
         eb = text("TextCaption", &format!("{eyebrow:?}"), theme::UP, ""),
-        ti = text("TextHero", &format!("{title:?}"), theme::TEXT, ""),
+        // `width: Fill`, because `TextHero` is a 76pt role meant for a hero
+        // NUMBER and the title beside it is editorial text of any length. The
+        // default "Movers" fits; "AI Movers" ran off the screen and clipped
+        // mid-word.
+        ti = text("TextHero", &format!("{title:?}"), theme::TEXT, "width: Fill "),
         panel = theme::DARK_PANEL,
         r = theme::PANEL_RADIUS,
         gap = theme::GAP,
@@ -361,8 +391,8 @@ mod tests {
     fn every_market_number_is_live() {
         let out = lower(MOVERS).unwrap();
         for r in 0..10 {
-            assert!(out.contains(&format!("sys.movers({r}, \"symbol\")")));
-            assert!(out.contains(&format!("sys.movers({r}, \"price\")")));
+            assert!(out.contains(&format!("sys.movers({r}, \"symbol\", \"\")")));
+            assert!(out.contains(&format!("sys.movers({r}, \"price\", \"\")")));
         }
         assert!(out.contains("// name: stock-app"));
         // No dollar figure may be baked in.
@@ -388,6 +418,41 @@ mod tests {
 
     /// A company NAME would silently fetch nothing and render dashes, so it is
     /// rejected with the fix spelled out.
+    /// "top 10 ai stock movers and shakers" — the query that had no answer.
+    #[test]
+    fn ai_movers_query_lowers_with_its_own_universe() {
+        let plan = r#"{
+            "plan": "stock", "locale": "en",
+            "sections": [ { "block": "MoversList", "args": {
+                "count": 10, "title": "AI Movers", "label": "AI · TOP MOVERS AND SHAKERS",
+                "symbols": ["NVDA","AMD","AVGO","SMCI","MU","TSM","MRVL","ARM","CRWV",
+                            "PLTR","SNOW","AI","VRT","ANET","ORCL","MSFT","GOOGL","META"]
+            } } ]
+        }"#;
+        let out = lower(plan).expect("AI movers plan must lower");
+        assert!(
+            out.contains("sys.movers(0, \"symbol\", \"NVDA,AMD,AVGO"),
+            "the universe reaches the runtime:\n{out}"
+        );
+        // Not one company, price or percentage is written into the card.
+        for banned in ["NVIDIA", "206.", "+2.9", "%\"" ] {
+            assert!(!out.contains(banned), "{banned:?} must not be baked in:\n{out}");
+        }
+        assert!(out.contains("AI Movers"), "the editorial title is the model's");
+    }
+
+    /// A universe is typed: a company NAME there is rejected before lowering.
+    #[test]
+    fn a_universe_of_names_is_rejected() {
+        let plan = r#"{
+            "plan": "stock", "locale": "en",
+            "sections": [ { "block": "MoversList",
+                            "args": { "symbols": ["Nvidia"] } } ]
+        }"#;
+        let err = lower(plan).expect_err("a name is not a ticker");
+        assert!(err.contains("is not a ticker"), "{err}");
+    }
+
     #[test]
     fn a_company_name_is_not_a_ticker() {
         let bad = r#"{"plan":"stock","locale":"en","sections":[

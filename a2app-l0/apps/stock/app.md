@@ -7,6 +7,15 @@ by tapping — no round trip to you.
 Use it for any stock or market request: "top 10 stocks", "movers", "AAPL",
 "Tesla stock", "英伟达股价", "top AI stock movers".
 
+**A themed request needs `symbols`.** "top AI stock movers", "chip stocks today",
+"bank stocks" — there is no market screener for a theme, so without `symbols` the
+card shows the market-wide day gainers under whatever title you gave it, which is
+confidently wrong. Pass the tickers you mean:
+`sys.movers(count: 10, symbols: "NVDA,AMD,AVGO,SMCI,MU,TSM,MRVL,ARM,CRWV,PLTR,SNOW,AI,VRT,ANET,ORCL,MSFT,GOOGL,META", fields: [...])`.
+Which companies count as AI is world knowledge and yours; who among them actually
+moved is computed live from the symbols you name. Omit `symbols` for a plain
+"top movers" request.
+
 `exemplar.card` is a working card that meets every requirement below. Read it
 first — it is shorter than this document.
 
@@ -39,6 +48,7 @@ Branch on `selected` with two complementary guards. There is no `else`.
 | what | source |
 |---|---|
 | the movers list | `sys.movers(count:, fields: [ticker, name, last, change, pct])` |
+| a THEMED movers list | add `symbols: "NVDA,AMD,…"` — see below |
 | the selected quote | `sys.quote(ticker: state.selected, fields: […])` |
 
 **Never write a price, a percentage, a company name or a ticker.** Every one
@@ -84,8 +94,14 @@ series and the widget gets it.
 Guard the detail on the quote's lifecycle:
 
 ```
+copy loading { class: vocabulary, en: "Fetching the quote…" }
 when quote.$state == .pending { TextBody(text: copy.loading) }
 ```
+
+**`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
+not declared is refused, by any route — this snippet is the most-copied lines in
+the memory, and showing the use without the declaration is why cards come back
+refused for `copy.loading is not declared`. Same for an empty-state string.
 
 Do not test whether a field is empty and do not compare against a sentinel.
 

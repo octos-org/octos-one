@@ -21,9 +21,361 @@ use std::fmt::Write as _;
 
 /// Render a tree as the DSL this repository's VM evaluates.
 pub fn to_dsl(root: &UiNode) -> String {
+    let mut body = String::new();
+    // Per document, not per process: the names must line up with THIS tree's maps.
+    MAPS.with(|m| *m.borrow_mut() = (0, String::new()));
+    let live = LIVE.with(|l| {
+        *l.borrow_mut() = Some(Vec::new());
+        emit(root, &mut body, 0);
+        l.borrow_mut().take().unwrap_or_default()
+    });
+
     let mut out = String::from("// REALIZED from an L0 ledger — do not edit.\n");
-    emit(root, &mut out, 0);
+    if live.is_empty() {
+        out.push_str(&body);
+        return out;
+    }
+
+    // HOIST the constant sub-calls, then TICK the rest — which is exactly the shape
+    // of the card this replaces, and the half of it I got wrong the first time.
+    //
+    // A live text node's expression is `sys.navstep(searchnum×4, sys.navprog(searchnum×4,
+    // gps×2), …)`. Emitted into `fn tick()` as-is it runs every frame: measured on a
+    // OnePlus 6 at 644% CPU and 27 hitches, worse than the rebuild it replaced.
+    //
+    // The place lookups do not change while driving. So they become top-level `let`s,
+    // evaluated once at build, and the tick references those — leaving only `sys.gps`
+    // live per frame. `a2app/apps/nav` does the same thing with `olat`/`olon`/`dlat`/
+    // `dlon`, and its R9.5 note is about precisely this: a top-level `let` freezes at
+    // build, which is what makes it cheap and why anything that DOES change must stay
+    // inside the tick.
+    let (lets, ticks) = hoist_constants(&live);
+    for (name, expr) in &lets {
+        let _ = writeln!(out, "let {name} = {expr}");
+    }
+    out.push_str(&body);
+    out.push_str("\nfn tick() {\n");
+    for (name, expr) in &ticks {
+        let _ = writeln!(out, "    ui.{name}.set_text({expr})");
+    }
+    out.push_str("}\n");
     out
+}
+
+thread_local! {
+    /// The live text nodes emitted by the current `to_dsl`, in emission order.
+    ///
+    /// A thread local rather than a parameter because `emit` recurses through eight
+    /// call sites and only two of them care.
+    /// The map most recently emitted, and how many have been emitted.
+    ///
+    /// A map's controls are drawn by `l0_surface_map` as siblings that FOLLOW it in
+    /// the same subtree, so "the map this control drives" is "the last one emitted".
+    /// Both halves were previously the constant `l0map`: every `MapView` claimed the
+    /// same instance name and every control called it, so a card with two maps —
+    /// two routes side by side, a plan over a preview — emitted a duplicate id and
+    /// pointed both control columns at whichever one won. The nav card is safe only
+    /// because its guards leave one map realized at a time, which is a property of
+    /// that card and not of this emitter.
+    static MAPS: std::cell::RefCell<(usize, String)> =
+        const { std::cell::RefCell::new((0, String::new())) };
+
+    static LIVE: std::cell::RefCell<Option<Vec<(String, String)>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// A Roboto text style at this size and weight.
+///
+/// The L0 path emitted `font_size` alone, which leaves makepad's default face. Every
+/// other card in this app names Roboto explicitly — the weather card's hero is
+/// `Roboto-Thin`, its labels `Roboto-Medium` — so an L0 card was the only surface in
+/// the product not using the product's typeface, at a glance slightly wrong and hard
+/// to name.
+///
+/// The weight comes from the kit, which already says whether a run is body text or a
+/// heading; this maps that onto the three faces the app bundles.
+/// Does this run stay inside the bundled Roboto's coverage?
+///
+/// Roboto carries Latin-1 and little beyond it. Forcing it on EVERY run put the
+/// product's typeface on an L0 card — and drew a tofu box for anything outside that
+/// range. Measured on device three times in one day: `◎` for a recenter control, `→`
+/// for an onward action, and `↑`/`↓` in a generated weather card's high/low, which
+/// rendered as `□32° □25°`. The first two were mine and I could pick other glyphs;
+/// the third was the MODEL's, and it will keep reaching for arrows.
+///
+/// So the family is only stated when the text is known to fit it. Anything else keeps
+/// makepad's default face, which covers the arrows and the CJK the app's own chrome
+/// already renders. A different face is a smaller cost than a missing glyph.
+fn fits_roboto(text: Option<&str>) -> bool {
+    match text {
+        // Unknown at lowering time — a live value's text is not in the DSL. Do not
+        // gamble the font on it.
+        None => false,
+        Some(t) => t.chars().all(|c| (c as u32) < 0x0250 || c == '°'),
+    }
+}
+
+/// The style for a run, naming the family only when the text is known to fit it.
+fn text_style_for(size: f32, weight: Option<i32>, text: Option<&str>) -> String {
+    if fits_roboto(text) {
+        return text_style(size, weight);
+    }
+    // The DOTTED form, not a whole `TextStyle{}`. Replacing the style replaces its
+    // font STACK, and a style with no family resolves to no font at all — the arrows
+    // and the CJK stopped drawing entirely, which is worse than the tofu it was
+    // meant to fix. Setting only the size leaves makepad's default face and the
+    // fallbacks that cover them, which is what this backend emitted before it began
+    // naming Roboto.
+    format!(" draw_text.text_style.font_size: {size}")
+}
+
+fn text_style(size: f32, weight: Option<i32>) -> String {
+    let face = match weight.unwrap_or(400) {
+        w if w >= 600 => "Roboto-Bold",
+        w if w >= 500 => "Roboto-Medium",
+        _ => "Roboto-Regular",
+    };
+    format!(
+        " draw_text.text_style: TextStyle{{ font_family: FontFamily{{ \
+         latin := FontMember{{ res: crate_resource(\"makepad_widgets:resources/{face}.ttf\") \
+         asc: 0.0 desc: 0.0 }} }} font_size: {size} }}"
+    )
+}
+
+/// Is this the container a swipe reveals?
+fn is_reveal(node: &UiNode) -> bool {
+    node.attrs.action.as_deref() == Some("reveal")
+}
+
+/// This subtree with every `Reveal` removed, and the reveals themselves.
+///
+/// The reveal has to leave the swipe overlay or the transparent swipe button sits on
+/// top of it and swallows the tap it exists to receive — which is exactly what
+/// happened: `End` appeared on swipe-up and did nothing. The shipping nav card puts
+/// its `endrow` outside the swipe target for the same reason.
+///
+/// It is not a direct child of the sheet: the card says `Panel(dock: .bottom) { …
+/// Reveal { … } }`, so the panel sits between them. Hence a walk rather than a filter.
+fn split_reveals(node: &UiNode) -> (UiNode, Vec<UiNode>) {
+    let mut revealed = Vec::new();
+    let mut kept = Vec::new();
+    for child in &node.children {
+        if is_reveal(child) {
+            revealed.push(child.clone());
+            continue;
+        }
+        let (c, mut r) = split_reveals(child);
+        revealed.append(&mut r);
+        kept.push(c);
+    }
+    let mut compact = node.clone();
+    compact.children = kept;
+    (compact, revealed)
+}
+
+/// The call a tagged map control makes, if it is one.
+///
+/// One table, so the theme's tag and the widget's method cannot drift apart. `0.7`
+/// and `-0.7` are the L2 card's own steps — a zoom control that moves by a different
+/// amount than the app it replaces is a different control.
+fn map_control_call(action: &str) -> Option<String> {
+    // The map this control belongs to, not "the map". See `MAPS`.
+    let map = MAPS.with(|m| m.borrow().1.clone());
+    if map.is_empty() {
+        // A control with no map above it is a theme bug, not a card one, and a
+        // call on a name nothing declares is a parse error in the whole document —
+        // one stray control would blank the card. Drawing the button dead is the
+        // smaller failure and it is visible in a screenshot.
+        return None;
+    }
+    Some(match action {
+        "zoomin" => format!("ui.{map}.nav_zoom_by(\"0.7\")"),
+        "zoomout" => format!("ui.{map}.nav_zoom_by(\"-0.7\")"),
+        "recenter" => format!("ui.{map}.set_nav_recenter(\"1\")"),
+        _ => return None,
+    })
+}
+
+/// Does anything in this subtree take a tap?
+///
+/// A swipe target is a transparent `Button` laid OVER the sheet's summary, and a
+/// button over a control is a control that cannot be used. The plan screen puts
+/// every input it has — both places, the stop, the three travel modes, `Go` — in
+/// the bottom panel, so covering that panel made the whole screen inert while it
+/// went on rendering perfectly.
+fn takes_a_tap(node: &UiNode) -> bool {
+    node.attrs.tapto.is_some() || node.children.iter().any(takes_a_tap)
+}
+
+/// Register a live text node and return the name to emit it under.
+fn live_name(call: &str) -> Option<String> {
+    LIVE.with(|l| {
+        let mut slot = l.borrow_mut();
+        let found = slot.as_mut()?;
+        let name = format!("l0v{}", found.len());
+        found.push((name.clone(), call.to_owned()));
+        Some(name)
+    })
+}
+
+/// Pull every constant sub-call out into a named binding.
+///
+/// "Constant" means: a `sys.*` call that does not read the device's position. Those
+/// are the expensive ones — a place lookup parses its cached response every time it is
+/// evaluated — and they answer the same thing for the life of the card. What is left
+/// in the tick reads `sys.gps` and must run per frame.
+fn hoist_constants(live: &[(String, String)]) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let mut lets: Vec<(String, String)> = Vec::new();
+    let mut ticks = Vec::new();
+    for (name, expr) in live {
+        let mut rewritten = expr.clone();
+        // Innermost-first: a hoisted call must not still contain an unhoisted one.
+        while let Some((start, end)) = innermost_constant_call(&rewritten) {
+            let call = rewritten[start..end].to_owned();
+            let bound = match lets.iter().find(|(_, e)| *e == call) {
+                Some((n, _)) => n.clone(),
+                None => {
+                    let n = format!("l0c{}", lets.len());
+                    lets.push((n.clone(), call));
+                    n
+                }
+            };
+            rewritten.replace_range(start..end, &bound);
+        }
+        ticks.push((name.clone(), rewritten));
+    }
+    (lets, ticks)
+}
+
+/// Which byte offsets of an expression are inside a STRING LITERAL.
+///
+/// The hoister must not reach into one. Card state arrives as a quoted argument, so
+/// a place name is free to contain anything — and a name like
+/// `cafe sys.navsecs(1) bar` was hoisted straight out of its quotes into
+/// `let l0c0 = sys.navsecs(1)`: a host call the card never declared, with arguments
+/// chosen by whoever typed the name. Found in review, reproduced, fixed here.
+///
+/// That is an authority escalation, not a cosmetic bug. The whole confinement
+/// argument is that card text can only ever be data; a hoister that treats it as
+/// code breaks exactly that.
+fn literal_mask(expr: &str) -> Vec<bool> {
+    let mut mask = vec![false; expr.len()];
+    let mut in_str = false;
+    let mut escape = false;
+    for (i, c) in expr.char_indices() {
+        if in_str {
+            for m in mask.iter_mut().skip(i).take(c.len_utf8()) {
+                *m = true;
+            }
+        }
+        if escape {
+            escape = false;
+            continue;
+        }
+        match c {
+            '\\' if in_str => escape = true,
+            '"' => {
+                // The quote itself belongs to the literal either way.
+                for m in mask.iter_mut().skip(i).take(c.len_utf8()) {
+                    *m = true;
+                }
+                in_str = !in_str;
+            }
+            _ => {}
+        }
+    }
+    mask
+}
+
+/// The span of an innermost `sys.*` call that reads no device position.
+fn innermost_constant_call(expr: &str) -> Option<(usize, usize)> {
+    let bytes = expr.as_bytes();
+    let mask = literal_mask(expr);
+    let mut best: Option<(usize, usize)> = None;
+    let mut at = 0;
+    while let Some(rel) = expr[at..].find("sys.") {
+        let start = at + rel;
+        // Inside a quoted argument this is TEXT, not a call.
+        if mask.get(start).copied().unwrap_or(false) {
+            at = start + 4;
+            continue;
+        }
+        // The call's own span, by balanced parens.
+        let open = {
+            let mut probe = start;
+            loop {
+                let Some(rel) = expr[probe..].find('(') else {
+                    return best;
+                };
+                let hit = probe + rel;
+                if !mask.get(hit).copied().unwrap_or(false) {
+                    break hit;
+                }
+                probe = hit + 1;
+            }
+        };
+        let mut depth = 0usize;
+        let mut end = None;
+        for (i, b) in bytes[open..].iter().enumerate() {
+            // A paren inside a quoted argument is TEXT. Counting it cut the call's
+            // span short at the first `)` in a place name — which then hoisted half
+            // a call and left the rest of the name looking like code, so a name
+            // containing `sys.navsecs(1)` still became a binding even with the
+            // occurrences masked.
+            if mask.get(open + i).copied().unwrap_or(false) {
+                continue;
+            }
+            match b {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(open + i + 1);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let end = end?;
+        // Innermost: no nested CALL inside, and nothing position-dependent. Both
+        // questions ignore anything inside a literal — a place name containing
+        // "sys." is text, and counting it made the enclosing call look nested, so
+        // nothing was hoisted at all and the per-frame cost came straight back.
+        let real_call_at = |from: usize| {
+            let mut probe = from;
+            while let Some(rel) = expr[probe..end].find("sys.") {
+                let hit = probe + rel;
+                if !mask.get(hit).copied().unwrap_or(false) {
+                    return true;
+                }
+                probe = hit + 4;
+            }
+            false
+        };
+        let nested = real_call_at(start + 4);
+        let reads_position = {
+            let mut probe = start;
+            let mut found = false;
+            while let Some(rel) = expr[probe..end].find("sys.gps") {
+                let hit = probe + rel;
+                if !mask.get(hit).copied().unwrap_or(false) {
+                    found = true;
+                    break;
+                }
+                probe = hit + 7;
+            }
+            found
+        };
+        if !nested && !reads_position {
+            // The shortest such span, so repeated hoisting terminates.
+            if best.is_none_or(|(bs, be)| end - start < be - bs) {
+                best = Some((start, end));
+            }
+        }
+        at = start + 4;
+    }
+    best
 }
 
 /// ARGB integer → makepad hex.
@@ -51,6 +403,28 @@ fn hex(argb: u32) -> String {
     format!("#{r:02x}{g:02x}{b:02x}{a:02x}")
 }
 
+/// A card's range token, as the chart widget's.
+///
+/// The card declares `enum[d1, w1, m1, m6, y1]` — an L0 enum member cannot start
+/// with a digit — and `yahoo_range_params` reads `1d`, `1w`, `1m`, `6m`, `1y`.
+/// The two were passed straight through, so every token except the fallback was
+/// unknown and every chip drew the SAME intraday chart. The chips highlighted
+/// correctly and the plot refetched, which is what made it look like it worked.
+///
+/// The translation belongs here: the enum is the card's vocabulary and the
+/// parameter is this backend's, and §1.1 puts that seam in this file.
+fn plot_range(token: &str) -> &str {
+    match token {
+        "d1" => "1d",
+        "w1" => "1w",
+        "m1" => "1m",
+        "m6" => "6m",
+        "y1" => "1y",
+        // Already in the widget's spelling, or empty — the widget defaults.
+        other => other,
+    }
+}
+
 /// The widget a kind renders as.
 ///
 /// Container kinds differ only in flow, so they share `View` and set it below.
@@ -65,6 +439,15 @@ fn widget(kind: NodeKind) -> &'static str {
         // does not draw one.
         NodeKind::Divider => "SolidView",
         NodeKind::WeatherIcon => "WeatherIcon",
+        // The map is a real widget here, so the role reaches it as one. `Map`
+        // was lowered by neither backend before, which put an error box in the
+        // middle of the nav card ON DEVICE — the device renders through the kit.
+        // NAMED, because a control has to call it. `nav_zoom_by` and
+        // `set_nav_recenter` are methods, so the button the theme asked for needs a
+        // receiver — and a widget with no id cannot be one. A card with two maps
+        // would collide here; the nav card has one per screen and only one renders.
+        // Named per instance by `emit_widget`, which owns the counter.
+        NodeKind::Map | NodeKind::NavMap => "MapView",
         // The five data visualisations. This backend already ships all six as
         // native widgets — which is why §1.1 says to prove the pipeline here
         // first and let the vocabulary be whatever that requires.
@@ -168,6 +551,41 @@ fn box_model(a: &Attrs, out: &mut String) {
     if let Some(s) = a.spacing {
         let _ = write!(out, " spacing: {s}");
     }
+    // Alignment, which this emitter dropped entirely.
+    //
+    // The kit sets it — `aligny` on every row, `alignx` on a column the card
+    // asked to centre — and none of it reached the DSL, so the weather card's
+    // place name, icon and hero temperature sat against the left margin while
+    // the reference rendering centred all three. A `Align{}` with neither axis
+    // is not written: makepad reads the two independently and stating a default
+    // would override the widget's own.
+    if a.alignx.is_some() || a.aligny.is_some() {
+        let x = a.alignx.map(|v| format!("x: {v}"));
+        let y = a.aligny.map(|v| format!("y: {v}"));
+        let parts: Vec<String> = [x, y].into_iter().flatten().collect();
+        let _ = write!(out, " align: Align{{{}}}", parts.join(" "));
+    }
+}
+
+/// The `agent.notify` channel an L0 tap arrives on.
+///
+/// Shared rather than written at both ends. The emitter said `"l0kit"` and the
+/// handler tested for `"l0"`, so every tap on every L0 card was dropped — the
+/// cards rendered perfectly and nothing on them worked. Two string literals in
+/// two files cannot be checked against each other; one constant can.
+pub const TAP_CHANNEL: &str = "l0kit";
+
+/// The instance key, event name and payload carried by a tap.
+///
+/// `kit::tap_target` writes `l0:{"e":…,"k":…,"v":…}` as ONE string, because
+/// `tag_notify_calls` rewrites only a literal channel and everything else has to
+/// travel in the payload. The `l0:` prefix separates it from the renderer's own
+/// `set:` verbs. This is the only reader; the shape is not restated anywhere.
+pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
+    let json = target.strip_prefix("l0:")?;
+    let t: serde_json::Value = serde_json::from_str(json).ok()?;
+    let field = |k: &str| t.get(k).and_then(|v| v.as_str()).unwrap_or("").to_owned();
+    Some((field("k"), field("e"), field("v")))
 }
 
 /// A node, wrapped in a hit target when it declares one.
@@ -179,6 +597,92 @@ fn box_model(a: &Attrs, out: &mut String) {
 /// `makepad::lower` made and had to be corrected for, and writing it a second
 /// time is why it is spelled out here.
 fn emit(node: &UiNode, out: &mut String, depth: usize) {
+    // A text input binds its RETURN key rather than being covered by a hit
+    // target. A transparent button over a field would swallow the focus, and
+    // there would be nothing to type into.
+    //
+    // `on_return` hands back what was typed, and `$$` in the target is where it
+    // goes — the payload is the text, which does not exist until commit, so the
+    // target is assembled at that moment instead of baked at lowering time.
+    if node.kind == NodeKind::Input {
+        let pad = "  ".repeat(depth.min(32));
+        let a = &node.attrs;
+        let target = a.tapto.as_deref().unwrap_or("");
+        let (head, tail) = target.split_once("$$").unwrap_or((target, ""));
+        let _ = write!(out, "{pad}TextInput{{");
+        sizing_of(node.kind, a, out);
+        box_model(a, out);
+        if let Some(bg) = a.bg {
+            let _ = write!(out, " draw_bg.color: {}", hex(bg));
+        }
+        if let Some(r) = a.radius {
+            let _ = write!(out, " draw_bg.border_radius: {r}");
+        }
+        if let Some(c) = a.color {
+            let _ = write!(out, " draw_text.color: {}", hex(c));
+        }
+        if let Some(s) = a.size {
+            out.push_str(&text_style_for(s, a.weight, a.text.as_deref()));
+        }
+        // CENTRED in its own box, via `label_align` — the property `TextInput` actually
+        // reads for its text and its placeholder (`text_input.rs`, used at the
+        // `draw_walk` for both). Setting the container's `align` did nothing, because
+        // that positions the widget, not the run inside it.
+        //
+        // A field is 48 high and its text sat at the top of that, so every place name
+        // floated above the pill it was supposed to be inside — in every screenshot of
+        // the trip planner, and easy to misread as "the box is too tall".
+        out.push_str(" label_align: Align{y: 0.5}");
+        let _ = write!(out, " text: {:?}", a.text.as_deref().unwrap_or(""));
+        let _ = write!(
+            out,
+            " empty_text: {:?}",
+            a.placeholder.as_deref().unwrap_or("")
+        );
+        if !target.is_empty() {
+            let _ = write!(
+                out,
+                " on_return: |t| agent.notify({TAP_CHANNEL:?}, {{target: {head:?} + t + {tail:?}}})"
+            );
+        }
+        // And the same, per KEYSTROKE. `TextInput` calls `on_change` with the text so
+        // far, exactly as it calls `on_return` with the committed text, so a search
+        // box can list results while you type and still commit a destination on
+        // return. Two moments, two declared events, one widget.
+        if let Some(changing) = a.changeto.as_deref().filter(|c| !c.is_empty()) {
+            let (h, t2) = changing.split_once("$$").unwrap_or((changing, ""));
+            // `"c":1` marks this dispatch as a KEYSTROKE, so the app can apply the
+            // state change immediately but COALESCE the expensive re-render — a
+            // full re-resolve per character re-laid the sheet out under the
+            // user's finger, which read as the field jittering while they typed.
+            let h = h.replacen("\"v\":\"", "\"c\":1,\"v\":\"", 1);
+            let _ = write!(
+                out,
+                " on_change: |t| agent.notify({TAP_CHANNEL:?}, {{target: {h:?} + t + {t2:?}}})"
+            );
+        }
+        let _ = writeln!(out, " }}");
+        return;
+    }
+    // A MAP CONTROL. The card said `controls: .zoom`; the theme drew a square with a
+    // glyph and tagged it, and the imperative call belongs here — this is the layer
+    // §1.1 allows to know about widgets and methods. The card cannot say
+    // `ui.themap.nav_zoom_by("0.7")`, which is exactly what the L2 card says.
+    if let Some(call) = node.attrs.action.as_deref().and_then(map_control_call) {
+        let pad = "  ".repeat(depth.min(32));
+        let w = node.attrs.w.map(|w| format!("width: {w}")).unwrap_or("width: Fit".into());
+        let h = node.attrs.h.map(|h| format!("height: {h}")).unwrap_or("height: Fit".into());
+        let _ = writeln!(out, "{pad}View{{ {w} {h} flow: Overlay");
+        emit_widget(node, out, depth + 1);
+        let _ = writeln!(
+            out,
+            "{pad}  Button{{ width: Fill height: Fill draw_bg.color: #00000000 \
+             draw_bg.color_down: #ffffff1a draw_bg.border_size: 0.0 \
+             draw_bg.border_radius: 12 text: \"\" on_click: || {call} }}"
+        );
+        let _ = writeln!(out, "{pad}}}");
+        return;
+    }
     let Some(target) = node.attrs.tapto.as_deref() else {
         return emit_widget(node, out, depth);
     };
@@ -201,7 +705,7 @@ fn emit(node: &UiNode, out: &mut String, depth: usize) {
          draw_bg.color_hover: #ffffff08 draw_bg.color_focus: #00000000 \
          draw_bg.color_down: #ffffff12 draw_bg.border_size: 0.0 \
          draw_bg.border_radius: 10 text: \"\" \
-         on_click: || agent.notify(\"l0kit\", {{target: {target:?}}}) }}"
+         on_click: || agent.notify({TAP_CHANNEL:?}, {{target: {target:?}}}) }}"
     );
     let _ = writeln!(out, "{pad}}}");
 }
@@ -211,7 +715,44 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     let a = &node.attrs;
     let w = widget(node.kind);
 
-    let _ = write!(out, "{pad}{w}{{");
+    // A live text node is NAMED, so `fn tick()` can set it without a rebuild. The
+    // kit stamps the call onto `action` (see `l0_live`); the name is assigned here in
+    // emission order so it matches the tick written after the tree.
+    let named = if node.kind == NodeKind::Text {
+        a.action.as_deref().and_then(live_name)
+    } else {
+        None
+    };
+    // A REVEAL starts hidden and is named, so a swipe on its sheet can show it
+    // without touching card state. Card state would re-resolve the card, re-parse the
+    // document and rebuild the `MapView` — up to 327 ms of frozen map. The shipping
+    // nav card toggles `ui.endrow.set_visible` for precisely this reason.
+    let reveal = a.action.as_deref() == Some("reveal");
+    // A map claims the next instance name and becomes the one its controls drive.
+    let map_name = matches!(node.kind, NodeKind::Map | NodeKind::NavMap).then(|| {
+        MAPS.with(|m| {
+            let mut m = m.borrow_mut();
+            let name = format!("l0map{}", m.0);
+            m.0 += 1;
+            m.1 = name.clone();
+            name
+        })
+    });
+    if let Some(name) = &map_name {
+        let _ = write!(out, "{pad}{name} := {w}{{");
+    }
+    match &named {
+        _ if map_name.is_some() => {}
+        Some(name) => {
+            let _ = write!(out, "{pad}{name} := {w}{{");
+        }
+        None if reveal => {
+            let _ = write!(out, "{pad}l0reveal := {w}{{ visible: false");
+        }
+        None => {
+            let _ = write!(out, "{pad}{w}{{");
+        }
+    }
     if let Some(f) = flow(node.kind) {
         let _ = write!(out, " flow: {f}");
     }
@@ -238,7 +779,7 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
             let _ = write!(out, " draw_text.color: {}", hex(c));
         }
         if let Some(s) = a.size {
-            let _ = write!(out, " draw_text.text_style.font_size: {s}");
+            out.push_str(&text_style_for(s, a.weight, a.text.as_deref()));
         }
     }
     if node.kind == NodeKind::Image {
@@ -282,14 +823,102 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
                 out,
                 " symbol: {:?} range: {:?}",
                 a.symbol.as_deref().unwrap_or(""),
-                a.range.as_deref().unwrap_or("")
+                plot_range(a.range.as_deref().unwrap_or(""))
             );
         }
         _ => {}
     }
+    // The condition code, as a NUMBER on the shader's own uniform.
+    //
+    // This wrote `cond: "2"` — the wrong property AND a quoted string — so the
+    // widget kept its default and every day drew the same icon. The reference
+    // emitter writes `draw_bg.cond: 2`, and that is the name the shader reads.
     if node.kind == NodeKind::WeatherIcon {
         if let Some(v) = a.variant.as_deref() {
-            let _ = write!(out, " cond: {v:?}");
+            let _ = write!(out, " draw_bg.cond: {}", v.parse::<f32>().unwrap_or(0.0));
+        }
+    }
+    // The trip. `variant` carries which member of the map family this is, in the
+    // widget's own vocabulary; the route arrives already resolved as a polyline5,
+    // because the tree carries values and not requests.
+    //
+    // A polyline is omitted rather than written empty: `ensure_nav_route` returns
+    // early on a blank one, and an empty string would look like a deliberate
+    // "no route" instead of a route still in flight.
+    // The trip. Every value here comes from the SHIPPING nav card rather than
+    // from a guess — `a2app/apps/nav/app.md` is a working four-map reference and
+    // its "MANDATORY rules" section says why each one matters.
+    //
+    // The rule that bites hardest: a `MapView` needs a FIXED PIXEL height.
+    // `Fill`/`Fit` "resolve to 0 and hide the map", and the kit's first attempt
+    // asked for 240 — which drew a map, correctly, in a letterbox. The shipping
+    // card uses 812 for a full-bleed screen and 452/384 for a panel; a card that
+    // stacks content above its map gets the panel size.
+    //
+    // `min_zoom`/`max_zoom` are widened because the widget defaults to 11..17 and
+    // clamps into it, so a card asking to see a whole city silently got a street.
+    if matches!(node.kind, NodeKind::Map | NodeKind::NavMap) {
+        // Network tiles, always: the widget defaults to a local `.mbtiles` file
+        // for offline development and an L0 card cannot ship one, so the default
+        // draws nothing but the base colour and looks like a broken widget.
+        out.push_str(" use_network: true use_local_mbtiles: false");
+        // The shipping card's 3..19 zoom range, restored.
+        //
+        // I widened it, found the app at 441% CPU and 3 GB, and reverted — but
+        // the cause was an IMPOSSIBLE CENTRE, not the range: `sys.gps` answers
+        // -9999 with no fix and the camera fitted an extent spanning it at world
+        // scale. That is now rejected in the widget, where the number is known,
+        // so the range is safe again at the layer that was never the problem.
+        //
+        // And the narrow clamp had a cost that only shows up under a finger. The
+        // widget defaults to 11..17; a card asking for `zoom: 11` — a whole-route
+        // preview — then sits exactly ON the floor, so pinching to zoom OUT does
+        // nothing at all. Half the gesture is dead and the map reads as broken
+        // rather than as clamped.
+        out.push_str(" min_zoom: 3.0 max_zoom: 19.0 nav_period: 100");
+        let mode = a.variant.as_deref().unwrap_or("");
+        if !mode.is_empty() {
+            let _ = write!(out, " nav_mode: {mode:?}");
+        }
+        // The ribbon is drawn in ground metres, so a route seen from a
+        // whole-route preview needs a far wider line than one seen from the car.
+        let ribbon = if mode == "plan" { 40.0 } else { 14.0 };
+        let _ = write!(out, " nav_route_width: {ribbon}");
+        if let Some(z) = a.zoom {
+            let _ = write!(out, " zoom: {z}");
+        }
+        // The CENTRE IS A NUMBER, and a followed map ignores it.
+        //
+        // This emitted `center_lat: sys.gps("lat")` as a live expression on the
+        // theory that the widget would re-evaluate it per frame. Nothing does: the
+        // property is set once when the tree is built, so the camera went from a
+        // number that at least changed on every card re-resolve to a constant
+        // string that never changed at all. Measured on a OnePlus 6 — 21 fixes,
+        // ~105 m of travel, 0.0% of pixels different. The map was frozen, and the
+        // epoch threshold had just been raised on the strength of the same theory.
+        //
+        // A follow camera reads the platform's last fix directly instead — see
+        // `update_nav_camera`. That is where a per-frame value belongs, and it needs
+        // no rebuild and no property at all. These numbers stay as the fallback for
+        // the frame before the first fix lands.
+        if let (Some(lat), Some(lon)) = (a.lat, a.lon) {
+            let _ = write!(out, " center_lat: {lat} center_lon: {lon}");
+        }
+        // Omitted rather than written empty: `ensure_nav_route` returns early on
+        // a blank one, and an empty string would read as a deliberate "no route"
+        // instead of a route still in flight.
+        if let Some(poly) = a.polyline.as_deref().filter(|p| !p.trim().is_empty()) {
+            let _ = write!(out, " nav_polyline: {poly:?}");
+        }
+        // The route's pins. Same omit-rather-than-blank rule as the polyline: an
+        // empty string is a deliberate "no pins", and a trip still resolving has
+        // not said that.
+        if let Some(pins) = a.markers.as_deref().filter(|m| !m.trim().is_empty()) {
+            let _ = write!(out, " route_markers: {pins:?}");
+        }
+        // What the route costs, drawn ON it. Same omit-rather-than-blank rule.
+        if let Some(b) = a.route_badge.as_deref().filter(|b| !b.trim().is_empty()) {
+            let _ = write!(out, " route_badge: {b:?}");
         }
     }
     if node.children.is_empty() {
@@ -297,6 +926,126 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         return;
     }
     out.push('\n');
+    // The SHEET's handle and summary form ONE swipe target, with the revealed row
+    // BELOW it — copied from the shipping nav card, including why.
+    //
+    // The transparent button sits over the handle and the summary so it (a) catches
+    // the swipe across the whole area a thumb lands on and (b) occludes the map, so
+    // the gesture never leaks through and pans it. A first attempt put the button
+    // over the handle alone: `height: Fill` inside a `Fit` overlay resolved to the
+    // handle's 10px, so the target was a hairline and every swipe missed it.
+    //
+    // The revealed row stays outside that overlay, or the button would sit on top of
+    // it and swallow the tap it exists to receive.
+    //
+    // `set_visible` rather than a notify: the sheet opens and closes without the card
+    // re-resolving, which is the whole point — a rebuild here tears down the map.
+    let is_sheet = node.attrs.action.as_deref() == Some("sheet");
+    if is_sheet {
+        let h = "  ".repeat((depth + 1).min(32));
+        let (compact, revealed) = split_reveals(node);
+        // NO REVEAL, NO SWIPE. A sheet with nothing hidden in it needs neither a
+        // handle nor a swipe target, and emitting them anyway is what killed the
+        // plan screen: the same `Panel(dock: .bottom)` carries the summary on the
+        // driving screen and every control on the planning one, so the transparent
+        // button went over the travel-mode chips, both search fields and `Go`. Taps
+        // landed on it and nothing dispatched — measured, three targets, no
+        // `[l0]` line for any of them.
+        if revealed.is_empty() {
+            for child in &compact.children {
+                emit(child, out, depth + 1);
+            }
+            let _ = writeln!(out, "{pad}}}");
+            return;
+        }
+        // There IS something to reveal, so the swipe target has to exist. Where the
+        // summary is inert — the driving sheet, a distance and a time — it spans the
+        // whole area, which is the shipping card's shape and deliberate: it catches
+        // the swipe wherever a thumb lands and occludes the map so the gesture
+        // cannot leak through and pan it. Where the summary has controls, the target
+        // shrinks to the handle strip, because a swipe that needs a precise thumb is
+        // a smaller loss than a button that cannot be pressed.
+        let summary_has_controls = compact.children.iter().any(takes_a_tap);
+        if summary_has_controls {
+            let _ = writeln!(out, "{h}View{{ width: Fill height: Fit flow: Down{}",
+                match node.attrs.alignx {
+                    Some(x) => format!(" align: Align{{x: {x}}}"),
+                    None => String::new(),
+                });
+            // An explicit height, not `Fill`: inside a `Fit` overlay `Fill` resolved
+            // to the handle's own 5px and every swipe missed the hairline.
+            let _ = writeln!(out, "{h}  View{{ width: Fill height: 28 flow: Overlay");
+            let _ = writeln!(
+                out,
+                "{h}    View{{ width: Fill height: Fill flow: Right align: Align{{x: 0.5 y: 0.5}}"
+            );
+            let _ = writeln!(
+                out,
+                "{h}      RoundedView{{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }}"
+            );
+            let _ = writeln!(out, "{h}    }}");
+            let _ = writeln!(
+                out,
+                "{h}    Button{{ width: Fill height: Fill draw_bg.color: #00000000 \
+                 draw_bg.border_size: 0.0 text: \"\" swipe: true \
+                 on_swipe_up: || ui.l0reveal.set_visible(true) \
+                 on_swipe_down: || ui.l0reveal.set_visible(false) }}"
+            );
+            let _ = writeln!(out, "{h}  }}");
+            for child in &compact.children {
+                emit(child, out, depth + 2);
+            }
+            let _ = writeln!(out, "{h}}}");
+            for child in &revealed {
+                emit(child, out, depth + 1);
+            }
+            let _ = writeln!(out, "{pad}}}");
+            return;
+        }
+        let _ = writeln!(out, "{h}View{{ width: Fill height: Fit flow: Overlay");
+        // The sheet's own `alignx` has to be restated HERE.
+        //
+        // It is written on the sheet container, and these two boxes — the overlay
+        // and the summary column — sit between it and the text. Both are
+        // `width: Fill`, so centring the sheet's children centred boxes that
+        // already spanned it, and the number inside stayed hard against the left
+        // margin. The shipping card solves it the same way, per-label rather than
+        // per-container: `Label{ width: Fill align: Align{x: 0.5} }`.
+        let inner_align = match node.attrs.alignx {
+            Some(x) => format!(" align: Align{{x: {x}}}"),
+            None => String::new(),
+        };
+        let _ = writeln!(
+            out,
+            "{h}  View{{ width: Fill height: Fit flow: Down{inner_align}"
+        );
+        let _ = writeln!(
+            out,
+            "{h}    View{{ width: Fill height: 12 flow: Right align: Align{{x: 0.5 y: 0.5}}"
+        );
+        let _ = writeln!(
+            out,
+            "{h}      RoundedView{{ width: 44 height: 5 draw_bg.color: #3a4658 draw_bg.border_radius: 3 }}"
+        );
+        let _ = writeln!(out, "{h}    }}");
+        for child in &compact.children {
+            emit(child, out, depth + 3);
+        }
+        let _ = writeln!(out, "{h}  }}");
+        let _ = writeln!(
+            out,
+            "{h}  Button{{ width: Fill height: Fill draw_bg.color: #00000000 \
+             draw_bg.border_size: 0.0 text: \"\" swipe: true \
+             on_swipe_up: || ui.l0reveal.set_visible(true) \
+             on_swipe_down: || ui.l0reveal.set_visible(false) }}"
+        );
+        let _ = writeln!(out, "{h}}}");
+        for child in &revealed {
+            emit(child, out, depth + 1);
+        }
+        let _ = writeln!(out, "{pad}}}");
+        return;
+    }
     for child in &node.children {
         emit(child, out, depth + 1);
     }
@@ -345,7 +1094,13 @@ mod tests {
         let dsl = to_dsl(&node);
         assert!(dsl.contains("flow: Overlay"), "needs an overlay wrapper:\n{dsl}");
         assert!(dsl.contains("Button{"), "needs a hit target:\n{dsl}");
-        assert!(dsl.contains("agent.notify(\"l0kit\""), "must reach the host:\n{dsl}");
+        // Through the CONSTANT the handler branches on, not a literal retyped
+        // here — a test that spells the channel out again agrees with the
+        // emitter and says nothing about the receiver.
+        assert!(
+            dsl.contains(&format!("agent.notify({TAP_CHANNEL:?}")),
+            "must reach the host on the channel the handler listens to:\n{dsl}"
+        );
         assert!(dsl.contains("root/x"), "the instance key must survive:\n{dsl}");
         // And the discriminating half: no tap, no target.
         let plain = to_dsl(&UiNode {
@@ -365,5 +1120,455 @@ mod tests {
         let mut out = String::new();
         sizing(&Attrs { fillw: Some(1), h: Some(44.0), ..Default::default() }, &mut out);
         assert_eq!(out, " width: Fill height: 44");
+    }
+
+    /// The sheet's three shapes, and which of them may cover its own content.
+    ///
+    /// A swipe target is a transparent `Button` over the summary, so it decides
+    /// whether anything under it can be pressed:
+    ///
+    ///   - nothing to reveal  -> no handle, no button. The planning screen puts every
+    ///     control it has in the bottom panel, and covering it made the whole screen
+    ///     inert: the travel-mode chips, both search fields and `Go` all stopped
+    ///     dispatching while rendering perfectly.
+    ///   - a reveal, inert summary -> the button spans the sheet. The shipping card's
+    ///     shape: it catches a swipe wherever a thumb lands, and occludes the map so
+    ///     the gesture cannot pan it.
+    ///   - a reveal AND controls -> the button shrinks to the handle strip, at an
+    ///     explicit height because `Fill` inside a `Fit` overlay collapsed to the
+    ///     handle's 5px and every swipe missed.
+    ///
+    /// The alignment is checked on the summary column, not the sheet: the sheet's
+    /// `alignx` sits two full-width boxes above the text, so centring the sheet
+    /// centred those and left the hero hard against the left margin.
+    #[test]
+    fn a_sheet_covers_its_own_content_only_when_it_has_something_to_reveal() {
+        let text = |s: &str| UiNode {
+            kind: NodeKind::Text,
+            attrs: Attrs {
+                text: Some(s.into()),
+                ..Default::default()
+            },
+            children: vec![],
+        };
+        let tappable = || UiNode {
+            kind: NodeKind::Column,
+            attrs: Attrs {
+                tapto: Some("l0:{\"e\":\"pick_mode\",\"k\":\"root/Chip\"}".into()),
+                ..Default::default()
+            },
+            children: vec![text("Walk")],
+        };
+        let reveal = || UiNode {
+            kind: NodeKind::Column,
+            attrs: Attrs {
+                action: Some("reveal".into()),
+                ..Default::default()
+            },
+            children: vec![text("End")],
+        };
+        let sheet = |kids: Vec<UiNode>| {
+            to_dsl(&UiNode {
+                kind: NodeKind::Column,
+                attrs: Attrs {
+                    action: Some("sheet".into()),
+                    fillw: Some(1),
+                    alignx: Some(0.5),
+                    ..Default::default()
+                },
+                children: kids,
+            })
+        };
+
+        // Nothing to reveal: no swipe target at all, so nothing is covered.
+        let plain = sheet(vec![tappable()]);
+        assert!(
+            !plain.contains("swipe: true"),
+            "a sheet with nothing hidden needs no swipe target:\n{plain}"
+        );
+        assert!(
+            !plain.contains("height: 12"),
+            "and no handle to suggest one:\n{plain}"
+        );
+        assert!(
+            plain.contains("agent.notify"),
+            "its control still dispatches:\n{plain}"
+        );
+
+        // A reveal over an inert summary: the button spans the sheet, and the column
+        // the text sits in carries the centring.
+        let inert = sheet(vec![text("31 min"), reveal()]);
+        assert!(
+            inert.contains("swipe: true"),
+            "something to reveal needs a swipe:\n{inert}"
+        );
+        assert!(
+            inert.contains("flow: Down align: Align{x: 0.5}"),
+            "the column the text sits in must be centred:\n{inert}"
+        );
+
+        // A reveal over controls: the swipe lives on the handle strip, so the button
+        // is emitted BEFORE the controls rather than over them.
+        let both = sheet(vec![tappable(), reveal()]);
+        assert!(
+            both.contains("swipe: true") && both.contains("height: 28"),
+            "the swipe shrinks to the handle strip:\n{both}"
+        );
+        let button_at = both.find("swipe: true").expect("has a swipe");
+        let control_at = both.find("agent.notify").expect("has a control");
+        assert!(
+            button_at < control_at,
+            "the swipe target must not be laid over the control:\n{both}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::{parse_tap, to_dsl, TAP_CHANNEL};
+    use splash_node::{Attrs, NodeKind, UiNode};
+
+    /// The tap payload the emitter writes is the one the handler reads.
+    ///
+    /// This is the wire that was broken: `l0_widgets` sent `"l0kit"` with
+    /// `{target: "l0:{…}"}` and `main.rs` tested for `"l0"` with flat
+    /// `key`/`event`/`value`, so every tap on every L0 card was silently
+    /// dropped. The cards rendered correctly and nothing on them worked.
+    ///
+    /// Nothing caught it because the only tests that exercised a tap called
+    /// `l0_card::tap` DIRECTLY — including the seeded `SEED_L0_EVENT` path — so
+    /// dispatch was well covered and the wire between the button and dispatch
+    /// was covered nowhere. This test starts at the emitted DSL.
+    #[test]
+    fn the_emitted_tap_is_the_one_the_handler_parses() {
+        // Exactly what `splash_ui_l0::kit::tap_target` writes.
+        let target = "l0:{\"e\":\"set_range\",\"k\":\"root/detail/ranges#0/Chip#2\",\"v\":\"m1\"}";
+        let dsl = to_dsl(&UiNode {
+            kind: NodeKind::Chip,
+            attrs: Attrs {
+                tapto: Some(target.to_owned()),
+                fitw: Some(1),
+                ..Default::default()
+            },
+            children: vec![],
+        });
+        assert!(
+            dsl.contains(&format!("agent.notify({TAP_CHANNEL:?}, {{target:"))
+                && dsl.contains("set_range"),
+            "the button must notify the handler's channel with a `target`:\n{dsl}"
+        );
+
+        let (key, event, value) = parse_tap(target).expect("the handler parses it");
+        assert_eq!(event, "set_range", "the event must survive the wire");
+        assert_eq!(value, "m1", "the payload must survive — it is WHICH range");
+        assert_eq!(
+            key, "root/detail/ranges#0/Chip#2",
+            "the instance key must survive: it is which chip was tapped"
+        );
+
+        // A target that is not ours is refused rather than half-read. The
+        // renderer has its own `set:` verbs on the same channel shape.
+        assert!(parse_tap("set:count:1").is_none(), "a foreign verb is not a tap");
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    /// Every declared range token must reach the chart as one it understands.
+    ///
+    /// `yahoo_range_params` falls back to intraday for anything unknown, so a
+    /// mistranslated token is not an error — it is the 1D chart under a 1Y chip.
+    /// All five were mistranslated, and the only visible symptom was that the
+    /// chart looked plausible whichever chip was lit.
+    #[test]
+    fn every_declared_range_maps_to_one_the_chart_knows() {
+        // The chart's own vocabulary, from `yahoo_range_params`.
+        let known = ["1d", "1w", "1m", "6m", "1y"];
+        for token in ["d1", "w1", "m1", "m6", "y1"] {
+            let mapped = super::plot_range(token);
+            assert!(
+                known.contains(&mapped),
+                "range `{token}` mapped to `{mapped}`, which the chart does not know"
+            );
+        }
+        // And they stay DISTINCT: collapsing two onto one range is the same
+        // failure with a smaller blast radius.
+        let mut seen: Vec<&str> = ["d1", "w1", "m1", "m6", "y1"]
+            .iter()
+            .map(|t| super::plot_range(t))
+            .collect();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), 5, "each range must map to a different window");
+    }
+}
+
+#[cfg(test)]
+mod field_tests {
+    use super::{to_dsl, TAP_CHANNEL};
+    use splash_node::{Attrs, NodeKind, UiNode};
+
+    /// A `Field` binds its RETURN key and is never covered by a hit target.
+    ///
+    /// Two things had to be different from a tap and both are easy to get wrong.
+    /// A transparent button over a text input swallows the focus, so there would
+    /// be nothing to type into. And the payload is what was TYPED, which does
+    /// not exist at lowering time — so the target carries a `$$` hole that the
+    /// emitted handler fills with the committed text.
+    #[test]
+    fn a_field_commits_what_was_typed_on_the_tap_channel() {
+        let dsl = to_dsl(&UiNode {
+            kind: NodeKind::Input,
+            attrs: Attrs {
+                text: Some("nvid".into()),
+                placeholder: Some("Search a ticker".into()),
+                tapto: Some(
+                    "l0:{\"e\":\"search\",\"k\":\"root/Field#0\",\"v\":\"$$\"}".into(),
+                ),
+                fillw: Some(1),
+                ..Default::default()
+            },
+            children: vec![],
+        });
+
+        assert!(dsl.contains("TextInput{"), "must be a real input:\n{dsl}");
+        assert!(
+            !dsl.contains("Button{"),
+            "a hit target over a field eats the focus:\n{dsl}"
+        );
+        // The committed text is spliced in where `$$` was, and reaches the host
+        // on the same channel a tap does.
+        assert!(
+            dsl.contains(&format!("on_return: |t| agent.notify({TAP_CHANNEL:?}")),
+            "the return key must reach the handler:\n{dsl}"
+        );
+        assert!(
+            dsl.contains(r#"\"v\":\"" + t + "\"}"#),
+            "the typed text must be spliced into the payload:\n{dsl}"
+        );
+        // The placeholder is what the field shows when empty — dropping it
+        // leaves a box with no indication of what it wants.
+        assert!(
+            dsl.contains(r#"empty_text: "Search a ticker""#),
+            "the placeholder must survive:\n{dsl}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    /// A map's camera mode must reach the widget as the card declared it.
+    ///
+    /// This emitter is the last hop, and it is the one place where a wrong value
+    /// is invisible in both directions. `MapView` treats an unknown `nav_mode` as
+    /// a flat map — no route ribbon at all — and treats `"2d"` as a SIMULATED
+    /// drive: a vehicle moving along the route at an assumed 34 mph off a looping
+    /// clock. So a mistranslation either erases the route or fabricates the trip,
+    /// and both render as a working map.
+    ///
+    /// `"follow"` is the mode a declared position earns. Splash lowers `.drive`
+    /// with an `at:` to it precisely so the camera reports a measurement, and if
+    /// this hop rewrote it to `"2d"` the whole argument would be undone one
+    /// string substitution below the profile that makes it.
+    fn dsl_for(variant: &str) -> String {
+        let node = UiNode {
+            kind: NodeKind::Map,
+            attrs: Attrs {
+                variant: Some(variant.to_owned()),
+                lat: Some(37.3),
+                lon: Some(-122.0),
+                zoom: Some(17.0),
+                ..Default::default()
+            },
+            children: vec![],
+        };
+        let mut out = String::new();
+        emit(&node, &mut out, 0);
+        out
+    }
+
+    #[test]
+    fn a_maps_camera_mode_survives_the_last_hop() {
+        let follow = dsl_for("follow");
+        assert!(
+            follow.contains("nav_mode: \"follow\""),
+            "a declared position earns the follow camera:\n{follow}"
+        );
+        assert!(
+            !follow.contains("nav_mode: \"2d\""),
+            "and must never be rewritten to the SIMULATED drive:\n{follow}"
+        );
+        // The plan preview keeps its own mode, and its wider ribbon: the route is
+        // drawn in ground metres, so a whole-trip view needs a far thicker line
+        // than one seen from the car.
+        let plan = dsl_for("plan");
+        assert!(
+            plan.contains("nav_mode: \"plan\"") && plan.contains("nav_route_width: 40"),
+            "a preview keeps its mode and its ribbon:\n{plan}"
+        );
+        assert!(
+            follow.contains("nav_route_width: 14"),
+            "a driving view gets the narrow ribbon:\n{follow}"
+        );
+        // And the centre reaches the widget, because a follow camera that ignores
+        // it is a static map wearing the mode.
+        assert!(
+            follow.contains("center_lat: 37.3") && follow.contains("center_lon: -122"),
+            "the declared centre must reach the widget:\n{follow}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod hoisting {
+    //! The hoister must not reach inside a string literal.
+    //!
+    //! Card state arrives as a quoted argument, so a place name may contain anything.
+    //! One containing `sys.navsecs(1)` was hoisted out of its quotes into
+    //! `let l0c0 = sys.navsecs(1)` — a host call the card never declared, with
+    //! arguments chosen by whoever typed the name. Found in review.
+    //!
+    //! That is an authority escalation, not a cosmetic bug: the confinement argument
+    //! is that card text is only ever data, and a hoister that treats it as code
+    //! breaks precisely that.
+    use super::hoist_constants;
+
+    #[test]
+    fn a_call_inside_a_place_name_is_text_not_code() {
+        let live = vec![(
+            "l0v0".to_string(),
+            r#"sys.search("cafe sys.navsecs(1) bar", 0, "name")"#.to_string(),
+        )];
+        let (lets, ticks) = hoist_constants(&live);
+        // The real call is hoisted; the one inside the name is untouched.
+        assert_eq!(lets.len(), 1, "only the outer call is a call: {lets:?}");
+        assert_eq!(lets[0].1, r#"sys.search("cafe sys.navsecs(1) bar", 0, "name")"#);
+        assert_eq!(ticks[0].1, "l0c0");
+        for (_, e) in &lets {
+            assert!(
+                !e.starts_with("sys.navsecs"),
+                "a name's contents became a binding: {e}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_escaped_quote_does_not_end_the_literal() {
+        // `x\") sys.navsecs(1)` — the escape means the literal continues, so what
+        // follows is still text. Tracking quotes without escapes would see the
+        // literal close here and hoist the rest.
+        let live = vec![(
+            "l0v0".to_string(),
+            r#"sys.search("x\") sys.navsecs(1)", 0, "name")"#.to_string(),
+        )];
+        let (lets, _) = hoist_constants(&live);
+        assert_eq!(lets.len(), 1, "escaped quotes must not open code: {lets:?}");
+        assert!(lets[0].1.starts_with("sys.search("));
+    }
+
+    #[test]
+    fn the_real_nested_calls_are_still_hoisted() {
+        // The point of hoisting: the constant place lookups leave the per-frame path
+        // and only the position stays live.
+        let live = vec![(
+            "l0v0".to_string(),
+            "sys.navstep(sys.searchnum(\"A\", 0, \"lat\"), sys.navprog(sys.searchnum(\"A\", 0, \"lat\"), sys.gps(\"lat\")), \"instr\")"
+                .to_string(),
+        )];
+        let (lets, ticks) = hoist_constants(&live);
+        assert!(!lets.is_empty(), "the place lookup must be hoisted");
+        assert!(
+            ticks[0].1.contains("sys.gps("),
+            "the live position must STAY in the tick: {}",
+            ticks[0].1
+        );
+        assert!(
+            !ticks[0].1.contains("sys.searchnum("),
+            "the constant lookup must leave the tick: {}",
+            ticks[0].1
+        );
+    }
+}
+
+#[cfg(test)]
+mod two_maps {
+    use super::to_dsl;
+    use splash_node::{Attrs, NodeKind, UiNode};
+
+    fn map() -> UiNode {
+        UiNode {
+            kind: NodeKind::NavMap,
+            attrs: Attrs::default(),
+            children: vec![],
+        }
+    }
+
+    fn control(action: &str) -> UiNode {
+        UiNode {
+            kind: NodeKind::Column,
+            attrs: Attrs {
+                action: Some(action.to_owned()),
+                ..Attrs::default()
+            },
+            children: vec![],
+        }
+    }
+
+    fn surface(kids: Vec<UiNode>) -> UiNode {
+        UiNode {
+            kind: NodeKind::Column,
+            attrs: Attrs::default(),
+            children: kids,
+        }
+    }
+
+    /// Each map is its own instance, and each control drives the one above it.
+    ///
+    /// Every `MapView` used to be emitted as `l0map` and every control called
+    /// `ui.l0map`, so two maps on one screen produced a duplicate id and two control
+    /// columns pointing at whichever one the document resolved. The nav card never
+    /// showed it because its guards leave exactly one map realized — a property of
+    /// that card, not of this emitter, and the next card to compare two routes would
+    /// have inherited the bug rather than found it.
+    #[test]
+    fn each_map_is_its_own_instance_and_its_controls_follow_it() {
+        let dsl = to_dsl(&surface(vec![
+            surface(vec![map(), control("zoomin")]),
+            surface(vec![map(), control("recenter")]),
+        ]));
+        assert!(dsl.contains("l0map0 := MapView"), "the first map is named:\n{dsl}");
+        assert!(dsl.contains("l0map1 := MapView"), "and so is the second:\n{dsl}");
+        assert!(
+            dsl.contains("ui.l0map0.nav_zoom_by"),
+            "the first column drives the first map:\n{dsl}"
+        );
+        assert!(
+            dsl.contains("ui.l0map1.set_nav_recenter"),
+            "the second drives the second:\n{dsl}"
+        );
+        assert!(
+            !dsl.contains("ui.l0map."),
+            "and nothing calls the old shared name:\n{dsl}"
+        );
+    }
+
+    /// The counter is per document. Two renders in one process must not drift.
+    #[test]
+    fn the_names_restart_for_every_tree() {
+        let one = to_dsl(&surface(vec![map(), control("zoomin")]));
+        let two = to_dsl(&surface(vec![map(), control("zoomin")]));
+        assert_eq!(one, two, "the same tree lowers the same way twice");
+    }
+
+    /// A control with no map above it draws dead rather than blanking the card.
+    ///
+    /// `ui.<name>` on a name the document never declares is a parse failure for the
+    /// WHOLE document, so one stray control would render nothing at all.
+    #[test]
+    fn a_control_with_no_map_emits_no_call() {
+        let dsl = to_dsl(&surface(vec![control("zoomin")]));
+        assert!(!dsl.contains("nav_zoom_by"), "no call without a map:\n{dsl}");
     }
 }

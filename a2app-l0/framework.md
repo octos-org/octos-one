@@ -11,6 +11,15 @@ over a collection you declared. That is not a restriction to work around — it 
 what makes a card safe to run, and everything you would reach for those with has
 a declared form here instead.
 
+**One app is above L0 and says so.** `city-picks` declares `# level: L1` because
+comparing places needs one arithmetic expression — how much warmer somewhere
+feels than it is — and that is a fact about two facts rather than a fact any
+source carries. It is the only exception, it is written into that app's spec, and
+raising the level is never something you decide: if you are not building an app
+whose spec declares a level, the paragraph above is the whole of the language.
+Even at L1 the no-facts rule holds, one level up — an expression must **read**
+something, so an expression made only of literals is refused.
+
 **Read `framework/l0.md` for the language and `framework/catalog.md` for the
 roles and capabilities.** Then follow the spec for the app you were routed to,
 in `apps/<id>/app.md`.
@@ -31,6 +40,10 @@ in `apps/<id>/app.md`.
   name is **weather**; things-to-do nearby is **activity**.
 - **weather-activity** — the composed what-to-do-in-this-weather app, where
   weather or air quality decides the answer.
+- **city-picks** — the composed compare-my-saved-cities app. "where should I
+  go", "compare my cities", "which of my cities is nicest", "去哪儿好". A request
+  about ONE place is **weather**; this one is about the set the user saved, so it
+  reads `sys.cities` rather than parsing a place name out of the message.
 
 **Two apps are not cards and you do not write UI for them.** `youtube` and `web`
 have a fixed interface a person authored; your job for those is to supply an
@@ -79,7 +92,8 @@ state units { shape: enum[c, f], initial: env.locale.temp_unit }
 
 event toggle_units { units: cycle(c, f) }
 
-copy feels { class: vocabulary, en: "Feels like", zh: "体感" }
+copy feels   { class: vocabulary, en: "Feels like", zh: "体感" }
+copy loading { class: vocabulary, en: "Loading…", zh: "加载中…" }
 
 view root Surface {
   Col(gap: 4) {
@@ -97,6 +111,11 @@ view root Surface {
   }
 }
 ```
+
+**`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
+not declared is refused, by any route — this snippet is the most-copied lines in
+the memory, and showing the use without the declaration is why cards come back
+refused for `copy.loading is not declared`. Same for an empty-state string.
 
 Every number on that screen came from `sys.weather`. The card chose nothing but
 structure and meaning.

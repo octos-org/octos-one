@@ -51,8 +51,14 @@ Two complementary guards, feed and detail.
 ## Loading
 
 ```
+copy loading { class: vocabulary, en: "Fetching headlines…" }
 when feed.$state == .pending { TextBody(text: copy.loading) }
 ```
+
+**`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
+not declared is refused, by any route — this snippet is the most-copied lines in
+the memory, and showing the use without the declaration is why cards come back
+refused for `copy.loading is not declared`. Same for an empty-state string.
 
 ## Failure conditions
 

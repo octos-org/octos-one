@@ -33,8 +33,14 @@ cafe cinema gym library pool viewpoint playground trail`.
 ## Loading
 
 ```
+copy loading { class: vocabulary, en: "Finding places nearby…" }
 when parks.$state == .pending { TextBody(text: copy.loading) }
 ```
+
+**`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
+not declared is refused, by any route — this snippet is the most-copied lines in
+the memory, and showing the use without the declaration is why cards come back
+refused for `copy.loading is not declared`. Same for an empty-state string.
 
 Do **not** compare a count against a sentinel. `$state` is what says "not yet".
 

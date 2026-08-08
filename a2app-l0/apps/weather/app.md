@@ -50,16 +50,29 @@ by the unit token, and a card that does arithmetic is not an L0 card.
   both the low and the high. **Both**: a row showing only the high is missing
   half the forecast.
 - **`SunArc(rise:, set:, now:)`** and **`MoonPhase(phase:, illum:)`**.
-- **`AqiContour(lat:, lon:, span:)`** — it fetches its own field. Do not declare
-  an air-quality source and pass values in.
+- **TWO map panes, in this order: `Satellite(lat:, lon:)` then
+  `AqiContour(lat:, lon:, span:)`** — the sky (卫星云图) then the air (空气质量图),
+  each in its own `Panel` with a caption. Both fetch their own image from a
+  LOCATION. Do not declare a source for either and pass values in: a card that
+  carried the image would be carrying an observation.
+- **A `Row` inside a centred `Col` needs `width: .fit`.** A row FILLS by default,
+  because a list row must, and a filling child ignores its parent's alignment —
+  so the `↑ ↓ ≈` row under the hero sits hard left without it. `align` on a row
+  means the cross axis (vertical) and cannot centre its contents horizontally.
 - **A detail grid** of `Tile`s: feels-like, humidity, wind, pressure, UV,
   visibility.
 
 ## Loading
 
 ```
+copy loading { class: vocabulary, en: "Getting the weather…" }
 when now.$state == .pending { TextBody(text: copy.loading) }
 ```
+
+**`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
+not declared is refused, by any route — this snippet is the most-copied lines in
+the memory, and showing the use without the declaration is why cards come back
+refused for `copy.loading is not declared`. Same for an empty-state string.
 
 ## Failure conditions
 
