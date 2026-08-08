@@ -8701,6 +8701,11 @@ impl MatchEvent for App {
                         "FAKE_GPS: walking {} fixes from {track_path} every {step_ms}ms",
                         track.len()
                     );
+                    // The track OWNS the position from here on: the real
+                    // LocationListener is muted, or a phone whose location wakes
+                    // up mid-run feeds the camera two positions 700 ms apart and
+                    // live nav jumps between the drive and the desk.
+                    makepad_widgets::makepad_draw::makepad_platform::gps::claim_fake_gps();
                     std::thread::spawn(move || {
                         for (i, (lat, lon)) in track.iter().enumerate() {
                             makepad_widgets::makepad_draw::makepad_platform::gps::set_gps_fix(
