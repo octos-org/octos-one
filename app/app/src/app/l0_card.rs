@@ -55,6 +55,31 @@ fn render_through_kit(
     // structural. This is the narrow half of §5.9 the results panel needs.
     let plan = splash_ui_l0::source_plan(source);
     for request in &plan.requests {
+        // A declared PREFERENCE source is seeded from the store, with a host
+        // default for anything unset — measured: an empty capture into an enum
+        // state leaves junk the guards all fail against, so a card whose mode
+        // reads `mode_pref.mode` would lose every `mode == .drive` branch on a
+        // fresh install. The host owns the store, so the host owns its
+        // defaults, exactly as it owns locale's "en"/"c".
+        if request.helper == "sys.prefs" {
+            let prefs = super::user_store::get().prefs;
+            let mut obj = serde_json::Map::new();
+            for field in splash_ui_l0::catalog::answers("sys.prefs").unwrap_or(&[]) {
+                let stored = prefs.get(*field).cloned();
+                let value = stored.unwrap_or_else(|| match *field {
+                    "mode" => "drive".to_owned(),
+                    "range" => "d1".to_owned(),
+                    // Units follow the device until the user chooses.
+                    "units" => String::new(),
+                    _ => String::new(),
+                });
+                obj.insert((*field).to_owned(), serde_json::Value::String(value));
+            }
+            if let Some(map) = data.as_object_mut() {
+                map.insert(request.name.clone(), serde_json::Value::Object(obj));
+            }
+            continue;
+        }
         let answered = fetched_rows(cx, request, &data, store)
             .map(serde_json::Value::Array)
             .or_else(|| fetched_scalars(cx, request));
@@ -422,7 +447,16 @@ pub fn tap(
         // Keyed by CAPABILITY, not by the card's binding name. A card may call
         // it `watch` and another `saved`, and they must reach the same list —
         // sharing between cards is the reason the store exists outside them.
-        let collection = write.helper.strip_prefix("sys.").unwrap_or(&write.helper);
+        //
+        // A PREFERENCE is keyed one level deeper: the capability names the store
+        // and the write's `field` — the source's single declared field, which
+        // the checker guarantees — names the entry. `sys.prefs(fields: [home])`
+        // written with set("Saratoga High School") lands under `home`.
+        let collection = if write.helper == "sys.prefs" {
+            write.field.as_str()
+        } else {
+            write.helper.strip_prefix("sys.").unwrap_or(&write.helper)
+        };
         super::user_store::apply(collection, &write.op, &write.value);
     }
     if !outcome.writes.is_empty() {

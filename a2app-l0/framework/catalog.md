@@ -60,7 +60,7 @@ and that looks exactly like data still arriving.
 | `sys.news_item` | `id`, `fields` | `id`, `title`, `author`, `points`, `comments`, `url` |
 | `sys.photo` | `query` | — (not a record) |
 | `sys.places` | `lat`, `lon`, `category`, `count`, `fields` | `id`, `name`, `distance`, `lat`, `lon`, `category` |
-| `sys.prefs` | `fields` | `units`, `range` |
+| `sys.prefs` | `fields` | `units`, `range`, `home`, `work`, `mode` |
 | `sys.quote` | `ticker`, `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |
 | `sys.route` | `from_lat`, `from_lon`, `to_lat`, `to_lon`, `via`, `mode`, `fields` | `duration`, `distance`, `steps` |
 | `sys.search` | `query`, `count`, `fields` | `id`, `name`, `label`, `query`, `lat`, `lon`, `distance` |

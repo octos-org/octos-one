@@ -63,6 +63,35 @@ by the unit token, and a card that does arithmetic is not an L0 card.
   rain probability. Not visibility: open-meteo serves it hourly only, so no
   call answers it and the tile would render an em dash forever.
 
+## Saved cities
+
+The user's saved places are a **durable collection** (§5.12): read as a source,
+written through declared transitions on it, joined to live readings by the host.
+
+```
+source cities sys.cities(fields: [name, temp])
+source found  sys.search(query: state.query, count: 5, fields: [name, label, query])
+state  query   { shape: text, initial: "" }
+state  editing { shape: enum[none, add], initial: .none }
+event  open_city { city: set($value) }
+event  add_city  { editing: set(.add), query: clear }
+event  typing    { query: set($value) }
+event  pick_city { city: set($value), cities: append($value), query: clear, editing: set(.none) }
+event  drop_city { cities: remove($value) }
+```
+
+- **A strip of saved rows** — `for c, i in cities key c.name`, each showing the
+  stored name and a live `c.temp`, `on_tap: open_city, value: c.name` so a tap
+  re-points the whole card. A small remove chip per row fires
+  `drop_city` with the row's name as `value:`.
+- **An add row** using the editor pattern: a tappable row until tapped, a
+  `Field(text: query, placeholder: city, on_commit: pick_city, on_change: typing)`
+  only while `editing == .add`. Results are bare rows over `found` gated on
+  `query != ""`; a result row's payload is `f.query` — name plus label, the
+  text that finds the hit again.
+- Never store a temperature or coordinates: the collection keeps **names only**
+  and every reading beside one is fetched at read time.
+
 ## Loading
 
 ```
