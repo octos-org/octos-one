@@ -62,6 +62,7 @@ and that looks exactly like data still arriving.
 | `sys.places` | `lat`, `lon`, `category`, `count`, `fields` | `id`, `name`, `distance`, `lat`, `lon`, `category` |
 | `sys.prefs` | `fields` | `units`, `range`, `home`, `work`, `mode` |
 | `sys.quote` | `ticker`, `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |
+| `sys.reading` | `fields` | `id`, `title`, `author`, `points`, `comments`, `url` |
 | `sys.route` | `from_lat`, `from_lon`, `to_lat`, `to_lon`, `via`, `mode`, `fields` | `duration`, `distance`, `steps` |
 | `sys.search` | `query`, `count`, `fields` | `id`, `name`, `label`, `query`, `lat`, `lon`, `distance` |
 | `sys.series` | `ticker`, `range`, `points`, `fields`, `aggregate` | `min`, `max`<br>`aggregate:` `min`, `max` |

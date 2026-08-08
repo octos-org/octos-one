@@ -458,10 +458,19 @@ mod tests {
         }
         let mut out = Vec::new();
         taps(&build_card(STOCK, stock_data()), &mut out);
-        assert_eq!(out.len(), 1, "one declared tap, one target: {out:?}");
-        assert!(out[0].starts_with("l0:"), "the L0 prefix marks it: {out:?}");
-        assert!(out[0].contains("for#0[NVDA]"), "instance key lost: {out:?}");
-        assert!(out[0].contains("open_quote"), "event name lost: {out:?}");
+        // TWO since the card gained its §5.12 layer: the mover row opens the
+        // quote, and the ☆ chip on it saves the ticker. Same instance key on
+        // both, because both name the same row.
+        assert_eq!(out.len(), 2, "a row tap and its star: {out:?}");
+        for t in &out {
+            assert!(t.starts_with("l0:"), "the L0 prefix marks it: {out:?}");
+            assert!(t.contains("for#0[NVDA]"), "instance key lost: {out:?}");
+        }
+        assert!(
+            out.iter().any(|t| t.contains("open_quote"))
+                && out.iter().any(|t| t.contains("\"e\":\"keep\"")),
+            "both events present: {out:?}"
+        );
     }
 
     /// A live source needs its capability registered, or it renders an ERROR.

@@ -68,7 +68,8 @@ fn render_through_kit(
                 let stored = prefs.get(*field).cloned();
                 let value = stored.unwrap_or_else(|| match *field {
                     "mode" => "drive".to_owned(),
-                    "range" => "d1".to_owned(),
+                    // The stock card's declared default before it was captured.
+                    "range" => "m1".to_owned(),
                     // Units follow the device until the user chooses.
                     "units" => String::new(),
                     _ => String::new(),
@@ -324,11 +325,17 @@ fn with_durable(source: &str, data: &serde_json::Value) -> serde_json::Value {
         if splash_ui_l0::catalog::mutable(&request.helper).is_none() {
             continue;
         }
+        // Preferences are mutable but KEYED, not a row list — they are seeded
+        // by their own pass with host defaults, not as collection rows.
+        if request.helper == "sys.prefs" {
+            continue;
+        }
         // Only the REFERENCE goes in, under the field that identifies a row.
         // The realizer needs one field per row to give the `for` its keys; every
         // other field the card asked for lowers to a live call.
         let key_field = match collection {
             "cities" => "name",
+            "reading" => "id",
             _ => "ticker",
         };
         let rows: Vec<serde_json::Value> = super::user_store::collection(collection)
