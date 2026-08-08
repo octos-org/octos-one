@@ -4814,7 +4814,20 @@ pub struct AppRecord {
     /// intent (reset on the next `route_to_app`). Caps the validate→repair
     /// loop at a single retry so a stubborn model can't ping-pong forever.
     pub repair_attempted: bool,
+    /// L0 CHECKER refusals get their own, larger budget (`L0_REPAIR_BUDGET`,
+    /// also per-intent, reset with `repair_attempted`). A refused L0 card is
+    /// a BLANK SCREEN, not a cosmetic miss, and two live runs showed one
+    /// retry is not enough for a syntax-class mistake — the model needs the
+    /// teaching diagnostic more than once. Each retry feeds the checker's
+    /// own diagnostics back, exactly like the first.
+    pub l0_repair_attempts: u8,
 }
+
+/// How many automatic repair turns an L0 checker refusal may spend per
+/// routed intent. Lint and security repairs keep their single shot
+/// (`repair_attempted`); this budget is only for cards the CHECKER refused,
+/// where the alternative is a quiet fallback card instead of the answer.
+pub const L0_REPAIR_BUDGET: u8 = 3;
 
 impl AppRecord {
     fn new(session_id: SessionId, title: impl Into<String>) -> Self {
@@ -4827,6 +4840,7 @@ impl AppRecord {
             saved_messages: Vec::new(),
             saved_a2app: std::collections::BTreeMap::new(),
             repair_attempted: false,
+            l0_repair_attempts: 0,
         }
     }
     /// A domain-specialised app agent (weather/stock/news), for AMA routing.
@@ -5513,6 +5527,7 @@ impl App {
             let chat_list = self.ui.widget(cx, ids!(chat_list));
             chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
             self.apps[idx].repair_attempted = false;
+            self.apps[idx].l0_repair_attempts = 0;
             self.update_empty_state_visibility(cx);
             self.sync_app_tabs(cx);
             cx.redraw_all();
@@ -5563,8 +5578,9 @@ impl App {
         let prompt = app_splash_router_for(app_id, &intent);
         let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &prompt);
         self.apps[idx].current_prompt = Some(pid);
-        // Fresh intent → fresh one-shot repair budget (see card_lint).
+        // Fresh intent → fresh repair budgets (see card_lint / L0_REPAIR_BUDGET).
         self.apps[idx].repair_attempted = false;
+        self.apps[idx].l0_repair_attempts = 0;
         self.sync_app_tabs(cx);
         self.ui.redraw(cx);
     }
@@ -9272,6 +9288,11 @@ impl AppMain for App {
                         // lint rules; fired as ONE repair turn after the message
                         // is stored (the corrected card streams in over it).
                         let mut card_repair: Option<String> = None;
+                        // Which budget the pending repair draws from: an L0
+                        // CHECKER refusal spends `l0_repair_attempts` (up to
+                        // L0_REPAIR_BUDGET); lint/security spend the one-shot
+                        // `repair_attempted` as before.
+                        let mut l0_refusal_repair = false;
                         let mut data = CHAT_DATA.write().unwrap();
                         let streamed = std::mem::take(&mut data.streaming_text);
                         let authoritative = std::mem::take(&mut data.authoritative_text);
@@ -9417,7 +9438,9 @@ impl AppMain for App {
                                 // hand-written instruction would say.
                                 if card_repair.is_none() {
                                     if let Some(owner_idx) = prompt_owner {
-                                        if !self.apps[owner_idx].repair_attempted {
+                                        if self.apps[owner_idx].l0_repair_attempts
+                                            < L0_REPAIR_BUDGET
+                                        {
                                             let mut why: Vec<String> = Vec::new();
                                             for piece in app::l0_card::split_l0_blocks(&text) {
                                                 if let app::l0_card::Piece::Ledger(src) = piece {
@@ -9448,7 +9471,9 @@ impl AppMain for App {
                                             if !why.is_empty() {
                                                 rendered_card = true;
                                                 log::warn!(
-                                                    "L0 card refused ({} diagnostic(s)): {}",
+                                                    "L0 card refused (attempt {}/{}, {} diagnostic(s)): {}",
+                                                    self.apps[owner_idx].l0_repair_attempts + 1,
+                                                    L0_REPAIR_BUDGET,
                                                     why.len(),
                                                     why.join(" | ")
                                                 );
@@ -9459,6 +9484,7 @@ impl AppMain for App {
                                                      fenced blocks:\n- {}",
                                                     why.join("\n- ")
                                                 ));
+                                                l0_refusal_repair = true;
                                             }
                                         }
                                     }
@@ -9515,7 +9541,17 @@ impl AppMain for App {
                             let sid = self.apps[i].session_id;
                             let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &repair);
                             self.apps[i].current_prompt = Some(pid);
-                            self.apps[i].repair_attempted = true;
+                            // Draw down the budget the repair belongs to: an
+                            // L0 refusal counts against L0_REPAIR_BUDGET and
+                            // leaves the lint/security one-shot untouched, so
+                            // a later lint miss on the repaired card still
+                            // gets its single turn.
+                            if l0_refusal_repair {
+                                self.apps[i].l0_repair_attempts =
+                                    self.apps[i].l0_repair_attempts.saturating_add(1);
+                            } else {
+                                self.apps[i].repair_attempted = true;
+                            }
                             self.set_fg_prompt(Some(pid));
                             CHAT_DATA.write().unwrap().is_streaming = true;
                             self.ui.label(cx, ids!(status_label)).set_text(
@@ -10129,6 +10165,32 @@ mod tests {
         assert!(l1.contains("Write an L1 CARD"), "an L1 app is told L1");
         assert!(!l1.contains("There is no arithmetic"), "and is NOT told L0's rule:\n{l1}");
         assert!(l1.contains("must READ something"), "it gets L1's rule instead");
+    }
+
+    /// The two syntax classes live generation actually shipped as blank
+    /// screens — a `when` guard nested inside a constructor's argument list,
+    /// and a comma where an argument's `:` belongs — must be warned against
+    /// IN the prompt, with the wrong form shown next to the right one. The
+    /// guidance lives in framework/l0.md §5, which `l0_prompt_for` inlines.
+    #[test]
+    fn the_prompt_warns_against_the_observed_syntax_classes() {
+        let p = super::l0_prompt_for("weather", "weather in kyoto").expect("weather has a spec");
+        assert!(
+            p.contains("never an argument"),
+            "states that a guard is a statement, not an argument"
+        );
+        assert!(
+            p.contains("cannot appear inside an argument list"),
+            "shows the refusal a nested `when` causes"
+        );
+        assert!(
+            p.contains("commas separate arguments"),
+            "states the `name: value` comma-separated argument form"
+        );
+        assert!(
+            p.contains("expected \":\" after argument name"),
+            "shows the refusal a bare value / stray comma causes"
+        );
     }
 
     /// Every plan domain must be served its PLAN spec, and every other domain its DSL
