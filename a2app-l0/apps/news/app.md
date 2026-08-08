@@ -44,15 +44,19 @@ Two complementary guards, feed and detail.
 ## DETAIL view
 
 - A back affordance.
-- The title as `TextTitle`, the byline as a caption, the body as `TextBody`.
-- Do not summarise, rewrite or continue the article. If the source has no body,
-  show what it has.
+- The title as `TextTitle`, the byline and points as captions, the story's
+  `url` as a caption. There is no body field — the source carries a link,
+  not the article's text.
+- Do not summarise, rewrite or continue the article. Show what the source
+  has.
 
 ## Loading
 
 ```
 copy loading { class: vocabulary, en: "Fetching headlines…" }
+copy offline { class: vocabulary, en: "Can't reach the news feed" }
 when feed.$state == .pending { TextBody(text: copy.loading) }
+when feed.$state == .failed  { TextBody(text: copy.offline) }
 ```
 
 **`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is

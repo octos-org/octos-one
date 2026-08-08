@@ -95,7 +95,9 @@ Guard the detail on the quote's lifecycle:
 
 ```
 copy loading { class: vocabulary, en: "Fetching the quote…" }
+copy offline { class: vocabulary, en: "Can't reach the market feed" }
 when quote.$state == .pending { TextBody(text: copy.loading) }
+when quote.$state == .failed  { TextBody(text: copy.offline) }
 ```
 
 **`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
@@ -116,4 +118,5 @@ Any of these makes the card wrong, not merely imperfect:
 - a `for` without `key`, or keyed on the index rather than the ticker
 - a percentage without `tint`, or chips without `active`
 - a series declared as a source and passed to `StockPlot`
-- any colour, font size or pixel dimension anywhere in the card
+- any colour or font anywhere in the card (layout numbers the catalog admits —
+  `gap:`, `cols:` — are fine)

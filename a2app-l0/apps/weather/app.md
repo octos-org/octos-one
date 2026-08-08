@@ -14,7 +14,7 @@ including a bare city name ("Kyoto", "东京天气").
 | the place | `sys.geocode(name: state.city)` |
 | conditions and forecast | `sys.weather(lat: place.lat, lon: place.lon, days: state.days, fields: […])` |
 | sunrise and sunset | `sys.daylight(lat:, lon:)` |
-| the moon | `sys.moonphase(lat:, lon:)` |
+| the moon | `sys.moonphase()` |
 | a backdrop | `sys.photo(query: place.name)` |
 
 `sys.weather` depends on `place`, so declare it that way and the runtime fetches
@@ -33,7 +33,7 @@ state days  { shape: number, initial: 7 }
 event cycles it:
 
 ```
-event toggle_units { units: cycle(c, f) }
+event toggle_units { units: cycle(.c, .f) }
 ```
 
 Pass `unit: units` to every temperature. Do **not** convert: the runtime formats
@@ -45,7 +45,7 @@ by the unit token, and a card that does arithmetic is not an L0 card.
   the backdrop; the role is the container, not a leaf.
 - **Current block** — place name as a caption, the temperature as `TextHero` with
   `unit: units` and `on_tap: toggle_units`, the condition as a `WeatherIcon`.
-- **A forecast row per day** — `for d, i in week.days key d.dayname`, each with
+- **A forecast row per day** — `for d in week.days key d.dayname`, each with
   the day name, a `TempBar(lo:, hi:, min: week.min_lo, max: week.max_hi)` and
   both the low and the high. **Both**: a row showing only the high is missing
   half the forecast.
@@ -60,13 +60,16 @@ by the unit token, and a card that does arithmetic is not an L0 card.
   so the `↑ ↓ ≈` row under the hero sits hard left without it. `align` on a row
   means the cross axis (vertical) and cannot centre its contents horizontally.
 - **A detail grid** of `Tile`s: feels-like, humidity, wind, pressure, UV,
-  visibility.
+  rain probability. Not visibility: open-meteo serves it hourly only, so no
+  call answers it and the tile would render an em dash forever.
 
 ## Loading
 
 ```
 copy loading { class: vocabulary, en: "Getting the weather…" }
+copy offline { class: vocabulary, en: "Can't reach the weather service" }
 when now.$state == .pending { TextBody(text: copy.loading) }
+when now.$state == .failed  { TextBody(text: copy.offline) }
 ```
 
 **`copy.loading` has to be DECLARED like any other copy.** A `copy.x` that is
