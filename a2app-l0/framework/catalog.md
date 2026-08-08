@@ -76,5 +76,5 @@ and that looks exactly like data still arriving.
 |---|---|
 | `format` | .money \| .signed_money \| .signed_pct \| .compact \| .ratio \| .time \| .date |
 | `mapview` | .flat \| .tilted |
-| `unit` | .c \| .f \| .pct \| .speed \| .pressure \| .index \| .distance \| .money \| .duration |
+| `unit` | .c \| .f \| .pct \| .speed \| .pressure \| .distance \| .money \| .duration |
 | `width` | .fill \| .fit \| .day \| .rank \| .temp \| .label |
