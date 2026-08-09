@@ -457,6 +457,7 @@ fn widget(kind: NodeKind) -> &'static str {
         NodeKind::MoonPhase => "MoonPhase",
         NodeKind::AqiContour => "AqiContour",
         NodeKind::StockPlot => "StockPlot",
+        NodeKind::IndicatorPlot => "IndicatorPlot",
         NodeKind::Scroll => "ScrollYView",
         _ => "View",
     }
@@ -910,6 +911,17 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
                 " symbol: {:?} range: {:?}",
                 a.symbol.as_deref().unwrap_or(""),
                 plot_range(a.range.as_deref().unwrap_or(""))
+            );
+        }
+        NodeKind::IndicatorPlot => {
+            // Strings, not shader uniforms: the widget resolves them into a
+            // URL and fetches the series itself.
+            let _ = write!(
+                out,
+                " countries: {:?} indicator: {:?} years: {}",
+                a.countries.as_deref().unwrap_or(""),
+                a.indicator.as_deref().unwrap_or(""),
+                num(a.years)
             );
         }
         _ => {}

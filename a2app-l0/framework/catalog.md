@@ -15,6 +15,7 @@ something this document promised.
 | `Col` | `align: .start \| .center \| .end`, `gap: number`, `width: width` |
 | `Field` | `text: path`, `placeholder: data`, `on_commit: event`, `on_change: event`, `width: width` |
 | `Grid` | `cols: number` |
+| `IndicatorPlot` | `countries: path`, `indicator: path`, `years: path` |
 | `Map` | `mode: .plan \| .drive \| .flat`, `from: path`, `to: path`, `via: path` |
 | `MoonPhase` | `phase: path`, `illum: path` |
 | `Panel` | `dock: .top \| .bottom \| .right` |
@@ -53,6 +54,7 @@ and that looks exactly like data still arriving.
 | `sys.daylight` | `lat`, `lon` | `rise`, `set`, `now` |
 | `sys.geocode` | `name` | `lat`, `lon`, `name`, `country`, `admin1`, `timezone`, `population` |
 | `sys.gps` | — (no arguments) | `lat`, `lon`, `accuracy`, `ok` |
+| `sys.indicator` | `countries`, `indicator`, `years`, `fields` | `name`, `latest`, `first`, `change`, `min`, `max`, `year`, `title` |
 | `sys.link` | `fields` | `url` |
 | `sys.locale` | — (no arguments) | `lang`, `temp_unit` |
 | `sys.moonphase` | `lat`, `lon` | `phase`, `illumination`, `name` |

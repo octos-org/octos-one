@@ -88,7 +88,7 @@ fn render_through_kit(
             }
             continue;
         }
-        let answered = fetched_rows(cx, request, &data, store)
+        let answered = fetched_rows(cx, source, request, &data, store)
             .map(serde_json::Value::Array)
             .or_else(|| fetched_scalars(cx, request));
         let Some(value) = answered else { continue };
@@ -205,10 +205,76 @@ fn eval_text(cx: &mut makepad_widgets::Cx, expr: &str) -> Option<String> {
 /// it is prepared to show.
 fn fetched_rows(
     cx: &mut makepad_widgets::Cx,
+    source: &str,
     request: &splash_ui_l0::SourceRequest,
     data: &serde_json::Value,
     store: &splash_ui_l0::InstanceStore,
 ) -> Option<Vec<serde_json::Value>> {
+    // The indicator source takes three arguments rather than a query, so it
+    // seeds its rows here rather than through the query path below. One row
+    // per country the card named, in that order — the chart assigns its
+    // legend colours the same way, so row 0's numbers and the first line are
+    // the same country.
+    if request.helper == "sys.indicator" {
+        let initials = splash_ui_l0::state_initials(source);
+        let text_arg = |name: &str| -> String {
+            match request.args.iter().find(|(n, _)| n == name).map(|(_, a)| a) {
+                Some(splash_ui_l0::SourceArg::Text(t)) => t.clone(),
+                Some(splash_ui_l0::SourceArg::Path(p)) => {
+                    let key = p.strip_prefix("state.").unwrap_or(p);
+                    // Store, then seed data, then the card's DECLARED initial.
+                    // The third is what this source lives on: a card that has
+                    // never been tapped has written nothing, and its countries
+                    // are a declaration rather than data — without it the
+                    // request went out with an empty country list and the rows
+                    // came back empty while the chart drew fine (measured).
+                    store
+                        .get(splash_ui_l0::CARD_STATE_KEY, key)
+                        .cloned()
+                        .or_else(|| data.get(key).cloned())
+                        .or_else(|| initials.get(key).cloned())
+                        .map(|v| match v {
+                            serde_json::Value::String(s) => s,
+                            other => other.to_string(),
+                        })
+                        .unwrap_or_default()
+                }
+                Some(splash_ui_l0::SourceArg::Number(n)) => format!("{n}"),
+                _ => String::new(),
+            }
+        };
+        let countries = text_arg("countries");
+        let indicator = text_arg("indicator");
+        let years = {
+            let y = text_arg("years");
+            if y.is_empty() { "30".to_owned() } else { y }
+        };
+        if countries.trim().is_empty() || indicator.trim().is_empty() {
+            return Some(Vec::new());
+        }
+        let n: usize = eval_text(
+            cx,
+            &format!("sys.indicator({countries:?}, {indicator:?}, {years}, 0, \"count\")"),
+        )?
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|n| *n >= 0.0)? as usize;
+        let mut rows = Vec::new();
+        for i in 0..n.min(5) {
+            let Some(name) = eval_text(
+                cx,
+                &format!("sys.indicator({countries:?}, {indicator:?}, {years}, {i}, \"name\")"),
+            ) else {
+                break;
+            };
+            if name.trim().is_empty() {
+                break;
+            }
+            rows.push(serde_json::json!({ "name": name }));
+        }
+        return Some(rows);
+    }
     // Named rather than inferred: these are the lists the backend answers by
     // index today. A table here beats a guess.
     let (key_field, count_helper) = match request.helper.as_str() {
