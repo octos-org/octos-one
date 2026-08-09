@@ -72,6 +72,8 @@ const L0_APPS: &[(&str, &str, &str)] = &[
      include_str!("../../../a2app-l0/apps/nav/exemplar.card")),
     ("chart", include_str!("../../../a2app-l0/apps/chart/app.md"),
      include_str!("../../../a2app-l0/apps/chart/exemplar.card")),
+    ("youtube", include_str!("../../../a2app-l0/apps/youtube/app.md"),
+     include_str!("../../../a2app-l0/apps/youtube/exemplar.card")),
     // COMPOSED, and the first app above L0. `city-picks` compares the user's
     // saved cities, which needs one arithmetic expression — how much warmer it
     // feels than it is — and that is L1. Everything else about it is L0.
@@ -5528,35 +5530,12 @@ impl App {
         if app_id != "web" && app_id != "youtube" {
             cx.system_browser(web_card_browser_id()).detach();
         }
-        if app_id == "youtube" {
-            // Resolve ground-truth live ids, then serve the COMPLETE hand-authored
-            // youtube app DIRECTLY (no LLM — the on-device model under-generates the
-            // 14 KB app to a bare player) with the fresh ids substituted in.
-            refresh_youtube_live_ids();
-            for _ in 0..20 {
-                if youtube_live_cache().lock().unwrap().len() >= 3 {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(150));
-            }
-            let card = youtube_reference_card();
-            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Ok(mut data) = CHAT_DATA.write() {
-                data.messages.push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    text: format!("```runhtml\n{card}\n```"),
-                });
-                data.is_streaming = false;
-            }
-            let chat_list = self.ui.widget(cx, ids!(chat_list));
-            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
-            self.apps[idx].repair_attempted = false;
-            self.apps[idx].l0_repair_attempts = 0;
-            self.update_empty_state_visibility(cx);
-            self.sync_app_tabs(cx);
-            cx.redraw_all();
-            return;
-        }
+        // youtube WAS served here as a complete hand-authored HTML app, with
+        // its live ids patched in at serve time. It is an L0 card now (see
+        // L0_APPS): the card SEARCHES rather than carrying ids the model
+        // remembered — which is what the patching existed to paper over —
+        // and hands a player url to sys.link for playback, so the WebView is
+        // still what plays the video and no longer what draws the app.
         // NAV IS GENERATED, not served.
         //
         // It was direct-served: the client emitted the 664-line L2 trip planner

@@ -282,6 +282,8 @@ fn fetched_rows(
         // "Stanford" answers five rows all named that, and identity has to be the
         // line that tells them apart.
         "sys.search" => ("label", "sys.searchnum"),
+        // A video's id IS its identity, and it is what the row keys on.
+        "sys.video" => ("id", "sys.videonum"),
         // A ticker IS its identity; the stock add-flow searches these.
         "sys.symbol_search" => ("ticker", "sys.symbol_searchnum"),
         _ => return None,
@@ -294,10 +296,21 @@ fn fetched_rows(
             // Through the CONSTANT. I wrote `"root"` here from memory and it is
             // `"@card"`, so every lookup missed the store, fell through to the blob's
             // empty query, and the list stayed empty with everything else working.
+            //
+            // Then the DECLARED initial, which is where a card that has never
+            // been tapped keeps its query: a youtube card whose `q` starts at
+            // "lofi hip hop radio" searched for "" and rendered a title it had
+            // resolved (realize DOES apply initials) over a list it could not
+            // fetch — the two halves of one card disagreeing.
             store
                 .get(splash_ui_l0::CARD_STATE_KEY, name)
                 .or_else(|| data.get(name))
                 .and_then(|v| v.as_str().map(str::to_owned))
+                .or_else(|| {
+                    splash_ui_l0::state_initials(source)
+                        .get(name)
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                })
                 .unwrap_or_default()
         }
         _ => return None,
