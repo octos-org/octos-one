@@ -523,7 +523,13 @@ fn tap_inner(
         } else {
             write.helper.strip_prefix("sys.").unwrap_or(&write.helper)
         };
-        super::user_store::apply(collection, &write.op, &write.value);
+        let changed = super::user_store::apply(collection, &write.op, &write.value);
+        makepad_widgets::log!(
+            "[l0] store {} {} {:?} -> changed={changed}",
+            collection,
+            write.op,
+            write.value
+        );
     }
     if !outcome.writes.is_empty() {
         publish_collections();

@@ -24,6 +24,7 @@ pub fn to_dsl(root: &UiNode) -> String {
     let mut body = String::new();
     // Per document, not per process: the names must line up with THIS tree's maps.
     MAPS.with(|m| *m.borrow_mut() = (0, String::new()));
+    ROW_REVEALS.with(|r| *r.borrow_mut() = 0);
     let live = LIVE.with(|l| {
         *l.borrow_mut() = Some(Vec::new());
         emit(root, &mut body, 0);
@@ -596,7 +597,87 @@ pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
 /// perfectly and every row was dead. That is the identical mistake
 /// `makepad::lower` made and had to be corrected for, and writing it a second
 /// time is why it is spelled out here.
+std::thread_local! {
+    /// Per-document counter for row-reveal names (`l0rr0`, `l0rr1`, …) — one
+    /// per swipe-revealed row, so each row's swipe drives ITS OWN chip.
+    static ROW_REVEALS: std::cell::RefCell<usize> = const { std::cell::RefCell::new(0) };
+}
+
+/// A row that reveals its action on swipe: `Row { <tapped content> Reveal { … } }`.
+///
+/// The row the finger is ON is the one that opens — the reveal is widget
+/// visibility scoped to this row, not card state, so no other row moves and
+/// nothing re-realizes. The swipe overlay carries the inner content's tap as
+/// its own click (the Button fires swipe INSTEAD of click, so a drag cannot
+/// also tap), and the revealed chip stays OUTSIDE the overlay so the button
+/// cannot swallow the tap it exists to receive.
+fn row_reveal(node: &UiNode, out: &mut String, depth: usize) -> bool {
+    if node.kind != NodeKind::Row {
+        return false;
+    }
+    if !node.children.iter().any(is_reveal) {
+        return false;
+    }
+    let (compact, revealed) = split_reveals(node);
+    let name = ROW_REVEALS.with(|r| {
+        let mut r = r.borrow_mut();
+        let n = format!("l0rr{}", *r);
+        *r += 1;
+        n
+    });
+    // The row's tap lives on its filling inner content row; the swipe overlay
+    // takes it over as its click so one surface answers both gestures.
+    let inner_tap = compact
+        .children
+        .iter()
+        .find_map(|c| c.attrs.tapto.as_deref())
+        .unwrap_or("");
+    let pad = "  ".repeat(depth.min(32));
+    // A row is a `View{ flow: Right }` in this dsl — there is no `Row` widget,
+    // and an unknown ident does not error, it QUIETLY DROPS the node: the
+    // first cut wrote `Row{` and every saved row simply vanished on device
+    // while the store held them and the movers rendered fine.
+    let _ = write!(out, "{pad}View{{ flow: Right");
+    sizing_of(node.kind, &node.attrs, out);
+    box_model(&node.attrs, out);
+    out.push('\n');
+    let h = "  ".repeat((depth + 1).min(32));
+    let _ = writeln!(out, "{h}View{{ width: Fill height: Fit flow: Overlay");
+    for child in &compact.children {
+        // The inner content renders WITHOUT its own tap wrapper — the swipe
+        // overlay above it is the one surface for both gestures.
+        emit_widget(child, out, depth + 2);
+    }
+    let click = if inner_tap.is_empty() {
+        String::new()
+    } else {
+        format!(" on_click: || agent.notify({TAP_CHANNEL:?}, {{target: {inner_tap:?}}})")
+    };
+    let _ = writeln!(
+        out,
+        "{h}  Button{{ width: Fill height: Fill draw_bg.color: #00000000 \
+         draw_bg.color_down: #ffffff12 draw_bg.border_size: 0.0 \
+         draw_bg.border_radius: 10 text: \"\" swipe: true \
+         on_swipe_left: || ui.{name}.set_visible(true) \
+         on_swipe_right: || ui.{name}.set_visible(false){click} }}"
+    );
+    let _ = writeln!(out, "{h}}}");
+    for r in &revealed {
+        // Named and hidden: the swipe on this row's overlay is what shows it.
+        let _ = writeln!(out, "{h}{name} := View{{ visible: false width: Fit height: Fit");
+        for child in &r.children {
+            emit(child, out, depth + 2);
+        }
+        let _ = writeln!(out, "{h}}}");
+    }
+    let _ = writeln!(out, "{pad}}}");
+    true
+}
+
 fn emit(node: &UiNode, out: &mut String, depth: usize) {
+    if row_reveal(node, out, depth) {
+        return;
+    }
     // A text input binds its RETURN key rather than being covered by a hit
     // target. A transparent button over a field would swallow the focus, and
     // there would be nothing to type into.

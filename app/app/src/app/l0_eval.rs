@@ -350,6 +350,45 @@ mod tests {
         })
     }
 
+    /// A saved row reveals ITS OWN remove on swipe — widget visibility
+    /// scoped to the row, not card state. The dsl must carry: a hidden view
+    /// named for this row, a swipe overlay that shows/hides exactly that
+    /// name, and the row's own tap as the overlay's click — the swipe
+    /// fires INSTEAD of the click, so a drag cannot also open the quote.
+    #[test]
+    fn a_watch_row_reveals_its_own_remove() {
+        let mut data = stock_data();
+        data["watch"] = serde_json::json!([
+            {"ticker":"NVDA","last":184.2,"pct":1.7},
+            {"ticker":"TEAM","last":149.0,"pct":2.0}
+        ]);
+        // Through the DEVICE chain: realize, kit, eval, then the dsl.
+        let dsl = super::super::l0_widgets::to_dsl(&build_card(STOCK, data));
+        for name in ["l0rr0", "l0rr1"] {
+            assert!(
+                dsl.contains(&format!("{name} := View{{ visible: false")),
+                "{name} hidden view:\n{dsl}"
+            );
+            assert!(
+                dsl.contains(&format!("on_swipe_left: || ui.{name}.set_visible(true)")),
+                "{name} swipe shows it:\n{dsl}"
+            );
+            assert!(
+                dsl.contains(&format!("on_swipe_right: || ui.{name}.set_visible(false)")),
+                "{name} swipe hides it:\n{dsl}"
+            );
+        }
+        // The overlay carries the row's open_quote as its click, per row.
+        assert!(
+            dsl.matches("swipe: true").count() == 2,
+            "one swipe overlay per saved row:\n{dsl}"
+        );
+        assert!(
+            dsl.contains("for#0[NVDA]") && dsl.contains("for#0[TEAM]"),
+            "each overlay clicks its own row:\n{dsl}"
+        );
+    }
+
     fn weather_data() -> serde_json::Value {
         serde_json::json!({
             "place": {"name":"Kyoto","lat":35.0,"lon":135.8},
