@@ -56,7 +56,7 @@ fn render_through_kit(
 ) -> Result<String, String> {
     // Durable collections join the data here, so a `for` over one iterates the
     // rows the store actually holds (see `with_durable`).
-    let mut data = with_durable(source, data);
+    let mut data = with_durable(source, data, store);
     // And so do FETCHED lists. A `for` iterates the data, so a list's length has to
     // be in it — the one thing a live call cannot supply, because length is
     // structural. This is the narrow half of §5.9 the results panel needs.
@@ -324,7 +324,11 @@ fn fetched_scalars(
     (!out.is_empty()).then(|| serde_json::Value::Object(out))
 }
 
-fn with_durable(source: &str, data: &serde_json::Value) -> serde_json::Value {
+fn with_durable(
+    source: &str,
+    data: &serde_json::Value,
+    store: &splash_ui_l0::InstanceStore,
+) -> serde_json::Value {
     let plan = splash_ui_l0::source_plan(source);
     let mut out = data.clone();
     for request in &plan.requests {
@@ -342,6 +346,38 @@ fn with_durable(source: &str, data: &serde_json::Value) -> serde_json::Value {
         // The reader (sys.link) is writable but not stored at all: its write
         // is an action on the host's overlay, not a row in the user's data.
         if request.helper == "sys.prefs" || request.helper == "sys.link" {
+            continue;
+        }
+        // A watchlist source that NAMES a ticker is the membership probe, not
+        // the list — and it is answered HERE, synchronously, because view
+        // GUARDS evaluate at realize time against data: a live call can feed
+        // a text binding but never a `when`, so a probe left to the vm_call
+        // rendered neither branch (measured: the quote page's Add/Remove
+        // corner was simply empty).
+        if let Some((_, arg)) = request.args.iter().find(|(n, _)| n == "ticker") {
+            let ticker = match arg {
+                splash_ui_l0::SourceArg::Text(t) => Some(t.clone()),
+                splash_ui_l0::SourceArg::Path(p) => {
+                    let name = p.strip_prefix("state.").unwrap_or(p);
+                    store
+                        .get(splash_ui_l0::CARD_STATE_KEY, name)
+                        .cloned()
+                        .or_else(|| data.get(name).cloned())
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                }
+                _ => None,
+            };
+            if let Some(ticker) = ticker {
+                let held = super::user_store::collection(collection)
+                    .iter()
+                    .any(|t| t == &ticker);
+                if let Some(map) = out.as_object_mut() {
+                    map.insert(
+                        request.name.clone(),
+                        serde_json::json!({ "has": if held { "1" } else { "0" } }),
+                    );
+                }
+            }
             continue;
         }
         // Only the REFERENCE goes in, under the field that identifies a row.
@@ -476,7 +512,7 @@ fn tap_inner(
     let payload = (!value.is_empty()).then(|| serde_json::Value::String(value.to_owned()));
     // Dispatch sees the DURABLE rows too: `next(cities.name)` walks the saved
     // list, and the saved list is the store's, not the seed blob's.
-    let dispatch_data = with_durable(&session.source, &session.data);
+    let dispatch_data = with_durable(&session.source, &session.data, &session.store);
     // `dispatch_reporting`, not the bool form: a §5.12 transition writes nothing
     // in the card and instead REPORTS a write the host owes its store. The bool
     // form cannot express that, so a tap on a watchlist row would have applied
@@ -559,7 +595,7 @@ fn tap_inner(
     // state waiting — which looks like a rendering bug and is not.
     // The store may have just grown by this very tap, so the durable rows are
     // merged AFTER the write rather than from the session's original blob.
-    let tapped_data = with_durable(&session.source, &session.data);
+    let tapped_data = with_durable(&session.source, &session.data, &session.store);
     let report = splash_ui_l0::realize_with_state(
         &session.source,
         &tapped_data,

@@ -70,7 +70,7 @@ and that looks exactly like data still arriving.
 | `sys.step` | `from_lat`, `from_lon`, `to_lat`, `to_lon`, `at_lat`, `at_lon`, `fields` | `instruction`, `remaining`, `progress`, `eta` |
 | `sys.symbol_search` | `query`, `count`, `fields` | `ticker`, `name`, `exchange`, `kind` |
 | `sys.topics` | `fields` | `name`, `top_title`, `top_points`, `top_id` |
-| `sys.watchlist` | `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |
+| `sys.watchlist` | `ticker`, `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange`, `has` |
 | `sys.weather` | `lat`, `lon`, `days`, `fields`, `aggregate` | `temp`, `feels`, `hi`, `lo`, `cond`, `humidity`, `wind`, `pressure`, `uv`, `visibility`, `precip`, `dayname`, `days`<br>`aggregate:` `min_lo`, `max_hi` |
 
 ## Shared token sets
