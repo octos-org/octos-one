@@ -458,21 +458,21 @@ mod tests {
         }
         let mut out = Vec::new();
         taps(&build_card(STOCK, stock_data()), &mut out);
-        // THREE since the add flow: the header's + chip (its own key), the
-        // mover row that opens the quote, and the ☆ chip that saves the
-        // ticker — those two share an instance key, naming the same row.
-        assert_eq!(out.len(), 3, "the + chip, a row tap and its star: {out:?}");
+        // TWO: the header's + chip (its own key) and the mover row that
+        // opens the quote — the per-row save shortcut is gone; saving is
+        // the add flow's explicit Add.
+        assert_eq!(out.len(), 2, "the + chip and a row tap: {out:?}");
         for t in &out {
             assert!(t.starts_with("l0:"), "the L0 prefix marks it: {out:?}");
         }
         assert_eq!(
             out.iter().filter(|t| t.contains("for#0[NVDA]")).count(),
-            2,
-            "the row and its star carry the row's key: {out:?}"
+            1,
+            "the row alone carries the row's key: {out:?}"
         );
         assert!(
             out.iter().any(|t| t.contains("open_quote"))
-                && out.iter().any(|t| t.contains("\"e\":\"keep\"")),
+                && out.iter().any(|t| t.contains("\"e\":\"add_sym\"")),
             "both events present: {out:?}"
         );
     }
