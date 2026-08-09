@@ -441,6 +441,27 @@ pub fn tap(
     event: &str,
     value: &str,
 ) -> Result<Option<(usize, String)>, String> {
+    tap_inner(cx, item, key, event, value, false)
+}
+
+/// A system gesture, offered to the LATEST card as one of its own events —
+/// `back` for the back press, `swipe_left`/`swipe_right` for a horizontal
+/// swipe. `Some` only when a cell actually moved: a card already at the edge
+/// must NOT consume the gesture (back could never leave the app), and a card
+/// that declares no such event applies to nothing, which is the same answer.
+pub fn gesture(cx: &mut makepad_widgets::Cx, event: &str) -> Option<(usize, String)> {
+    let item = SESSIONS.read().ok()?.keys().max().copied()?;
+    tap_inner(cx, item, "root", event, "", true).ok().flatten()
+}
+
+fn tap_inner(
+    cx: &mut makepad_widgets::Cx,
+    item: usize,
+    key: &str,
+    event: &str,
+    value: &str,
+    require_change: bool,
+) -> Result<Option<(usize, String)>, String> {
     let mut map = SESSIONS.write().map_err(|_| "session lock poisoned".to_owned())?;
     // The card the tap came FROM, not whichever was rendered last.
     let Some(session) = map.get_mut(&item) else {
@@ -448,6 +469,9 @@ pub fn tap(
     };
 
     let payload = (!value.is_empty()).then(|| serde_json::Value::String(value.to_owned()));
+    // Dispatch sees the DURABLE rows too: `next(cities.name)` walks the saved
+    // list, and the saved list is the store's, not the seed blob's.
+    let dispatch_data = with_durable(&session.source, &session.data);
     // `dispatch_reporting`, not the bool form: a §5.12 transition writes nothing
     // in the card and instead REPORTS a write the host owes its store. The bool
     // form cannot express that, so a tap on a watchlist row would have applied
@@ -458,7 +482,7 @@ pub fn tap(
         key,
         event,
         payload.as_ref(),
-        &session.data,
+        &dispatch_data,
     );
     for write in &outcome.writes {
         // A sys.link write is not a store write at all: the card asked the
@@ -510,6 +534,11 @@ pub fn tap(
         outcome.stale
     );
     if !outcome.applied {
+        return Ok(None);
+    }
+    // The gesture path: "applied but nothing moved" is a no-op, not a
+    // navigation — reporting it as one would swallow the press.
+    if require_change && outcome.changed.is_empty() {
         return Ok(None);
     }
 

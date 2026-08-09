@@ -5271,6 +5271,14 @@ impl Widget for ChatList {
 static L0_TYPING_PENDING: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+std::thread_local! {
+    /// Live touch Start points (uid -> (x, y, time)) for the L0 swipe gesture —
+    /// the raw touch stream carries no start position at Stop, and the Script
+    /// derive on App admits no field of this shape.
+    static L0_TOUCH_STARTS: std::cell::RefCell<std::collections::HashMap<u64, (f64, f64, f64)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
 #[derive(Script, ScriptHook)]
 pub struct App {
     #[live]
@@ -6574,6 +6582,26 @@ impl App {
             self.apps.len(),
             self.foreground
         );
+    }
+
+    /// Offer a system gesture to the latest L0 card and redraw it if a cell
+    /// moved. Returns whether the gesture was consumed. The redraw is the same
+    /// rewrite the notify path does: replace lowered DSL, bump the generation.
+    fn l0_gesture(&mut self, cx: &mut Cx, event: &str) -> bool {
+        let Some((item, body)) = app::l0_card::gesture(cx, event) else {
+            return false;
+        };
+        if let Ok(mut chat) = CHAT_DATA.write() {
+            if let Some(msg) = chat.messages.get_mut(item) {
+                if !msg.text.contains("```runl0") {
+                    msg.text = format!("```runsplash\n{body}\n```");
+                }
+            }
+        }
+        CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        cx.redraw_all();
+        log::info!("[l0] {event} gesture -> redrew item {item}");
+        true
     }
 
     fn update_empty_state_visibility(&self, cx: &mut Cx) {
@@ -8810,6 +8838,49 @@ impl AppMain for App {
                 let over = self.ui.widget(cx, ids!(chat_list)).area();
                 log::info!("[l0] reader placed over {:?}", over.rect(cx));
                 cx.system_browser(web_card_browser_id()).update(over, true);
+            }
+        } else if let Event::BackPressed { handled } = event {
+            // No reader up: offer the press to the latest card as its own
+            // `back` event — the edge-swipe gesture is how a story detail
+            // returns to its list. Consumed only when a cell actually moved,
+            // so at the card's top view the press still leaves the app.
+            if !handled.get() && self.l0_gesture(cx, "back") {
+                handled.set(true);
+            }
+        } else if let Event::TouchUpdate(tu) = event {
+            // A horizontal swipe over the card, offered as the card's own
+            // swipe event — how the weather card pages through saved cities.
+            // The raw touch stream carries no start position, so Start points
+            // are remembered here and matched by uid at Stop. Thresholds:
+            // mostly-horizontal, far enough to be deliberate, fast enough not
+            // to be a text-selection drag.
+            use makepad_widgets::makepad_draw::makepad_platform::event::TouchState;
+            for touch in &tu.touches {
+                match touch.state {
+                    TouchState::Start => {
+                        L0_TOUCH_STARTS.with(|m| {
+                            m.borrow_mut()
+                                .insert(touch.uid, (touch.abs.x, touch.abs.y, touch.time))
+                        });
+                    }
+                    TouchState::Stop => {
+                        let start =
+                            L0_TOUCH_STARTS.with(|m| m.borrow_mut().remove(&touch.uid));
+                        if let Some((x0, y0, t0)) = start {
+                            let dx = touch.abs.x - x0;
+                            let dy = touch.abs.y - y0;
+                            if dx.abs() > 80.0
+                                && dx.abs() > dy.abs() * 2.0
+                                && (touch.time - t0) < 0.6
+                            {
+                                let ev =
+                                    if dx < 0.0 { "swipe_left" } else { "swipe_right" };
+                                self.l0_gesture(cx, ev);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
         }
         // Build with OCTOS_SEED_CARD=1 to push one of the prebuilt Splash
