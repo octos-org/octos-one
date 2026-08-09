@@ -8864,9 +8864,12 @@ impl AppMain for App {
             // A horizontal swipe over the card, offered as the card's own
             // swipe event — how the weather card pages through saved cities.
             // The raw touch stream carries no start position, so Start points
-            // are remembered here and matched by uid at Stop. Thresholds:
-            // mostly-horizontal, far enough to be deliberate, fast enough not
-            // to be a text-selection drag.
+            // are remembered here and matched by uid at Stop. Thresholds are
+            // tuned to a THUMB, not to adb: a real swipe takes up to a second
+            // and arcs diagonally (measured — a 700ms drag with 80px of drift
+            // is a normal human swipe, and the first cut rejected it), so the
+            // gate is mostly-horizontal, far enough to be deliberate, and
+            // under 1.5s; only a slow press-and-hold drag stays excluded.
             use makepad_widgets::makepad_draw::makepad_platform::event::TouchState;
             for touch in &tu.touches {
                 match touch.state {
@@ -8882,9 +8885,9 @@ impl AppMain for App {
                         if let Some((x0, y0, t0)) = start {
                             let dx = touch.abs.x - x0;
                             let dy = touch.abs.y - y0;
-                            if dx.abs() > 80.0
-                                && dx.abs() > dy.abs() * 2.0
-                                && (touch.time - t0) < 0.6
+                            if dx.abs() > 60.0
+                                && dx.abs() > dy.abs() * 1.3
+                                && (touch.time - t0) < 1.5
                             {
                                 let ev =
                                     if dx < 0.0 { "swipe_left" } else { "swipe_right" };
