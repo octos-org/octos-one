@@ -8885,10 +8885,19 @@ impl AppMain for App {
                         if let Some((x0, y0, t0)) = start {
                             let dx = touch.abs.x - x0;
                             let dy = touch.abs.y - y0;
-                            if dx.abs() > 60.0
-                                && dx.abs() > dy.abs() * 1.3
-                                && (touch.time - t0) < 1.5
-                            {
+                            let dt = touch.time - t0;
+                            // No time cap: a person testing a reveal drags
+                            // SLOWLY, expecting the row to follow the finger,
+                            // and a 2s deliberate drag is still a swipe. Only
+                            // direction and distance gate now.
+                            let fired = dx.abs() > 48.0 && dx.abs() > dy.abs() * 1.2;
+                            // One line per stroke, fired or not — "not
+                            // working" is only diagnosable if the rejected
+                            // stroke's numbers are in the log.
+                            log::info!(
+                                "[l0] stroke dx={dx:.0} dy={dy:.0} dt={dt:.2}s fired={fired}"
+                            );
+                            if fired {
                                 let ev =
                                     if dx < 0.0 { "swipe_left" } else { "swipe_right" };
                                 L0_SWIPE_AT.with(|t| t.set(Some(std::time::Instant::now())));
