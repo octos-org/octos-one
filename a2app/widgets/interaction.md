@@ -125,9 +125,62 @@ silently never fires. Put ALL branching inside `fn` bodies (like
 - Name a widget with `id := Widget{…}`; mutate it via `ui.<id>.set_text(…)`.
 - The state object line (`let app = { … }`) must be the FIRST executable line
   after `// name:`, and no comment may precede it.
+- **Define a fn BEFORE any fn that calls it.** A fn body's call to a fn
+  defined LATER in the script fails SILENTLY at runtime (the caller just
+  stops there). Order helpers first, callers after. Closures
+  (`on_click: || f()`) are exempt — they resolve at tap time.
+- **Define `fn tick()` FIRST, immediately after the state line.** In a card
+  with many fns the engine can fail to FIND a late-defined tick (it never
+  fires, silently). tick calls no other fns anyway (self-contained rule), so
+  first is always legal.
 - Use this pattern when tap→change is instant and self-contained; use
   `{{state.key}}` + `agent.notify("set", …)` (above) when a branch of the
   card must re-render with different STRUCTURE.
+
+## fn tick() — the 1-second heartbeat (clock / timer cards)
+
+If a full-script body defines `fn tick()`, the engine calls it ONCE PER SECOND
+automatically — no timer setup, no agent round-trip. Combine it with local
+state + named widgets for anything that advances by itself:
+
+```
+let app = { left: 300 running: false }
+
+fn tick() {
+    if app.running && app.left > 0 {
+        app.left = app.left - 1
+        ui.big.set_text(sys.fmtdur(app.left))
+    }
+}
+fn toggle() {
+    if app.running { app.running = false } else { app.running = true }
+}
+```
+
+⚠️ Flip booleans with the explicit if/else above — do NOT write
+`app.running = !app.running` (unary `!` is not a supported operator; only
+`!=` comparisons are).
+
+- ⚠️ **tick() MUST be SELF-CONTAINED.** It may read state, call `sys.*`
+  helpers and `ui.*` setters — but it must NOT call your other `fn`s: a
+  script-fn call from inside tick() fails SILENTLY and the whole tick does
+  nothing (engine limitation; click closures like `on_click: || f()` are NOT
+  affected). Write the tick logic inline, duplicating a few lines if needed.
+- ⚠️ **tick() must never be the FIRST caller of a fetch-backed sys helper.**
+  A network fetch first issued from inside tick() never completes (same
+  engine limitation), so the value stays loading forever. Issue every fetch
+  the card needs through a BODY binding — a label's initial `text:` (add a
+  `Label{ width: 0 height: 0 text: sys.<helper>(…) }` prefetch if no visible
+  label binds it) — and let tick() re-READ the then-cached value each second.
+- tick() runs every second whether or not anything changed — gate work on
+  state (`if app.running`) and only `set_text` what moved.
+- A tick() card idles the GPU between ticks (the engine suppresses the
+  per-frame pump for it) — it is CHEAPER than a `sys.simsecs` re-eval card,
+  and the right choice for clocks, timers and stopwatches.
+- Format ALL times/numbers with `sys.fmtdur` / `sys.fmtnum` — the script
+  engine has no floor, round or `%`.
+- The 1 Hz interval is fixed; there is no faster tick. Sub-second stopwatch
+  precision is NOT available — design the card honestly around whole seconds.
 
 ## Style templates (`let X = Widget{…}`) — reuse without repetition
 

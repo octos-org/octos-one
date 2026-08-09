@@ -27,11 +27,20 @@ request, then follow THAT app's `apps/<type>/app.md` spec:
   "这个天气适合做什么" request where weather or air quality decides the
   answer. Route composed weather+activity intents HERE (not to weather or
   activity alone), never to `none`.
+- **clock** — the time somewhere / world clock ("what time is it in tokyo",
+  "world clock", "现在几点"). Live per-place time per `apps/clock/app.md`.
+- **timer** — countdown timer / stopwatch / pomodoro ("5 minute timer",
+  "stopwatch", "计时器", "倒计时", "秒表"). Splash-local per
+  `apps/timer/app.md` — NOT `web`.
+- **calc** — a calculator, or a bare arithmetic ask ("calculator",
+  "计算器"). Splash-local per `apps/calc/app.md` — NOT `web`.
+- **convert** — currency or unit conversion ("100 usd to eur", "usd to rmb",
+  "km to miles", "汇率", "多少英里"). Live FX per `apps/convert/app.md`.
 - **youtube** — ANY video / music / live-stream request ("play X", "lofi music",
   "watch the news"). YouTube cards are HTML (```runhtml) per `apps/youtube/app.md`
   (contract only, no exemplar) — the Splash rules below do NOT apply to them.
 - **web** — ANY other actionable app/tool/game/utility ("make me a todo app",
-  "pomodoro timer"). Web cards are HTML, not Splash: they emit ONE ```runhtml block
+  "sudoku"). Web cards are HTML, not Splash: they emit ONE ```runhtml block
   per `apps/web/app.md` (contract only, no exemplar) — every OTHER rule in this file
   is Splash-specific and does NOT apply to web cards.
 A request that COMPOSES domains with a decision/recommendation ("what should

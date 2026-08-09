@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: calc-app`",
+      "pattern": "// name: calc-app",
+      "min": 1
+    },
+    {
+      "desc": "the state object opens the script",
+      "pattern": "let calc = {",
+      "min": 1
+    },
+    {
+      "desc": "ten digit keys route through fn digit",
+      "pattern": "digit(",
+      "min": 11
+    },
+    {
+      "desc": "four operator keys route through fn setop",
+      "pattern": "setop(",
+      "min": 5
+    },
+    {
+      "desc": "equals key",
+      "pattern": "equals()",
+      "min": 2
+    },
+    {
+      "desc": "the display formatter — script cannot round",
+      "pattern": "sys.fmtnum(",
+      "min": 1
+    },
+    {
+      "desc": "divide-by-zero guard",
+      "pattern": "!= 0",
+      "min": 1
+    },
+    {
+      "desc": "expression-form click handlers on every key",
+      "pattern": "on_click: ||",
+      "min": 19
+    }
+  ]
+}
