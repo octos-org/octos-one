@@ -640,6 +640,11 @@ fn row_reveal(node: &UiNode, out: &mut String, depth: usize) -> bool {
     let _ = write!(out, "{pad}View{{ flow: Right");
     sizing_of(node.kind, &node.attrs, out);
     box_model(&node.attrs, out);
+    // A row a thumb swipes needs a thumb's worth of height: the compact
+    // one-line row was a thin target and strokes kept missing it (asked for
+    // by hand on device). 12dp above and below lands the row near the 48dp
+    // touch minimum without the card saying a number.
+    let _ = write!(out, " padding: Inset{{top: 12 bottom: 12}}");
     out.push('\n');
     let h = "  ".repeat((depth + 1).min(32));
     let _ = writeln!(out, "{h}View{{ width: Fill height: Fit flow: Overlay");
