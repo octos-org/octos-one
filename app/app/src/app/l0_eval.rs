@@ -378,10 +378,11 @@ mod tests {
                 "{name} swipe hides it:\n{dsl}"
             );
         }
-        // The overlay carries the row's open_quote as its click, per row.
+        // One swipe overlay per REVEALING row: two saved rows plus the one
+        // test mover, each driving its own name.
         assert!(
-            dsl.matches("swipe: true").count() == 2,
-            "one swipe overlay per saved row:\n{dsl}"
+            dsl.matches("swipe: true").count() == 3,
+            "one swipe overlay per revealing row:\n{dsl}"
         );
         assert!(
             dsl.contains("for#0[NVDA]") && dsl.contains("for#0[TEAM]"),
@@ -497,22 +498,23 @@ mod tests {
         }
         let mut out = Vec::new();
         taps(&build_card(STOCK, stock_data()), &mut out);
-        // TWO: the header's + chip (its own key) and the mover row that
-        // opens the quote — the per-row save shortcut is gone; saving is
-        // the add flow's explicit Add.
-        assert_eq!(out.len(), 2, "the + chip and a row tap: {out:?}");
+        // THREE: the header's + chip, the mover row that opens the quote,
+        // and the swipe-revealed Add beside it — the row and its Add share
+        // the row's instance key.
+        assert_eq!(out.len(), 3, "+ chip, row tap, revealed Add: {out:?}");
         for t in &out {
             assert!(t.starts_with("l0:"), "the L0 prefix marks it: {out:?}");
         }
         assert_eq!(
             out.iter().filter(|t| t.contains("for#0[NVDA]")).count(),
-            1,
-            "the row alone carries the row's key: {out:?}"
+            2,
+            "the row and its Add carry the row's key: {out:?}"
         );
         assert!(
             out.iter().any(|t| t.contains("open_quote"))
+                && out.iter().any(|t| t.contains("\"e\":\"keep\""))
                 && out.iter().any(|t| t.contains("\"e\":\"add_sym\"")),
-            "both events present: {out:?}"
+            "all three events present: {out:?}"
         );
     }
 
