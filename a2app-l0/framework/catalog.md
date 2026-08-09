@@ -53,6 +53,7 @@ and that looks exactly like data still arriving.
 | `sys.daylight` | `lat`, `lon` | `rise`, `set`, `now` |
 | `sys.geocode` | `name` | `lat`, `lon`, `name`, `country`, `admin1`, `timezone`, `population` |
 | `sys.gps` | — (no arguments) | `lat`, `lon`, `accuracy`, `ok` |
+| `sys.link` | `fields` | `url` |
 | `sys.locale` | — (no arguments) | `lang`, `temp_unit` |
 | `sys.moonphase` | `lat`, `lon` | `phase`, `illumination`, `name` |
 | `sys.movers` | `count`, `fields`, `symbols` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |

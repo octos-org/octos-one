@@ -8789,6 +8789,29 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // The L0 reader overlay (a card wrote a page to `sys.link`). The spawn
+        // happened in l0_card::tap, where no widget area exists — the native
+        // view is positioned HERE, once, to the full window, on the first
+        // event after it. System back closes the reader instead of the app;
+        // `handled` is how the platform is told the press was consumed.
+        if app::l0_card::L0_READER_OPEN.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Event::BackPressed { handled } = event {
+                cx.system_browser(web_card_browser_id()).detach();
+                makepad_widgets::splash::set_link("");
+                app::l0_card::L0_READER_OPEN
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                handled.set(true);
+            } else if !app::l0_card::L0_READER_PLACED
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                // The Window WidgetRef's own area is a zero rect (measured);
+                // the chat list is the drawn region the card occupies, which
+                // is exactly what the reader should cover.
+                let over = self.ui.widget(cx, ids!(chat_list)).area();
+                log::info!("[l0] reader placed over {:?}", over.rect(cx));
+                cx.system_browser(web_card_browser_id()).update(over, true);
+            }
+        }
         // Build with OCTOS_SEED_CARD=1 to push one of the prebuilt Splash
         // weather cards straight into the conversation, bypassing the AMA and
         // the LLM entirely. The card is pure Splash DSL with live

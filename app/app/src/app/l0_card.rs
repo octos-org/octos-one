@@ -26,6 +26,13 @@
 
 use std::collections::BTreeMap;
 use std::sync::RwLock;
+use std::sync::atomic::AtomicBool;
+
+/// The reader overlay the L0 cards drive through `sys.link`. OPEN is the
+/// overlay's liveness; PLACED goes false on every spawn so the app positions
+/// the native view (full window) exactly once, on its next event.
+pub static L0_READER_OPEN: AtomicBool = AtomicBool::new(false);
+pub static L0_READER_PLACED: AtomicBool = AtomicBool::new(false);
 
 /// The theme kit, baked in. §1.1's middle layer: the card names roles and this
 /// answers them, so no colour or size is decided in Rust.
@@ -327,7 +334,9 @@ fn with_durable(source: &str, data: &serde_json::Value) -> serde_json::Value {
         }
         // Preferences are mutable but KEYED, not a row list — they are seeded
         // by their own pass with host defaults, not as collection rows.
-        if request.helper == "sys.prefs" {
+        // The reader (sys.link) is writable but not stored at all: its write
+        // is an action on the host's overlay, not a row in the user's data.
+        if request.helper == "sys.prefs" || request.helper == "sys.link" {
             continue;
         }
         // Only the REFERENCE goes in, under the field that identifies a row.
@@ -452,6 +461,26 @@ pub fn tap(
         &session.data,
     );
     for write in &outcome.writes {
+        // A sys.link write is not a store write at all: the card asked the
+        // HOST to open (or close) its reader overlay on a page. Spawn loads
+        // the url; the rect is placed by the app on its next event, and
+        // system back detaches (both in main.rs) — the card only ever says
+        // which page, never how pages are shown.
+        if write.helper == "sys.link" {
+            let browser = makepad_widgets::web_card::web_card_browser_id();
+            makepad_widgets::log!("[l0] reader {} {:?}", write.op, write.value);
+            if write.op == "set" && !write.value.is_empty() {
+                cx.system_browser(browser).spawn(&write.value);
+                makepad_widgets::splash::set_link(&write.value);
+                L0_READER_OPEN.store(true, std::sync::atomic::Ordering::Relaxed);
+                L0_READER_PLACED.store(false, std::sync::atomic::Ordering::Relaxed);
+            } else {
+                cx.system_browser(browser).detach();
+                makepad_widgets::splash::set_link("");
+                L0_READER_OPEN.store(false, std::sync::atomic::Ordering::Relaxed);
+            }
+            continue;
+        }
         // Keyed by CAPABILITY, not by the card's binding name. A card may call
         // it `watch` and another `saved`, and they must reach the same list —
         // sharing between cards is the reason the store exists outside them.
