@@ -3529,6 +3529,13 @@ script_mod! {
                     sidebar := GlassPanel {
                         width: 298
                         height: Fill
+                        // Removed from the product: the session list pane is
+                        // desktop shell furniture, and on device it covered
+                        // the AMA surface whenever the window was not narrow
+                        // (rotate to landscape and half the screen was list).
+                        // The pane and its toggle stay in the tree for the
+                        // desktop shell work to revive, but nothing shows it.
+                        visible: false
                         new_batch: true
                         flow: Down
                         padding: Inset{left: 14 top: 14 right: 14 bottom: 14}
@@ -7055,23 +7062,14 @@ impl App {
     // navigate_to_coding / navigate_to_producer removed with the Coding /
     // Studio / Slides / Sites navs (unsupported in this build).
 
-    /// Phone-width helper: the desktop shell keeps sidebar and chat side by
-    /// side, which pushes the chat off-screen on a portrait phone. Collapse
-    /// the sidebar after sidebar-driven navigation when the window is
-    /// narrow; the top-bar ☰ button brings it back.
+    /// The side panel is removed from the product (it covered the AMA
+    /// surface; see the sidebar declaration) — this keeps it and the desktop
+    /// glass toolbar hidden at every width, from every path that used to
+    /// collapse them conditionally.
     fn collapse_sidebar_if_narrow(&self, cx: &mut Cx) {
-        let w = self
-            .ui
-            .window(cx, ids!(main_window))
-            .get_inner_size(cx)
-            .x;
-        if w > 0.0 && w < 600.0 {
-            self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
-            // The glass-opacity toolbar is a desktop nicety; its 318pt
-            // fixed width alone overflows a phone top bar.
-            self.ui.view(cx, ids!(glass_toolbar)).set_visible(cx, false);
-            cx.redraw_all();
-        }
+        self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
+        self.ui.view(cx, ids!(glass_toolbar)).set_visible(cx, false);
+        cx.redraw_all();
     }
 
     /// Spawn an off-thread `task/output/read` and post the reply back as
@@ -7857,12 +7855,11 @@ impl MatchEvent for App {
         // Layer 3 (W08) — new-app / switch now live in the NATIVE composer pill
         // (see the NativeComposerNewApp/Switch action handlers above); no
         // top-strip or sidebar buttons.
-        // Top-bar ☰ — bring the collapsed sidebar back (or hide it again).
+        // The ☰ toggle went with the side panel: nothing may bring the
+        // pane back over the AMA surface. (The button's row is already
+        // invisible; this keeps a stray action from resurrecting the pane.)
         if self.ui.button(cx, ids!(nav_toggle)).clicked(actions) {
-            let sidebar = self.ui.view(cx, ids!(sidebar));
-            let vis = sidebar.borrow().map(|v| v.visible()).unwrap_or(true);
-            sidebar.set_visible(cx, !vis);
-            cx.redraw_all();
+            self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
         }
         if self
             .ui
