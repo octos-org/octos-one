@@ -5284,6 +5284,13 @@ std::thread_local! {
     /// derive on App admits no field of this shape.
     static L0_TOUCH_STARTS: std::cell::RefCell<std::collections::HashMap<u64, (f64, f64, f64)>> =
         std::cell::RefCell::new(std::collections::HashMap::new());
+    /// When the last horizontal swipe fired. The tap overlays release on
+    /// finger-up wherever it lands — a drag does not cancel them — so the
+    /// same motion that pages a card also "taps" whatever row it crossed
+    /// (measured: a manage-mode swipe opened the quote it swept over). A tap
+    /// notify arriving within this window of a swipe is the swipe, not a tap.
+    static L0_SWIPE_AT: std::cell::Cell<Option<std::time::Instant>> =
+        std::cell::Cell::new(None);
 }
 
 #[derive(Script, ScriptHook)]
@@ -7703,6 +7710,15 @@ impl MatchEvent for App {
                         app::l0_widgets::parse_tap(target).unwrap_or_default();
                     let (l0_key, l0_event, l0_value) =
                         (l0_key.as_str(), l0_event.as_str(), l0_value.as_str());
+                    // The motion that just paged a card is not also a tap on
+                    // the row it swept across (see L0_SWIPE_AT).
+                    let swept = L0_SWIPE_AT.with(|t| {
+                        t.get().is_some_and(|at| at.elapsed().as_millis() < 300)
+                    });
+                    if swept {
+                        log!("[l0] tap suppressed: it was the swipe");
+                        continue;
+                    }
                     // A keystroke's state is applied NOW; its re-render is coalesced.
                     let is_keystroke = target.contains("\"c\":1");
                     match app::l0_card::tap(cx, card_id.unwrap_or(0), l0_key, l0_event, l0_value) {
@@ -8872,6 +8888,7 @@ impl AppMain for App {
                             {
                                 let ev =
                                     if dx < 0.0 { "swipe_left" } else { "swipe_right" };
+                                L0_SWIPE_AT.with(|t| t.set(Some(std::time::Instant::now())));
                                 self.l0_gesture(cx, ev);
                             }
                         }

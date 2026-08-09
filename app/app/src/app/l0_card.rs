@@ -209,13 +209,15 @@ fn fetched_rows(
     data: &serde_json::Value,
     store: &splash_ui_l0::InstanceStore,
 ) -> Option<Vec<serde_json::Value>> {
-    // One capability for now, and named rather than inferred: `sys.search` is the
-    // only list the backend answers by index today. A table here beats a guess.
+    // Named rather than inferred: these are the lists the backend answers by
+    // index today. A table here beats a guess.
     let (key_field, count_helper) = match request.helper.as_str() {
         // Keyed on the LABEL, because the name is not unique: a search for
         // "Stanford" answers five rows all named that, and identity has to be the
         // line that tells them apart.
         "sys.search" => ("label", "sys.searchnum"),
+        // A ticker IS its identity; the stock add-flow searches these.
+        "sys.symbol_search" => ("ticker", "sys.symbol_searchnum"),
         _ => return None,
     };
     let query = match request.args.iter().find(|(n, _)| n == "query")?.1.clone() {
@@ -255,7 +257,10 @@ fn fetched_rows(
         .filter(|n| *n >= 0.0)? as usize;
     let mut rows = Vec::new();
     for i in 0..found.min(cap) {
-        let Some(key) = eval_text(cx, &format!("sys.search({query:?}, {i}, {key_field:?})")) else {
+        let Some(key) = eval_text(
+            cx,
+            &format!("{}({query:?}, {i}, {key_field:?})", request.helper),
+        ) else {
             break;
         };
         // A blank key past the last hit, or one still loading: stop rather than

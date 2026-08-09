@@ -458,14 +458,18 @@ mod tests {
         }
         let mut out = Vec::new();
         taps(&build_card(STOCK, stock_data()), &mut out);
-        // TWO since the card gained its §5.12 layer: the mover row opens the
-        // quote, and the ☆ chip on it saves the ticker. Same instance key on
-        // both, because both name the same row.
-        assert_eq!(out.len(), 2, "a row tap and its star: {out:?}");
+        // THREE since the add flow: the header's + chip (its own key), the
+        // mover row that opens the quote, and the ☆ chip that saves the
+        // ticker — those two share an instance key, naming the same row.
+        assert_eq!(out.len(), 3, "the + chip, a row tap and its star: {out:?}");
         for t in &out {
             assert!(t.starts_with("l0:"), "the L0 prefix marks it: {out:?}");
-            assert!(t.contains("for#0[NVDA]"), "instance key lost: {out:?}");
         }
+        assert_eq!(
+            out.iter().filter(|t| t.contains("for#0[NVDA]")).count(),
+            2,
+            "the row and its star carry the row's key: {out:?}"
+        );
         assert!(
             out.iter().any(|t| t.contains("open_quote"))
                 && out.iter().any(|t| t.contains("\"e\":\"keep\"")),

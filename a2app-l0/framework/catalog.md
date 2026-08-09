@@ -11,7 +11,7 @@ something this document promised.
 |---|---|
 | `AqiContour` | `lat: path`, `lon: path`, `span: number` |
 | `Card` | `on_tap: event`, `value: any` |
-| `Chip` | `text: text`, `on_tap: event`, `value: any`, `active: bool`, `tone: .normal \| .primary \| .danger` |
+| `Chip` | `text: text`, `on_tap: event`, `value: any`, `active: bool`, `tone: .normal \| .primary \| .danger`, `width: .fill \| .fit \| .day \| .rank \| .temp \| .label` |
 | `Col` | `align: .start \| .center \| .end`, `gap: number`, `width: width` |
 | `Field` | `text: path`, `placeholder: data`, `on_commit: event`, `on_change: event`, `width: width` |
 | `Grid` | `cols: number` |
