@@ -336,6 +336,7 @@ fn with_durable(source: &str, data: &serde_json::Value) -> serde_json::Value {
         let key_field = match collection {
             "cities" => "name",
             "reading" => "id",
+            "topics" => "name",
             _ => "ticker",
         };
         let rows: Vec<serde_json::Value> = super::user_store::collection(collection)
