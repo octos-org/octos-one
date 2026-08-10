@@ -122,8 +122,56 @@ structure and meaning.
 
 ---
 
-## Composing a new app
+## Composing a NEW app (AMA composer)
 
-If no app covers a multi-domain request, write `apps/<a>-<b>/app.md` merging the
-parent apps' requirements and binding data only through capabilities the catalog
-already lists. Create a new directory; never modify an existing app's files.
+This section is the ROUTER's, not a card agent's. A card agent never composes.
+
+One request renders ONE card from ONE app. "Route each separately" and "two
+cards" are not actions that exist — so a request spanning two domains can only be
+answered by an app that covers both. Route to the composed app that already does;
+if none does, compose it now. Never ask the user to choose, never offer options,
+never reply with a question: your whole output is the writes, then one decision
+line.
+
+1. Name the parents whose data covers the request, primary first: `<a>`, `<b>`.
+   The order matters — the composed app inherits the PRIMARY parent's identity.
+2. Write `apps/<a>-<b>/app.md`: a requirements spec, no full card.
+3. Reply `compose <a>-<b> — <reason>`.
+
+`apps/weather-activity/app.md` is the worked example. Read it before writing one.
+
+**What you are specifying is an L0 CARD.** Not a layout, not HTML, not a DSL
+template. The spec says which sources the card declares, which state it keeps,
+what a tap does and which roles show it — in the vocabulary of `framework/l0.md`
+and `framework/catalog.md`, and nothing outside them. A spec that asks for a
+colour, a pixel size or a helper the catalog does not list produces a card that is
+REFUSED, and the agent following your spec has no way to know why.
+
+You do not write an exemplar. The primary parent's card is shown to the agent as
+the worked example, which is another reason the order of the parents is a
+decision and not a spelling.
+
+**Merge the parents' blocks; never redesign them.** Reference each reused block
+and restate its mandatory bindings briefly. A composed app that reinvents its
+parent's current-conditions block is a second weather app with a different name
+and a different set of bugs.
+
+**The hard part, and the one thing to get right: a card that CHOOSES between two
+answers needs a decision TREE.** L0 has no `&&` and no `else` — deliberately. Two
+guards that can both be true both render, so a card built from overlapping
+conditions shows "good day to be outside" directly above "better indoors". Write
+complementary siblings that partition one value at each level:
+
+```
+when now.precip >= 40 { wet }
+when now.precip < 40 {
+  when air.aqi >= 100 { smoggy }
+  when air.aqi < 100 { fine }
+}
+```
+
+Each leaf is a named `view`, so each verdict is written once. State the ORDER the
+conditions are tested in and why — the order is the app's reasoning, and it is the
+thing a conjunction used to hide.
+
+Create a NEW `<a>-<b>/` directory. Never modify an existing app's files.

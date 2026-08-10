@@ -74,6 +74,17 @@ const L0_APPS: &[(&str, &str, &str)] = &[
      include_str!("../../../a2app-l0/apps/chart/exemplar.card")),
     ("youtube", include_str!("../../../a2app-l0/apps/youtube/app.md"),
      include_str!("../../../a2app-l0/apps/youtube/exemplar.card")),
+    // `weather-activity` is DELIBERATELY NOT HERE YET, and its spec and exemplar
+    // in `a2app-l0/apps/weather-activity/` say why. The card is valid L0 and its
+    // verdict cannot render: it branches on live SCALARS (`now.precip`, `air.aqi`)
+    // and guards are evaluated at realize time against injected data, where only
+    // rows (`fetched_rows`) and `sys.gps` are present. Live scalars are resolved
+    // lazily by the kit at draw time instead — so `Tile(value: now.precip)` drew
+    // 100% on the 6T while `when now.precip >= 40` compared against nothing and
+    // both complementary guards were false. Registering it would put a card on
+    // screen with a correct header and no answer, which is the one failure §1.1
+    // exists to prevent. It needs the fields a card GUARDS on resolved before
+    // realize; until then the app keeps its pre-L0 path.
     // COMPOSED, and the first app above L0. `city-picks` compares the user's
     // saved cities, which needs one arithmetic expression — how much warmer it
     // feels than it is — and that is L1. Everything else about it is L0.
@@ -97,7 +108,10 @@ const L0_APPS: &[(&str, &str, &str)] = &[
 /// and drawn. `valid` does not carry it: an L1 card with no diagnostics is valid at
 /// L1, which is exactly the case that needed catching.
 fn l0_level_for(domain: &str) -> Option<splash_ui_l0::Level> {
-    let (_, _, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == domain)?;
+    // The same resolution the prompt uses, so a composed app is approved for the
+    // level its stand-in exemplar demonstrates rather than for nothing. Approving
+    // it for nothing would have let `l0_level_refusal` pass anything through.
+    let (_, exemplar) = l0_spec_and_exemplar(domain)?;
     Some(splash_ui_l0::check_ui_l0_named(domain, exemplar).level)
 }
 
@@ -121,8 +135,33 @@ fn l0_level_refusal(domain: &str, report: &splash_ui_l0::UiL0Report) -> Option<S
     })
 }
 
+/// The spec and worked exemplar an L0 prompt is built from.
+///
+/// A baked app has both. A RUNTIME-COMPOSED app (`<a>-<b>`, written by the AMA
+/// into the on-device tree) has only a spec — nobody authored it an exemplar —
+/// and without one it fell through to the pre-L0 DSL prompt, so every app the
+/// AMA composed came out non-L0 however carefully its spec was written.
+///
+/// Its PRIMARY PARENT's exemplar stands in. The composed id names its parents,
+/// the framework says a composed app inherits the primary parent's identity, and
+/// an exemplar is a worked example of the LANGUAGE more than of the app — so
+/// weather's card is the right thing to show an agent writing `weather-activity`.
+/// Only when that parent is itself an L0 app: otherwise there is nothing to show
+/// and the caller should keep its old path.
+fn l0_spec_and_exemplar(domain: &str) -> Option<(String, &'static str)> {
+    if let Some((_, spec, exemplar)) = L0_APPS.iter().find(|(d, _, _)| *d == domain) {
+        return Some(((*spec).to_owned(), exemplar));
+    }
+    // Composed, and only composed: a bare unknown domain is not one.
+    let (primary, _) = domain.split_once('-')?;
+    let (_, _, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == primary)?;
+    let spec = app_cards_root_dir()
+        .and_then(|r| std::fs::read_to_string(r.join("apps").join(domain).join("app.md")).ok())?;
+    Some((spec, exemplar))
+}
+
 fn l0_prompt_for(domain: &str, intent: &str) -> Option<String> {
-    let (_, spec, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == domain)?;
+    let (spec, exemplar) = l0_spec_and_exemplar(domain)?;
     // The level comes from the EXEMPLAR, judged by the same checker that will
     // judge what the model writes — not from a fourth list to keep in sync.
     //
@@ -10315,6 +10354,38 @@ mod tests {
         assert!(!p.contains("```runplan"), "no longer asks for a plan");
         assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the L0 path");
         assert!(p.contains("REFUSED"), "tells the model an off-catalog name is refused");
+    }
+
+    /// A composed app resolves to a spec AND a worked exemplar, or to nothing.
+    ///
+    /// The exemplar is what makes an app take the L0 prompt at all, so a composed
+    /// app without one silently generated a pre-L0 card. The fallback is narrow on
+    /// purpose: only an id whose PRIMARY parent is an L0 app, so a stray hyphen in
+    /// an unknown domain does not start borrowing weather's exemplar.
+    #[test]
+    fn a_composed_app_borrows_its_primary_parents_exemplar() {
+        // Baked apps answer with their own, hyphenated id or not.
+        // A baked app answers with its own spec, hyphenated id or not.
+        let (spec, _) = super::l0_spec_and_exemplar("city-picks").expect("city-picks is baked");
+        assert!(
+            !spec.is_empty(),
+            "a baked composed app must get its OWN spec, not a parent's"
+        );
+        // A parent that is not an L0 app lends nothing.
+        assert!(
+            super::l0_spec_and_exemplar("web-something").is_none(),
+            "`web` has no L0 exemplar to lend"
+        );
+        assert!(
+            super::l0_spec_and_exemplar("nonsense").is_none(),
+            "an unknown domain with no hyphen resolves to nothing"
+        );
+        // And the level a composed app is approved for is its exemplar's, not
+        // absent — otherwise `l0_level_refusal` waves everything through.
+        assert!(
+            super::l0_level_for("city-picks").is_some(),
+            "a composed app must have an approved level"
+        );
     }
 
     /// The language reference names exactly the themes the checker admits.
