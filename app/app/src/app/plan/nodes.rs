@@ -170,7 +170,7 @@ pub fn encode(root: &Node) -> Vec<u8> {
 /// a hand-written stand-in.
 pub fn try_plain(plan_json: &str) -> Result<String, String> {
     let v: serde_json::Value = serde_json::from_str(plan_json)
-        .map_err(|e| format!("plan is not JSON ({e}); first 80 bytes: {:?}", &plan_json.chars().take(80).collect::<String>()))?;
+        .map_err(|e| format!("plan is not JSON ({e}); first 80 bytes: {:?}", plan_json.chars().take(80).collect::<String>()))?;
     let kind = v
         .get("plan")
         .and_then(|k| k.as_str())
