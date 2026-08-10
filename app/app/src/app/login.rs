@@ -386,6 +386,14 @@ fn parse_llm_provision_config(payload: &str) -> Result<LlmProvisionConfig, Strin
 }
 
 /// The octos provider `family_id` → the env var octos reads its key from.
+///
+/// These must match `octos-llm/src/registry/*`'s `api_key_env`, because octos
+/// looks the key up by ITS name, not by ours. The fallback is
+/// `<FAMILY>_API_KEY` uppercased, which is right for families whose name is a
+/// single word and WRONG for any that is hyphenated — `moonshot-coding` came
+/// out as `MOONSHOT-CODING_API_KEY`: not a legal env var, and not one of the
+/// three names that family reads. A coding-plan key provisioned by QR landed
+/// somewhere nothing would ever look.
 fn key_env_for(family: &str) -> String {
     match family {
         "zai" => "ZAI_API_KEY".into(),
@@ -394,7 +402,13 @@ fn key_env_for(family: &str) -> String {
         "anthropic" => "ANTHROPIC_API_KEY".into(),
         "gemini" => "GEMINI_API_KEY".into(),
         "openrouter" => "OPENROUTER_API_KEY".into(),
-        other => format!("{}_API_KEY", other.to_uppercase()),
+        // The subscription coding plans, whose keys the plain endpoints reject.
+        "moonshot-coding" | "kimi-coding" => "KIMI_CODING_API_KEY".into(),
+        "moonshot" => "MOONSHOT_API_KEY".into(),
+        "zai-coding" => "ZAI_CODING_API_KEY".into(),
+        // A hyphen cannot appear in an env var name, so it becomes an
+        // underscore rather than an unusable key nobody reads.
+        other => format!("{}_API_KEY", other.to_uppercase().replace('-', "_")),
     }
 }
 
@@ -607,5 +621,56 @@ mod tests {
         assert_eq!(profile["config"]["custom"], "keep-me");
 
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod qr_provision_audit {
+    use super::*;
+
+    /// What a QR actually writes, for the family this device is running.
+    ///
+    /// Not a behaviour change — an audit. The coding-plan route needs a
+    /// base_url and reads `KIMI_API_KEY`; this records what the QR path
+    /// supplies so a gap is visible rather than discovered on a phone.
+    #[test]
+    fn what_a_coding_plan_qr_provisions() {
+        let dir = std::env::temp_dir().join(format!("qr-audit-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("_main.json");
+        let payload = r#"{"llm_family":"moonshot-coding","llm_model":"k3","llm_key":"sk-kimi-TEST"}"#;
+        let cfg = parse_llm_provision_config(payload).expect("payload parses");
+        apply_llm_config_at_path(&path, &cfg.llm_family, cfg.llm_model.as_deref(), Some(&cfg.llm_key))
+            .expect("writes");
+        let v: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let primary = &v["config"]["llm"]["primary"];
+        eprintln!("primary  = {primary}");
+        eprintln!("env_vars = {}", v["config"]["env_vars"]);
+        eprintln!("key_env  = {}", key_env_for("moonshot-coding"));
+        assert_eq!(primary["family_id"], "moonshot-coding");
+        assert_eq!(primary["model_id"], "k3");
+        // The key must land under a name octos actually reads for this family
+        // (registry: api_key_env KIMI_CODING_API_KEY, aliases KIMI_API_KEY /
+        // MOONSHOT_API_KEY). No route is needed — the family carries
+        // default_base_url https://api.kimi.com/coding/v1.
+        assert_eq!(
+            v["config"]["env_vars"]["KIMI_CODING_API_KEY"], "sk-kimi-TEST",
+            "a coding-plan key must be readable by octos: {}", v["config"]["env_vars"]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// No family may produce a name that cannot be an environment variable.
+    #[test]
+    fn no_family_yields_an_illegal_env_var() {
+        for f in ["zai", "deepseek", "moonshot-coding", "kimi-coding", "zai-coding",
+                  "some-new-vendor", "openrouter"] {
+            let e = key_env_for(f);
+            assert!(
+                !e.contains('-') && e.chars().all(|c| c.is_ascii_uppercase() || c == '_'
+                    || c.is_ascii_digit()),
+                "{f} -> {e} is not a legal env var name"
+            );
+        }
     }
 }
