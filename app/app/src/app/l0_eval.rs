@@ -317,7 +317,15 @@ mod tests {
     use splash_ui_l0::{kit, realize, RealizeLimits};
 
     /// The kit and the cards, read from the repositories that own them.
-    const KIT: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+    // The kit as the DEVICE assembles it: default palette, then the body. A theme
+    // is a palette prefix (see `l0_card::kit_for`).
+    fn kit() -> String {
+        format!(
+            "{}\n{}",
+            include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash"),
+            include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash"),
+        )
+    }
     const NEWS: &str = include_str!("../../../../../Splash/crates/splash-ui-l0/tests/fixtures/news.card");
     const STOCK: &str = include_str!("../../../../../Splash/crates/splash-ui-l0/tests/fixtures/stock.card");
     const WEATHER: &str = include_str!("../../../../../Splash/crates/splash-ui-l0/tests/fixtures/weather.card");
@@ -330,7 +338,7 @@ mod tests {
             report.diagnostics
         );
         let root = report.root.expect("a realized tree");
-        let src = format!("{KIT}\n{}", kit::lower(&root));
+        let src = format!("{}\n{}", kit(), kit::lower(&root));
         super::build_without_capabilities(&src).expect("the lowered card evaluated to nil")
     }
 
@@ -534,7 +542,7 @@ mod tests {
             STOCK, &mut store, "root", "open_quote",
             Some(&serde_json::Value::String("NVDA".into())));
         let r = splash_ui_l0::realize_with_state(STOCK, &stock_data(), &store, RealizeLimits::default());
-        let src = format!("{KIT}\n{}", kit::lower(&r.root.expect("root")));
+        let src = format!("{}\n{}", kit(), kit::lower(&r.root.expect("root")));
 
         let bare = super::build_without_capabilities(&src).expect("still evaluates");
         let mut out = Vec::new();
@@ -598,7 +606,7 @@ mod nav_dsl {
     const NAV: &str = include_str!(
         "../../../../../Splash/crates/splash-ui-l0/tests/fixtures/nav.card"
     );
-    const KIT: &str = super::super::l0_card::KIT_SRC;
+    fn kit() -> String { super::super::l0_card::kit_src() }
 
     fn data(screen: &str) -> serde_json::Value {
         serde_json::json!({
@@ -624,7 +632,7 @@ mod nav_dsl {
             let report = realize(NAV, &data(screen), RealizeLimits::default());
             assert!(report.diagnostics.is_empty(), "{:#?}", report.diagnostics);
             let root = report.root.expect("a realized tree");
-            let src = format!("{KIT}\n{}", kit::lower(&root));
+            let src = format!("{}\n{}", kit(), kit::lower(&root));
             let tree = super::build_without_capabilities(&src)
                 .expect("the lowered card evaluated to nil");
             let dsl = super::super::l0_widgets::to_dsl(&tree);
@@ -683,7 +691,7 @@ mod kit_palette {
             .expect("realizes");
         let src = format!(
             "{}\n{}",
-            super::super::l0_card::KIT_SRC,
+            super::super::l0_card::kit_src(),
             kit::lower(&root)
         );
         let tree = super::build_without_capabilities(&src).expect("evaluated to nil");
@@ -748,7 +756,7 @@ mod numeric_text {
             lowered.contains("l0_value(42)"),
             "the probe must actually carry a bare number:\n{lowered}"
         );
-        let src = format!("{}\n{}", super::super::l0_card::KIT_SRC, lowered);
+        let src = format!("{}\n{}", super::super::l0_card::kit_src(), lowered);
         let tree = super::build_without_capabilities(&src).expect("evaluated to nil");
 
         fn words(n: &splash_node::UiNode, out: &mut Vec<String>) {

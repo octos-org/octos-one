@@ -146,6 +146,19 @@ fixed. Do not reach for L1 anywhere the spec does not ask for it.",
 Everything you would reach for those with has a declared form.",
         ),
     };
+    // The request named a LOOK. A card may not describe one, but it may declare
+    // which catalogued mood it is in, and the kit answers that with a palette. Told
+    // to the agent explicitly because the alternative — hoping it infers `theme`
+    // from a word in the request — fails silently: the card renders in the default
+    // and looks entirely correct.
+    let theme_hint = match detect_theme(intent) {
+        Some(theme) => format!(
+            "\n\nThe request asks for the **{theme}** look. Declare `theme {theme}` \
+at the top level of the card — that is the ONLY way to ask for it, and it is not a \
+colour."
+        ),
+        None => String::new(),
+    };
     Some(format!(
         "You ARE the {domain} app agent. Everything you need is INLINED BELOW — do \
 NOT claim anything is missing, do NOT read or fetch files, and do NOT ask questions.\n\n\
@@ -157,7 +170,7 @@ Every one comes from a declared `source`. A card with a number typed into it is 
 the moment the world changes, and nothing downstream can tell it from a card that is \
 right.\n\n\
 NEVER write a colour, a font size or a pixel dimension. You say what a thing IS; a \
-theme decides what it looks like.\n\n\
+theme decides what it looks like.{theme_hint}\n\n\
 Emit EXACTLY ONE ```runl0 fenced block as your ENTIRE answer — the complete card, no \
 prose before or after, never truncated. A card that names anything outside the catalog \
 is REFUSED and the reasons are shown instead of your card.\n\n\
@@ -193,29 +206,37 @@ const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire ca
 /// so a "dark/glass/minimal/photo weather" request
 /// reproduces that style precisely without needing the profile MEMORY updated.
 /// The default (no style keyword) still uses the injected canonical exemplar.
-const WEATHER_STYLE_DARK: &str = include_str!("../../../a2app/apps/weather/exemplars/style-dark.splash");
-const WEATHER_STYLE_LIGHT: &str = include_str!("../../../a2app/apps/weather/exemplars/style-light.splash");
-const WEATHER_STYLE_GLASS: &str = include_str!("../../../a2app/apps/weather/exemplars/style-glass.splash");
-const WEATHER_STYLE_IMMERSIVE: &str = include_str!("../../../a2app/apps/weather/exemplars/style-immersive.splash");
 
 /// Map a weather request to an explicit style template, if one is named. Bare
 /// `dark` is treated as a style keyword (a weather intent never means "is it
 /// dark"); `light` is required to be qualified (mode/theme/style/minimal) so it
 /// is never confused with "light rain".
-fn detect_weather_style(intent: &str) -> Option<(&'static str, &'static str)> {
+/// The theme the request names, as a catalogued L0 mood — or `None`.
+///
+/// A word like "dark" or "glass" is the user asking for a LOOK, which an L0 card
+/// may not describe. It may declare a `theme`, so this maps the words onto that
+/// closed set and `l0_prompt_for` asks the agent to declare it. Detected here
+/// rather than left to the model because the words are a fixed vocabulary and a
+/// missed one is silent: the card renders in the default and looks correct.
+fn detect_theme(intent: &str) -> Option<&'static str> {
     let q = intent.to_lowercase();
     let has = |ss: &[&str]| ss.iter().any(|s| q.contains(s));
-    if has(&["glass", "vibrant", "gradient", "毛玻璃", "玻璃"]) {
-        Some(("glass", WEATHER_STYLE_GLASS))
-    } else if has(&["minimal", "简约", "浅色", "light mode", "light theme", "light style", "clean"]) {
-        Some(("light", WEATHER_STYLE_LIGHT))
-    } else if has(&["dark", "深色"]) {
-        Some(("dark", WEATHER_STYLE_DARK))
-    } else if has(&["immersive", "photo", "大图"]) {
-        Some(("immersive (photo)", WEATHER_STYLE_IMMERSIVE))
+    let name = if has(&["glass", "vibrant", "gradient", "\u{6bdb}\u{73bb}\u{7483}", "\u{73bb}\u{7483}"]) {
+        "glass"
+    } else if has(&[
+        "minimal", "\u{7b80}\u{7ea6}", "\u{6d45}\u{8272}", "light mode", "light theme", "light style", "clean",
+    ]) {
+        "light"
+    } else if has(&["dark", "\u{6df1}\u{8272}"]) {
+        "dark"
+    } else if has(&["immersive", "photo", "\u{5927}\u{56fe}"]) {
+        "photo"
     } else {
-        None
-    }
+        return None;
+    };
+    // Never offer a mood the language does not admit: the card would be refused
+    // for a word this function chose.
+    splash_ui_l0::catalog::theme(name)
 }
 
 /// Live channels the youtube agent can offer instantly. (handle, label)
@@ -828,29 +849,16 @@ fn app_splash_router_for(domain: &str, intent: &str) -> String {
     // why the L0 spec says "You are NOT the search engine. Never write a video id
     // into a card." Removed, so youtube reaches `l0_prompt_for` like every other
     // app and its card DECLARES `sys.video(query: state.q, …)`.
-    if domain == "weather" {
-        if let Some((style_name, style_dsl)) = detect_weather_style(intent) {
-            return format!(
-                "You ARE the weather app agent and you OWN the card generation. The user \
-asked for the **{style_name}** weather style. Reproduce the EXACT visual style \
-(colors, fonts, chrome, layout) of the TEMPLATE below. Rules:\n\
-- If the request names ONE city, emit that city in this style. If the template \
-shows MULTIPLE demo cities (e.g. Shanghai/Tokyo/SF), keep only ONE card — the \
-requested city — reusing one demo card's block as the pattern. If NO city is \
-named, keep the template's multi-city layout as-is.\n\
-- Use the requested city's REAL decimal lat/lon in EVERY `sys.weather(<lat>, \
-<lon>, \"...\")` call, and set the condition label + WeatherIcon `draw_bg.cond` to \
-the real current condition.\n\
-- NEVER hardcode a number — every temperature/humidity/etc stays a `sys.weather` \
-call exactly as in the template (the runtime shows whole-degree temps for you).\n\
-- Keep the bundled-font TextStyle blocks verbatim (they load Roboto).\n\
-Emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the \
-COMPLETE card DSL, no prose, never truncated.\n\n----- {style_name} STYLE TEMPLATE \
------\n{style_dsl}\n----- END TEMPLATE -----\n\nUser request: {intent}"
-            );
-        }
-        // no explicit style → fall through to the default (injected canonical exemplar)
-    }
+    // A styled weather request USED to return a hand-authored Splash-DSL template
+    // from here, ahead of the L0 branch — so "dark weather tokyo" was served the
+    // pre-L0 path. Measured on the 6T: it emitted `runsplash`, took ~3.5 minutes
+    // against ~1 for an L0 card, and the log said `runsplash card has no // name:
+    // line — not saved`, so it did not survive a restart either.
+    //
+    // Style is a THEME the card declares now — `theme dark` — which the component
+    // kit answers with a palette (§1.1's middle layer). That keeps §4 intact: the
+    // card names a mood from a closed catalogue and still never names a colour,
+    // and it means one code path renders every weather card.
     if domain == "web" {
         return format!(
             "You ARE the web app agent and you OWN the entire card generation. Your \
@@ -10307,6 +10315,38 @@ mod tests {
         assert!(!p.contains("```runplan"), "no longer asks for a plan");
         assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the L0 path");
         assert!(p.contains("REFUSED"), "tells the model an off-catalog name is refused");
+    }
+
+    /// The language reference names exactly the themes the checker admits.
+    ///
+    /// The closed set lives in `splash_ui_l0::catalog::THEMES` and the agents
+    /// only ever learn it from the baked `framework/l0.md`. Those are in
+    /// different repositories; this binary is the one place both are visible. A
+    /// theme documented but not admitted gets cards REFUSED for following the
+    /// reference, and one admitted but not documented is a look no agent can ask
+    /// for — both silent.
+    #[test]
+    fn the_language_reference_lists_every_admitted_theme() {
+        for theme in splash_ui_l0::catalog::THEMES {
+            assert!(
+                super::L0_LANGUAGE.contains(&format!("`{theme}`")),
+                "the checker admits theme {theme:?} and framework/l0.md never names it"
+            );
+        }
+        // And the reference must not promise one the checker refuses. The `theme`
+        // section is the only place moods are written as `theme <name>`.
+        for line in super::L0_LANGUAGE.lines() {
+            if let Some(rest) = line.trim().strip_prefix("theme ") {
+                let named = rest.split_whitespace().next().unwrap_or("");
+                if named.starts_with('<') {
+                    continue; // `theme <mood>` — the placeholder, not a name
+                }
+                assert!(
+                    splash_ui_l0::catalog::theme(named).is_some(),
+                    "framework/l0.md shows `theme {named}`, which the checker refuses"
+                );
+            }
+        }
     }
 
     /// Every exemplar is a card the checker accepts, at the level it declares.

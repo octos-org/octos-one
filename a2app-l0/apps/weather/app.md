@@ -3,6 +3,11 @@
 Current conditions and a forecast for a place. Use it for any weather request,
 including a bare city name ("Kyoto", "东京天气").
 
+A request may also name a LOOK — "dark weather tokyo", "minimal weather",
+"毛玻璃天气", "photo weather shanghai". That is a `theme` declaration (see the
+language reference, §4b) and nothing else: same card, same sources, same views,
+one extra line. Never a colour, and never a second card variant.
+
 `exemplar.card` meets every requirement below.
 
 ---

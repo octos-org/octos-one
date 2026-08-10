@@ -36,11 +36,51 @@ pub static L0_READER_PLACED: AtomicBool = AtomicBool::new(false);
 
 /// The theme kit, baked in. §1.1's middle layer: the card names roles and this
 /// answers them, so no colour or size is decided in Rust.
-const KIT: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+///
+/// The BODY defines no colours. A palette is concatenated in front of it, chosen
+/// by the theme the card declares — so `theme light` in an L0 card reaches the
+/// look without the card ever naming one. It has to be a PREFIX: a function body
+/// resolves a name at its declaration point, so a palette appended after the kit
+/// would not reach the roles that read it.
+const KIT_BODY: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+
+/// Every mood the L0 catalog admits, and the palette that answers it. The names
+/// are `splash_ui_l0::catalog::THEMES`; `l0_themes_are_all_answered` pins the two
+/// together, because a mood with no palette here renders in the default and
+/// looks correct.
+const PALETTES: &[(&str, &str)] = &[
+    ("dark", include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash")),
+    ("light", include_str!("../../../../../Splash-Makepad/components/l0/_palette_light.splash")),
+    ("glass", include_str!("../../../../../Splash-Makepad/components/l0/_palette_glass.splash")),
+    ("photo", include_str!("../../../../../Splash-Makepad/components/l0/_palette_photo.splash")),
+];
+
+/// The kit as this host assembles it for `source`: the card's declared mood, or
+/// dark when it declares none.
+fn kit_for(source: &str) -> String {
+    let theme = splash_ui_l0::card_theme(source);
+    let palette = theme
+        .as_deref()
+        .and_then(|t| PALETTES.iter().find(|(n, _)| *n == t))
+        // A declared theme the parser admitted but this kit has no palette for.
+        // Falling back is right — a card should still draw — but it is a drift
+        // between the catalog and the kit and says so out loud.
+        .or_else(|| {
+            if let Some(t) = theme.as_deref() {
+                makepad_widgets::log!("[l0] no palette for theme {t:?}; using dark");
+            }
+            PALETTES.first()
+        })
+        .map(|(_, src)| *src)
+        .unwrap_or("");
+    format!("{palette}\n{KIT_BODY}")
+}
 
 /// The kit source, for tests that need to reproduce the DEVICE's exact chain.
 #[cfg(test)]
-pub(super) const KIT_SRC: &str = KIT;
+pub(super) fn kit_src() -> String {
+    kit_for("")
+}
 
 /// Realize, lower to role calls, evaluate, and render as widgets.
 ///
@@ -115,7 +155,7 @@ fn render_through_kit(
     // What each source's fetch is doing, for the NEXT realize to read as `$state`.
     // After realize because a source's arguments are only resolved here.
     observe_source_states(cx, source, &root);
-    let src = format!("{KIT}\n{}", splash_ui_l0::kit::lower(&root));
+    let src = format!("{}\n{}", kit_for(source), splash_ui_l0::kit::lower(&root));
     // With capabilities: the kit lowers a source this backend can answer into a
     // `sys.*` call, and on a bare VM that call is undefined — the concatenation
     // around it yields `$[Error:WrongValue]`, which then draws as the price.
@@ -185,7 +225,9 @@ pub fn render(
 /// question outside of rendering. A text node is the smallest thing `build` will
 /// return, and its `text` is the answer.
 fn eval_text(cx: &mut makepad_widgets::Cx, expr: &str) -> Option<String> {
-    let src = format!("{KIT}\nreturn {{t: \"text\", text: \"\" + {expr}}}");
+    // One expression, no roles and therefore no colours — the default
+    // palette keeps the VM identical to the rendering path.
+    let src = format!("{}\nreturn {{t: \"text\", text: \"\" + {expr}}}", kit_for(""));
     super::l0_eval::build_with_capabilities(cx, &src)?.attrs.text
 }
 
@@ -690,7 +732,11 @@ fn tap_inner(
             .join("; "));
     };
     let body = {
-        let src = format!("{KIT}\n{}", splash_ui_l0::kit::lower(&root));
+        let src = format!(
+            "{}\n{}",
+            kit_for(&session.source),
+            splash_ui_l0::kit::lower(&root)
+        );
         let tree = super::l0_eval::build_with_capabilities(cx, &src)
             .ok_or_else(|| "the lowered card evaluated to nil".to_owned())?;
         super::l0_widgets::to_dsl(&tree)
@@ -746,6 +792,52 @@ mod exemplar_drift {
 
 #[cfg(test)]
 mod tests {
+    /// Every mood the L0 catalog admits has a palette in this kit.
+    ///
+    /// The card language and the kit are in different repositories, so nothing
+    /// but this compares them. A theme the parser accepts and the kit has no
+    /// palette for falls back to dark and renders a card that looks entirely
+    /// correct — the §1.1 failure, reached by adding one string to a list.
+    #[test]
+    fn l0_themes_are_all_answered() {
+        for theme in splash_ui_l0::catalog::THEMES {
+            assert!(
+                super::PALETTES.iter().any(|(n, _)| n == theme),
+                "the catalog admits theme {theme:?} and this kit has no palette for it"
+            );
+        }
+        for (name, src) in super::PALETTES {
+            assert!(
+                splash_ui_l0::catalog::theme(name).is_some(),
+                "this kit ships a palette for {name:?}, which the catalog does not admit"
+            );
+            assert!(
+                src.contains("let l0_base"),
+                "palette {name:?} defines no page colour"
+            );
+        }
+    }
+
+    /// A declared theme reaches the assembled kit; an absent one takes dark.
+    #[test]
+    fn a_declared_theme_selects_its_palette() {
+        let light = super::kit_for("theme light\nview root Rule()\n");
+        assert!(
+            light.contains("#f2f2f7"),
+            "a card declaring `theme light` must be lowered against the light palette"
+        );
+        let default = super::kit_for("view root Rule()\n");
+        assert!(
+            default.contains("#0a0e14"),
+            "a card declaring no theme must take dark"
+        );
+        // And the palette must come FIRST, or the roles never see it.
+        assert!(
+            default.find("let l0_base").unwrap() < default.find("fn l0_surface").unwrap(),
+            "the palette must precede the roles that read it"
+        );
+    }
+
     /// The branch point is linked, not merely resolved.
     ///
     /// A path dependency that resolves can still fail to compile or link, and
