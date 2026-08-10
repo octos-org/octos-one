@@ -7926,22 +7926,35 @@ impl MatchEvent for App {
                 .downcast_ref::<makepad_widgets::makepad_platform::event::NativeQrScanned>()
             {
                 let json = scan.json.clone();
-                match crate::app::login::apply_provision_config_json(&json) {
+                // A TOAST, not the status label: that label lives in the
+                // desktop header, which this app hides ("no header chrome"),
+                // so a scan reported success to a surface the phone never
+                // draws — the user saw nothing and could not tell a good
+                // scan from a bad one. Measured on the OnePlus 6.
+                let (kind, message) = match crate::app::login::apply_provision_config_json(&json) {
                     Ok(what) => {
                         log::info!("QR provisioned LLM: {what}");
                         self.connect_transport(cx); // respawn kernel → reads new _main.json
                         self.clear_chat(cx);
-                        self.ui
-                            .label(cx, ids!(status_label))
-                            .set_text(cx, &format!("LLM configured · {what}"));
+                        (
+                            octos_app_store::toasts::ToastKind::ReconnectSuccess,
+                            format!("✓ {what}"),
+                        )
                     }
                     Err(e) => {
                         log::warn!("QR provision failed: {e}");
-                        self.ui
-                            .label(cx, ids!(status_label))
-                            .set_text(cx, &format!("QR error: {e}"));
+                        (
+                            octos_app_store::toasts::ToastKind::Error,
+                            format!("QR error: {e}"),
+                        )
                     }
+                };
+                if let Ok(mut st) = APP_STATE.write() {
+                    st.toasts
+                        .push(octos_app_store::toasts::Toast::new(kind, message.clone()));
                 }
+                self.ui.label(cx, ids!(status_label)).set_text(cx, &message);
+                self.sync_toasts(cx);
             }
         }
 
