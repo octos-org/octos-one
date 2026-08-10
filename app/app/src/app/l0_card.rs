@@ -1214,6 +1214,26 @@ pub(crate) fn quiet_card() -> String {
         .to_string()
 }
 
+/// What a REFUSED card looks like: a card that says something went wrong,
+/// without saying what.
+///
+/// The middle ground between the two states that were both wrong. A quiet
+/// surface is indistinguishable from "still loading", so a permanent failure
+/// read as a hang; the diagnostics are about generated source and are unusable
+/// by whoever is holding the phone (and "this card was refused" is the one
+/// thing never to show them). So: one plain line a person can act on —
+/// ask again — and the reason goes to the log, where it is useful.
+pub(crate) fn error_card() -> String {
+    format!(
+        "SolidView{{ width: Fill height: Fit flow: Down new_batch: true \
+         draw_bg.color: #0a0e14 padding: Inset{{left: 20 top: 54 right: 20 bottom: 24}}\n\
+         {}\n{}\n}}",
+        "  TextTitle{ text: \"Couldn't build that\" draw_text.color: #ffffff }",
+        "  TextBody{ width: Fill text: \"Ask again, or word it differently.\" \
+           draw_text.color: #ffffff99 }",
+    )
+}
+
 pub(crate) fn diagnostics_card(headline: &str, reasons: &[String]) -> String {
     let mut out = String::from(
         "SolidView{ width: Fill height: Fit flow: Down new_batch: true \
