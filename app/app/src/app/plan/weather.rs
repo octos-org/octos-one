@@ -50,6 +50,10 @@ pub struct Args {
     pub days: Option<u32>,
     #[serde(default)]
     pub tiles: Vec<String>,
+    /// Attractions to recommend, as NAMES. The one field here no tool can
+    /// answer; every row is still proved against live data at render time.
+    #[serde(default)]
+    pub places: Vec<String>,
 }
 
 // There is deliberately NO `condition` field, and no per-day `conditions` array.
@@ -67,6 +71,53 @@ pub struct Args {
 
 /// A condition word → the WeatherIcon shader index and a forecast-row emoji.
 
+
+/// Attractions the model recommends.
+///
+/// The names are the model's, and stay the model's: which sights are worth
+/// seeing is the one thing here that no tool answers, and a place NAME is
+/// already what the plan supplies for `place.query`. What the model may not do
+/// is attach anything it has not observed — no distance, no description, no
+/// opening time — so a row is a name and nothing else.
+///
+/// Three live resolvers were tried and all three failed, each for its own
+/// reason, and none is worth a fourth attempt:
+///   * `sys.geocode` is a gazetteer of POPULATED places — four of five Shanghai
+///     landmarks resolved to nothing.
+///   * Nominatim answers exactly this question and works from a laptop, but
+///     returns 403 to the device for every request even with the identifying UA
+///     its policy demands. A 403 is permanent, so every row went terminal.
+///   * Overpass by name matches OSM's LOCAL name (外滩, not "The Bund"), and a
+///     name regex over a city-sized radius times out (504).
+fn attractions(a: &Args, i: usize, zh: bool) -> Result<String, String> {
+    if a.places.is_empty() {
+        return Err(format!(
+            "sections[{i}] Attractions: name at least one place in `places`"
+        ));
+    }
+    let heading = if zh { "景点" } else { "WORTH SEEING" };
+    let mut rows = String::new();
+    for p in &a.places {
+        let q = p.trim();
+        if q.is_empty() || q.chars().count() > 64 {
+            return Err(format!(
+                "sections[{i}] Attractions: {p:?} is not a place name"
+            ));
+        }
+        rows.push_str(&format!(
+            "\x20           TextRow{{ width: Fill text: {q:?} draw_text.color: {text} \
+             margin: Inset{{top: 8 bottom: 8}} }}\n",
+            text = theme::TEXT,
+        ));
+    }
+    Ok(format!(
+        "\x20       View{{ width: Fill height: Fit flow: Down \
+         padding: Inset{{left: 20 top: 18 right: 20 bottom: 8}}\n\
+         \x20           TextCaption{{ text: {heading:?} draw_text.color: {faint} }}\n\
+         {rows}\x20       }}\n",
+        faint = theme::TEXT_FAINT,
+    ))
+}
 
 /// Tile key → (caption_en, caption_zh, helper, path, unit).
 fn tile_spec(k: &str) -> Option<(&'static str, &'static str, &'static str, &'static str, &'static str)> {
@@ -120,10 +171,11 @@ pub fn lower(json: &str) -> Result<String, String> {
             "AirQualityField" => air_quality_field(&ll, &lat, &lon, zh),
             "SunMoon" => sun_moon(&ll, zh),
             "Details" => details(&sec.args, &ll, zh, i)?,
+            "Attractions" => attractions(&sec.args, i, zh)?,
             other => {
                 return Err(format!(
                     "sections[{i}]: unknown block {other:?} — permitted: \
-                     CurrentConditions, Forecast, AirQualityField, SunMoon, Details"
+                     CurrentConditions, Forecast, AirQualityField, SunMoon, Details, Attractions"
                 ))
             }
         };
@@ -311,6 +363,94 @@ mod tests {
             { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
         ]
     }"#;
+
+    /// A live query authored against this schema, not the prototype's: no
+    /// `schema`/`theme` keys, and no `condition` word anywhere.
+    const SHANGHAI_LIVE: &str = r#"{
+        "plan": "weather", "locale": "en",
+        "place": { "query": "Shanghai" },
+        "photo": "shanghai bund skyline summer haze",
+        "sections": [
+            { "block": "CurrentConditions" },
+            { "block": "Forecast", "args": { "days": 7 } },
+            { "block": "AirQualityField" },
+            { "block": "SunMoon" },
+            { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
+        ]
+    }"#;
+
+    /// "is it a good time to go to shanghai now" — weather AND the attractions
+    /// that query asks for, which had no block at all.
+    #[test]
+    fn shanghai_with_attractions_lowers() {
+        let plan = r#"{
+            "plan": "weather", "locale": "en",
+            "place": { "query": "Shanghai" },
+            "photo": "shanghai bund skyline summer",
+            "sections": [
+                { "block": "CurrentConditions" },
+                { "block": "Forecast", "args": { "days": 7 } },
+                { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } },
+                { "block": "Attractions", "args": { "places":
+                    ["The Bund","Yu Garden","Tianzifang","Longhua Temple"] } }
+            ]
+        }"#;
+        let out = lower(plan).expect("Shanghai + attractions must lower");
+        assert!(out.contains("WORTH SEEING"), "the section renders:\n{out}");
+        // The names appear; nothing else about them is asserted.
+        for p in ["The Bund", "Yu Garden", "Tianzifang"] {
+            assert!(out.contains(&format!("text: {p:?}")), "{p} missing:\n{out}");
+        }
+        assert!(!out.contains("sys.poi("), "no per-row resolver:\n{out}");
+        assert!(!out.contains("31.22"), "still no coordinate anywhere:\n{out}");
+        eprintln!("SHANGHAI+ATTRACTIONS BYTES = {}", out.len());
+        let i = out.find("WORTH SEEING").unwrap();
+        eprintln!("--- ATTRACTIONS FRAGMENT ---\n{}\n--- END ---", &out[i.saturating_sub(220)..(i + 700).min(out.len())]);
+    }
+
+    /// An empty list is a rejection, not an empty heading.
+    #[test]
+    fn attractions_needs_at_least_one_place() {
+        let plan = r#"{
+            "plan": "weather", "locale": "en", "place": { "query": "Shanghai" },
+            "photo": "x", "sections": [ { "block": "Attractions", "args": {} } ]
+        }"#;
+        assert!(lower(plan).unwrap_err().contains("name at least one place"));
+    }
+
+    #[test]
+    fn shanghai_live_query_lowers() {
+        let out = lower(SHANGHAI_LIVE).expect("Shanghai plan must lower");
+        assert!(out.contains("Shanghai"), "the place survives");
+        assert!(!out.contains("31.22"), "no coordinate may appear in the card:\n{out}");
+        eprintln!("SHANGHAI CARD BYTES = {}", out.len());
+    }
+
+    /// The prototype's plan shape is rejected here -- it carries `schema` and
+    /// `theme`, and states a `condition` the model never observed.
+    #[test]
+    fn prototype_shaped_plan_is_rejected() {
+        let proto = r#"{
+            "schema": "octos.card.plan/1", "plan": "weather",
+            "theme": "octos.weather.immersive", "locale": "en",
+            "place": { "query": "Shanghai" }, "photo": "x",
+            "sections": [ { "block": "CurrentConditions", "args": { "condition": "partly_cloudy" } } ]
+        }"#;
+        let err = lower(proto).expect_err("must reject unknown fields");
+        eprintln!("REJECTED AS = {err}");
+    }
+
+    /// `Attractions` is a real block now; an unknown one still names the set.
+    #[test]
+    fn the_permitted_set_now_includes_attractions() {
+        let p = r#"{
+            "plan": "weather", "locale": "en",
+            "place": { "query": "Shanghai" }, "photo": "x",
+            "sections": [ { "block": "Nightlife", "args": {} } ]
+        }"#;
+        let err = lower(p).expect_err("unknown block");
+        assert!(err.contains("Attractions"), "the set must advertise it: {err}");
+    }
 
     /// The invariants that were each a live bug. Every one is now a property of the
     /// lowering rather than a rule the model is asked to follow.

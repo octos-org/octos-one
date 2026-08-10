@@ -550,6 +550,14 @@ version = "0.1.0"
 dependencies = [
  "makepad-script",
  "serde_json",
+ "splash-ui-l0",
+]
+
+[[package]]
+name = "splash-ui-l0"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

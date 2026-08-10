@@ -45,6 +45,131 @@ const OCTOS_PLACEHOLDER_SYSTEM_PROMPT: &str = "";
 // very first build.
 const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 
+/// The L0 memory — what an app agent is given instead of the Splash manual.
+///
+/// 706 lines against the old memory's 5,919, and the difference is not
+/// compression: most of that manual taught things L0 does not have. A language
+/// with no expression form needs no chapter on building strings, on when a `let`
+/// freezes, or on reading a `-9999` sentinel.
+const L0_FRAMEWORK: &str = include_str!("../../../a2app-l0/framework.md");
+const L0_LANGUAGE: &str = include_str!("../../../a2app-l0/framework/l0.md");
+const L0_CATALOG: &str = include_str!("../../../a2app-l0/framework/catalog.md");
+
+/// Per-app: the requirements, and a card that meets them.
+///
+/// The exemplar is not an illustration — every one reports `valid = true,
+/// level = L0` from the same checker that will judge what the model writes.
+const L0_APPS: &[(&str, &str, &str)] = &[
+    ("weather", include_str!("../../../a2app-l0/apps/weather/app.md"),
+     include_str!("../../../a2app-l0/apps/weather/exemplar.card")),
+    ("news", include_str!("../../../a2app-l0/apps/news/app.md"),
+     include_str!("../../../a2app-l0/apps/news/exemplar.card")),
+    ("stock", include_str!("../../../a2app-l0/apps/stock/app.md"),
+     include_str!("../../../a2app-l0/apps/stock/exemplar.card")),
+    ("activity", include_str!("../../../a2app-l0/apps/activity/app.md"),
+     include_str!("../../../a2app-l0/apps/activity/exemplar.card")),
+    ("nav", include_str!("../../../a2app-l0/apps/nav/app.md"),
+     include_str!("../../../a2app-l0/apps/nav/exemplar.card")),
+    ("chart", include_str!("../../../a2app-l0/apps/chart/app.md"),
+     include_str!("../../../a2app-l0/apps/chart/exemplar.card")),
+    ("youtube", include_str!("../../../a2app-l0/apps/youtube/app.md"),
+     include_str!("../../../a2app-l0/apps/youtube/exemplar.card")),
+    // COMPOSED, and the first app above L0. `city-picks` compares the user's
+    // saved cities, which needs one arithmetic expression — how much warmer it
+    // feels than it is — and that is L1. Everything else about it is L0.
+    ("city-picks", include_str!("../../../a2app-l0/apps/city-picks/app.md"),
+     include_str!("../../../a2app-l0/apps/city-picks/exemplar.card")),
+];
+
+/// The prompt for an app that has an L0 spec, or `None` for one that does not.
+///
+/// `None` falls through to the Splash-DSL path, so an app without an L0 spec
+/// keeps working exactly as before. That is what makes this switchable rather
+/// than a cutover.
+/// The level an app is APPROVED for, derived from its exemplar by the same checker
+/// that will judge what the model writes.
+///
+/// One derivation, two uses: it picks which grammar the prompt states, and it is the
+/// ceiling a generated card is held to. §7 says a record needing a wider grammar is
+/// rejected until the level is explicitly raised and that escalation is never silent
+/// — but the level was derived here for the prompt's sake and then never compared to
+/// what came back, so a card that declared `# level: L1` for an L0 app was accepted
+/// and drawn. `valid` does not carry it: an L1 card with no diagnostics is valid at
+/// L1, which is exactly the case that needed catching.
+fn l0_level_for(domain: &str) -> Option<splash_ui_l0::Level> {
+    let (_, _, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == domain)?;
+    Some(splash_ui_l0::check_ui_l0_named(domain, exemplar).level)
+}
+
+/// Is `card` wider than `domain` is approved for? The refusal, if so.
+///
+/// Reported as a repair reason rather than a render-time error, because this is
+/// where a second attempt is still possible — the same place a checker diagnostic
+/// goes.
+fn l0_level_refusal(domain: &str, report: &splash_ui_l0::UiL0Report) -> Option<String> {
+    let approved = l0_level_for(domain)?;
+    let rank = |l: splash_ui_l0::Level| match l {
+        splash_ui_l0::Level::L0 => 0,
+        splash_ui_l0::Level::L1 => 1,
+        splash_ui_l0::Level::L2 => 2,
+    };
+    (rank(report.level) > rank(approved)).then(|| {
+        format!(
+            "line 1: this card declares level {:?} and `{domain}` is approved for              {approved:?} — remove the `# level:` header and the construct that needed              it (profile §7: escalation is never silent)",
+            report.level
+        )
+    })
+}
+
+fn l0_prompt_for(domain: &str, intent: &str) -> Option<String> {
+    let (_, spec, exemplar) = L0_APPS.iter().find(|(d, _, _)| *d == domain)?;
+    // The level comes from the EXEMPLAR, judged by the same checker that will
+    // judge what the model writes — not from a fourth list to keep in sync.
+    //
+    // "There is no arithmetic" is L0's rule. Sending it to an app whose spec
+    // asks for one expression tells the model to disobey the spec shipped in
+    // the same prompt, and it has no way to know which to believe.
+    let level = l0_level_for(domain)?;
+    let (level_name, expression_rule) = match level {
+        splash_ui_l0::Level::L1 => (
+            "L1",
+            "This app is L1, so it declares `# level: L1` and may use ONE thing L0 \
+cannot: arithmetic over values it already declared. Everything else is L0's — no string \
+building, no `if`, no `let`, no functions. An expression must READ something: a \
+coefficient is fine, but an expression made only of literals states a fact rather than \
+computing one and is REFUSED. There is no grouping and no unary minus, so precedence is \
+fixed. Do not reach for L1 anywhere the spec does not ask for it.",
+        ),
+        _ => (
+            "L0",
+            "There is no arithmetic, no string building, no `if`, no `let`, no functions. \
+Everything you would reach for those with has a declared form.",
+        ),
+    };
+    Some(format!(
+        "You ARE the {domain} app agent. Everything you need is INLINED BELOW — do \
+NOT claim anything is missing, do NOT read or fetch files, and do NOT ask questions.\n\n\
+Write an {level_name} CARD. It is not a program: it DECLARES what data it needs, what \
+state it keeps, what a tap does, and what to show. {expression_rule} Read the language \
+reference before writing.\n\n\
+NEVER write a fact. Not a temperature, a price, a headline, a venue or a distance. \
+Every one comes from a declared `source`. A card with a number typed into it is wrong \
+the moment the world changes, and nothing downstream can tell it from a card that is \
+right.\n\n\
+NEVER write a colour, a font size or a pixel dimension. You say what a thing IS; a \
+theme decides what it looks like.\n\n\
+Emit EXACTLY ONE ```runl0 fenced block as your ENTIRE answer — the complete card, no \
+prose before or after, never truncated. A card that names anything outside the catalog \
+is REFUSED and the reasons are shown instead of your card.\n\n\
+===== FRAMEWORK =====\n{L0_FRAMEWORK}\n\
+===== LANGUAGE =====\n{L0_LANGUAGE}\n\
+===== CATALOG =====\n{L0_CATALOG}\n\
+===== REQUIREMENTS: {domain} =====\n{spec}\n\
+===== A CARD THAT MEETS THEM =====\n{exemplar}\n\
+===== END REFERENCE =====\n\nUser request: {intent}"
+    ))
+}
+
 /// Build the message actually sent to the LLM in Splash mode: instructions +
 /// the Splash manual + the user's request. The chat bubble still shows only
 /// the user's original `request` text.
@@ -60,7 +185,7 @@ const SPLASH_MANUAL: &str = include_str!("../../../aichat/splash.md");
 /// takes the screen; the AMA's job is to prove the routing brain runs
 /// concurrently (and, later, to prune non-relevant app agents once intent is
 /// clear). The AMA renders NOTHING — its output is routing metadata.
-const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
+const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; COMPARING COUNTRIES on an economic or development measure over time — 'china gdp growth vs india', 'india vs vietnam gdp per capita', 'life expectancy japan korea', 'population of nigeria and brazil', '中国和印度的 GDP' → `chart` (a COUNTRY-level statistic over YEARS, from the World Bank; a company's share price is still `stock` and a city's weather is still `weather`); WHERE-SHOULD-I-GO across the user's SAVED cities — 'where should I go', 'compare my cities', 'which of my cities is nicest', '去哪儿好' → `city-picks` (this one is about the SET the user saved, so it needs no place name; a request naming ONE place is still `weather`, and 'what is nearby' is still `activity`); what-should-I-DO-given-the-weather → `weather-activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
@@ -474,6 +599,30 @@ fn parse_nav_places(decision: &str) -> (Option<String>, Option<String>) {
 /// env vars so the client id/secret never live in committed source. Build with
 /// `OCTOS_GOOGLE_CLIENT_ID=… OCTOS_GOOGLE_CLIENT_SECRET=… cargo makepad android build …`.
 /// Unset → the placeholders stay and the card disables sign-in gracefully.
+/// Seed plans for `OCTOS_SEED_CARD=aimovers|shanghai` — the two live queries,
+/// as the generating model would emit them.
+const SEED_PLAN_AI_MOVERS: &str = r#"{
+    "plan": "stock", "locale": "en",
+    "sections": [ { "block": "MoversList", "args": {
+        "count": 10, "title": "AI Movers", "label": "AI · TOP MOVERS AND SHAKERS",
+        "symbols": ["NVDA","AMD","AVGO","SMCI","MU","TSM","MRVL","ARM","CRWV",
+                    "PLTR","SNOW","AI","VRT","ANET","ORCL","MSFT","GOOGL","META"]
+    } } ]
+}"#;
+
+const SEED_PLAN_SHANGHAI: &str = r#"{
+    "plan": "weather", "locale": "en",
+    "place": { "query": "Shanghai" },
+    "photo": "shanghai bund skyline summer",
+    "sections": [
+        { "block": "CurrentConditions" },
+        { "block": "Forecast", "args": { "days": 7 } },
+        { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } },
+        { "block": "Attractions", "args": { "places":
+            ["The Bund","Yu Garden","Tianzifang","Longhua Temple","Zhujiajiao"] } }
+    ]
+}"#;
+
 const GOOGLE_CLIENT_ID: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_ID");
 const GOOGLE_CLIENT_SECRET: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_SECRET");
 
@@ -643,6 +792,13 @@ place, the condition words, the sections and the locale; nothing else.\n\
 {docs}\n\nUser request: {intent}"
         );
     }
+    // An app with an L0 spec is generated as an L0 card. One without falls
+    // through to the Splash-DSL path below and keeps working unchanged — which
+    // is what makes this switchable per app rather than a cutover.
+    if let Some(l0) = l0_prompt_for(domain, intent) {
+        return l0;
+    }
+
     format!(
         "You ARE the {domain} app agent and you OWN the entire card generation. Your \
 SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
@@ -1870,10 +2026,30 @@ fn substitute_card_state(body: &str, item_id: usize, state: &CardState) -> Strin
 /// other code fences are left verbatim — they're the model's own text, not live
 /// state, and rewriting them was a bug (`{{state.count}}` in an explanation
 /// became `0`). No-op for normal messages: no runsplash block ⇒ nothing to do.
-fn resolve_a2app_card(text: &str, item_id: usize, state: &CardState) -> String {
-    if !text.contains("```runsplash") {
+fn resolve_a2app_card(cx: &mut Cx, text: &str, item_id: usize, state: &CardState) -> String {
+    // An L0 ledger becomes a rendered card first, so everything below this line
+    // — the state substitution, `tag_notify_calls`, the render cache — sees the
+    // widget DSL it already understands and needs no knowledge of L0.
+    let resolved = app::l0_card::resolve_l0_blocks(cx, text, item_id);
+    let text: &str = &resolved;
+
+    // A PLAN becomes its card here, for the same reason an L0 ledger does one
+    // line above: everything below this point understands only widget DSL.
+    //
+    // Without this a plan was lowered for *persistence* and never for display —
+    // `card_splash_body` fed `save_card_artifact`, while the check below saw no
+    // `runsplash` and returned the message unchanged, so the user was shown the
+    // raw plan JSON as a code block. Measured on device: a correct Shanghai
+    // weather plan, every section right, rendered as text.
+    let planned;
+    let text: &str = if text.contains("```runsplash") {
+        text
+    } else if let Some(body) = card_splash_body(text) {
+        planned = format!("```runsplash\n{body}\n```");
+        &planned
+    } else {
         return text.to_string();
-    }
+    };
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(open) = rest.find("```runsplash") {
@@ -2146,8 +2322,35 @@ fn extract_all_runsplash_bodies(text: &str) -> Vec<&str> {
 /// Pull the body of the first ```runplan fenced block (the semantic-plan
 /// substrate — typed JSON the runtime lowers into a card).
 fn extract_runplan_body(text: &str) -> Option<&str> {
-    let start = text.find("```runplan")?;
-    let after = &text[start + "```runplan".len()..];
+    if let Some(body) = fenced_body(text, "```runplan") {
+        return Some(body);
+    }
+    // Fall back to ANY fenced block that lowers as a plan.
+    //
+    // The prompt demands `runplan`, and a model that emits a correct plan inside
+    // a ```json fence instead had its whole answer rendered as a code block —
+    // measured on device: a valid Shanghai weather plan, every section right,
+    // shown to the user as raw JSON. The fence is formatting; the plan is the
+    // intent, and rejecting the answer over the former helps nobody.
+    //
+    // Tolerant, not credulous: the body is accepted only if `lower_plan`
+    // actually builds a card from it, so prose that merely contains JSON, or a
+    // plan that is malformed, still falls through to being shown as text.
+    for fence in ["```json", "```plan", "```"] {
+        let Some(body) = fenced_body(text, fence) else {
+            continue;
+        };
+        if crate::app::plan::lower_plan(body).is_ok() {
+            return Some(body);
+        }
+    }
+    None
+}
+
+/// The body of the first block opened by `fence`, or `None`.
+fn fenced_body<'a>(text: &'a str, fence: &str) -> Option<&'a str> {
+    let start = text.find(fence)?;
+    let after = &text[start + fence.len()..];
     let body_start = after.find('\n')? + 1;
     let body = &after[body_start..];
     let end = body.find("```")?;
@@ -2168,13 +2371,27 @@ fn card_splash_body(text: &str) -> Option<String> {
         return Some(b.to_string());
     }
     let plan = extract_runplan_body(text)?;
+    // A plan still streaming is INCOMPLETE, not wrong. `extract_runplan_body`
+    // needs a closing fence, but the tolerant any-fence fallback can match a
+    // block whose JSON is still arriving, and turning that into a refusal card
+    // flashes "This card was refused" mid-generation. Observed on the news
+    // query: `plan is not valid JSON: EOF while parsing a list`.
+    if serde_json::from_str::<serde_json::Value>(plan).is_err() {
+        return None;
+    }
     match crate::app::plan::lower_plan(plan) {
         Ok(dsl) => Some(dsl),
         Err(e) => {
-            // Loud, and specific enough to repair from. Never fall through to a
-            // partial card: half a card looks complete and is not.
-            log::warn!("runplan rejected: {e}");
-            None
+            // Show the refusal, exactly as the L0 path does. Returning None here
+            // dropped the message to ordinary prose, so a rejected plan and a
+            // model that simply chose to answer in words looked identical on
+            // screen -- the reason reachable only through `adb logcat`. Still
+            // never a partial card: this is a whole card that says no.
+            // Logged, not shown — same rule as the L0 path. A refusal is the
+            // generator's problem and the reasons are unusable by whoever is
+            // holding the phone.
+            log::warn!("runplan rejected, not rendered: {e}");
+            Some(crate::app::l0_card::error_card())
         }
     }
 }
@@ -3370,6 +3587,13 @@ script_mod! {
                     sidebar := GlassPanel {
                         width: 298
                         height: Fill
+                        // Removed from the product: the session list pane is
+                        // desktop shell furniture, and on device it covered
+                        // the AMA surface whenever the window was not narrow
+                        // (rotate to landscape and half the screen was list).
+                        // The pane and its toggle stay in the tree for the
+                        // desktop shell work to revive, but nothing shows it.
+                        visible: false
                         new_batch: true
                         flow: Down
                         padding: Inset{left: 14 top: 14 right: 14 bottom: 14}
@@ -4655,7 +4879,20 @@ pub struct AppRecord {
     /// intent (reset on the next `route_to_app`). Caps the validate→repair
     /// loop at a single retry so a stubborn model can't ping-pong forever.
     pub repair_attempted: bool,
+    /// L0 CHECKER refusals get their own, larger budget (`L0_REPAIR_BUDGET`,
+    /// also per-intent, reset with `repair_attempted`). A refused L0 card is
+    /// a BLANK SCREEN, not a cosmetic miss, and two live runs showed one
+    /// retry is not enough for a syntax-class mistake — the model needs the
+    /// teaching diagnostic more than once. Each retry feeds the checker's
+    /// own diagnostics back, exactly like the first.
+    pub l0_repair_attempts: u8,
 }
+
+/// How many automatic repair turns an L0 checker refusal may spend per
+/// routed intent. Lint and security repairs keep their single shot
+/// (`repair_attempted`); this budget is only for cards the CHECKER refused,
+/// where the alternative is a quiet fallback card instead of the answer.
+pub const L0_REPAIR_BUDGET: u8 = 3;
 
 impl AppRecord {
     fn new(session_id: SessionId, title: impl Into<String>) -> Self {
@@ -4668,6 +4905,7 @@ impl AppRecord {
             saved_messages: Vec::new(),
             saved_a2app: std::collections::BTreeMap::new(),
             repair_attempted: false,
+            l0_repair_attempts: 0,
         }
     }
     /// A domain-specialised app agent (weather/stock/news), for AMA routing.
@@ -4697,13 +4935,49 @@ pub struct ChatList {
     /// static during a scroll, so we skip all of it when the inputs are unchanged
     /// and just re-draw the already-parsed widget. This is what makes scrolling
     /// smooth instead of ~30fps.
+    /// …and the data-fetch epoch, because an L0 card bakes its values IN.
+    ///
+    /// A `sys.*` call in an L0 card is evaluated when the ledger is resolved,
+    /// not when the widget draws — so the tree carries whatever the fetch had
+    /// returned at that moment, which for a cold card is a placeholder. The old
+    /// path emitted the call into the widget DSL and the Splash widget re-ran it
+    /// on each epoch bump; this one has to re-resolve instead.
+    ///
+    /// Without the epoch here, every value on the stock list stayed an em dash
+    /// forever: the text and the state never change when data arrives, so the
+    /// cache hit and the placeholder was final.
     #[rust]
-    rendered_cache: Option<(usize, String, CardState)>,
+    rendered_cache: Option<(usize, String, CardState, u64)>,
     /// Last-seen `CHAT_GENERATION`. When the App bulk-replaces `CHAT_DATA`
     /// (app switch / wipe) it bumps the counter; we drop `rendered_cache` so
     /// the restored card re-parses instead of redrawing a stale/blank widget.
     #[rust]
     last_gen: u64,
+    /// Last-seen data-fetch epoch, and a pump for it.
+    ///
+    /// An L0 card's `sys.*` values are baked in when the ledger is resolved, so
+    /// a cold card carries placeholders — and nothing brings it back. The Splash
+    /// widget re-evaluates on an epoch bump because it runs its own frame pump;
+    /// this list draws on interaction, so without a nudge the stock card shows
+    /// em dashes forever while the data sits fetched and unused.
+    #[rust]
+    last_fetch_epoch: u64,
+    /// The rendered card follows a live position AND ticks its own values, so an
+    /// epoch bump must not re-resolve it. See the epoch poll.
+    #[rust]
+    driving_card: bool,
+    #[rust]
+    epoch_poll: Timer,
+    /// The frame that draws the values a fetch just delivered.
+    ///
+    /// Clearing the cache and calling `redraw` is not enough: this app renders
+    /// ON DEMAND, so a dirty area sits dirty until something asks for a frame.
+    /// The stock card cleared its cache the moment `sys.movers` landed and then
+    /// drew nothing — every price stayed an em dash over live data already in
+    /// memory. The Splash widget arms the same pump for any body that binds a
+    /// live source.
+    #[rust]
+    epoch_frame: NextFrame,
 }
 
 impl Widget for ChatList {
@@ -4810,7 +5084,7 @@ impl Widget for ChatList {
                         let empty_state = CardState::new();
                         let card_state = data.a2app_state.get(&item_id).unwrap_or(&empty_state);
                         let resolved_stream =
-                            resolve_a2app_card(unwrapped_stream, item_id, card_state);
+                            resolve_a2app_card(cx, unwrapped_stream, item_id, card_state);
                         markdown.set_text(cx, &resolved_stream);
                         if just_started {
                             markdown.reset_all_streaming_animations();
@@ -4858,21 +5132,118 @@ impl Widget for ChatList {
                         // change (new message or card state) — NOT every draw. Skipping
                         // this on scroll frames (nothing changed) is what keeps scrolling
                         // smooth; otherwise the whole DSL is re-parsed ~30ms every frame.
+                        // A DRIVING card ignores the epoch here, for the same reason
+                        // the poll no longer clears the cache for one: its live values
+                        // set themselves from `fn tick()`, so re-resolving would
+                        // compute the text it already shows — at the cost of
+                        // re-parsing the document and rebuilding the `MapView` inside
+                        // it, which is a measured 327 ms of frozen map.
+                        //
+                        // Clearing the cache and comparing the epoch are TWO gates.
+                        // Skipping only the first left this one re-rendering anyway,
+                        // and the re-resolve count went up rather than down.
+                        // A driving card must not rebuild for DATA — that tears down
+                        // the map, and it also snaps the swipe sheet shut, since a
+                        // rebuilt tree starts from `visible: false`. Freezing the key
+                        // is what does that.
+                        //
+                        // It must still rebuild for a TAP, and it does, by a different
+                        // route: the tap handler bumps `CHAT_GENERATION`, and
+                        // `draw_walk` above drops this cache whenever that moves. So
+                        // the sentinel is safe here — verified on device by reverting
+                        // it and watching `End` still switch screens.
+                        //
+                        // Worth writing down, because this comment previously blamed
+                        // the sentinel for `End` being inert and that was wrong. The
+                        // cause was in the profile: a `cycle` resolved its current
+                        // value store → initial while the RENDERER resolves store →
+                        // data → initial, so a host-seeded `screen: "drive"` was
+                        // cycled from the declared `.plan` and advanced to `.drive` —
+                        // the screen it was already on. Fixed in `splash-ui-l0`.
+                        let epoch = if self.driving_card {
+                            0
+                        } else if L0_TYPING_PENDING.load(std::sync::atomic::Ordering::Relaxed) {
+                            // FROZEN AT THE CACHED VALUE, not at a sentinel. A first
+                            // version froze to 0 and 0 never matched the epoch the
+                            // cache was written with — so while typing was pending
+                            // every draw MISSED and re-resolved, which multiplied
+                            // the rebuilds the flag exists to suppress.
+                            self.rendered_cache.as_ref().map(|c| c.3).unwrap_or(0)
+                        } else {
+                            cx.script_data_fetch_epoch()
+                        };
                         let unchanged = matches!(
                             &self.rendered_cache,
-                            Some((cid, ctext, cstate))
-                                if *cid == item_id && ctext == &msg.text && cstate == card_state
+                            Some((cid, ctext, cstate, cepoch))
+                                if *cid == item_id
+                                    && ctext == &msg.text
+                                    && cstate == card_state
+                                    && *cepoch == epoch
                         );
                         if !unchanged {
+                            let resolve_began = std::time::Instant::now();
+                            // Which of the two gates opened. A driving card that
+                            // re-resolves on data is the stutter; one that does not
+                            // re-resolve on a tap is `End` doing nothing. Both were
+                            // diagnosed from screenshots before this said which.
+                            log!(
+                                "[l0] resolve item {item_id}: driving={} key {:?} -> {epoch}",
+                                self.driving_card,
+                                self.rendered_cache.as_ref().map(|c| c.3)
+                            );
                             // wrap_bare_latex wraps `\cmd{…}` with `$…$` so MathView can
                             // render them.
                             let unwrapped = unwrap_outer_markdown_fence(&msg.text);
+                            // dev's runplan materialisation, then ours: a
+                            // semantic plan becomes card markup BEFORE the L0
+                            // resolve, and `resolve_a2app_card` keeps the `cx`
+                            // the L0 path needs.
                             let materialized = materialize_runplan_for_display(unwrapped);
                             let rendered = wrap_bare_latex(&materialized);
-                            let rendered = resolve_a2app_card(&rendered, item_id, card_state);
+                            let rendered = resolve_a2app_card(cx, &rendered, item_id, card_state);
+                            // A card that FOLLOWS a position and ticks its own values
+                            // must not be re-resolved on an epoch bump — see the
+                            // epoch poll in `handle_event`. Both halves are required:
+                            // the follow map is what makes a rebuild visible, and the
+                            // tick is what makes skipping it correct.
+                            // Locked in only once the card HAS ITS ROUTE.
+                            //
+                            // Suppressing the re-resolve is what stops the stutter, and
+                            // doing it too early stops the card finishing: rendered
+                            // before the route arrives, its polyline is empty, and the
+                            // re-resolve was the only thing that would ever fill it in.
+                            // Measured — a flat map with no ribbon, no puck, and a
+                            // banner reading just "left", frozen that way for good.
+                            //
+                            // So all three must hold: it follows a live position, it
+                            // ticks its own values, and the route it draws is already
+                            // there. Until then it re-resolves like any other card.
+                            let has_route = rendered.contains("nav_polyline: \"")
+                                && !rendered.contains("nav_polyline: \"\"");
+                            self.driving_card = rendered.contains("nav_mode: \"follow")
+                                && rendered.contains("fn tick()")
+                                && has_route;
+                            log!(
+                                "[l0] resolve took {} ms",
+                                resolve_began.elapsed().as_millis()
+                            );
                             markdown.set_text(cx, &rendered);
-                            self.rendered_cache =
-                                Some((item_id, msg.text.clone(), card_state.clone()));
+                            // The epoch AFTER resolving: a `sys.*` call during
+                            // resolution can itself start a fetch and bump it,
+                            // and caching the pre-resolve value would re-resolve
+                            // every frame forever.
+                            self.rendered_cache = Some((
+                                item_id,
+                                msg.text.clone(),
+                                card_state.clone(),
+                                // Matching the sentinel above, so a driving card's
+                                // cache entry keeps comparing equal.
+                                if self.driving_card {
+                                    0
+                                } else {
+                                    cx.script_data_fetch_epoch()
+                                },
+                            ));
                         }
                         if is_animating {
                             markdown.stop_streaming_animation();
@@ -4898,6 +5269,43 @@ impl Widget for ChatList {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
+        // A fetch that landed since the last draw must reach the screen. Polled
+        // rather than pushed because the fetch completes on another thread and
+        // this widget has no hook into it; one second is well under what a user
+        // reads as "stuck" and far above what would cost anything.
+        // `Timer::default()` is empty, so the first event starts the loop and
+        // every firing re-arms it.
+        if self.epoch_poll.is_event(event).is_some() || self.epoch_poll.is_empty() {
+            let epoch = cx.script_data_fetch_epoch();
+            if epoch != self.last_fetch_epoch {
+                self.last_fetch_epoch = epoch;
+                // A DRIVING card is not re-resolved, and this is the rule the app
+                // being replaced states in capitals: never introduce anything that
+                // forces a rebuild while driving.
+                //
+                // Re-resolving re-parses the whole document, which tears down and
+                // rebuilds the `MapView` inside it. Measured on a OnePlus 6: frame
+                // hitches and card re-resolves correlate 1:1, up to 327 ms of frozen
+                // map — the stutter, and no amount of camera smoothing hides it
+                // because what stops is the UI thread.
+                //
+                // It is safe to skip precisely BECAUSE such a card carries a
+                // `fn tick()`: its live values set themselves on named widgets every
+                // frame, so a re-resolve would compute the same text it already has.
+                // A card without one still re-resolves — that is how a list or a
+                // forecast gets the values a fetch just delivered.
+                //
+                // Structure still rebuilds: a tap changes card state, and that
+                // invalidates this cache by a different key.
+                if !self.driving_card {
+                    self.rendered_cache = None;
+                }
+                self.epoch_frame = cx.new_next_frame();
+                self.view.redraw(cx);
+            }
+            self.epoch_poll = cx.start_timeout(1.0);
+        }
 
         if let Event::Actions(actions) = event {
             let list = self.view.portal_list(cx, ids!(list));
@@ -4933,6 +5341,25 @@ impl Widget for ChatList {
 // `OCTOS_PLACEHOLDER_SYSTEM_PROMPT` near the top of this file. The original
 // block lived at `aichat/examples/aichat/src/main.rs:1883–2072`.
 
+/// Whether a keystroke's debounced rebuild is pending — see `l0_typing_rebuild`.
+static L0_TYPING_PENDING: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+std::thread_local! {
+    /// Live touch Start points (uid -> (x, y, time)) for the L0 swipe gesture —
+    /// the raw touch stream carries no start position at Stop, and the Script
+    /// derive on App admits no field of this shape.
+    static L0_TOUCH_STARTS: std::cell::RefCell<std::collections::HashMap<u64, (f64, f64, f64)>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+    /// When the last horizontal swipe fired. The tap overlays release on
+    /// finger-up wherever it lands — a drag does not cancel them — so the
+    /// same motion that pages a card also "taps" whatever row it crossed
+    /// (measured: a manage-mode swipe opened the quote it swept over). A tap
+    /// notify arriving within this window of a swipe is the swipe, not a tap.
+    static L0_SWIPE_AT: std::cell::Cell<Option<std::time::Instant>> =
+        std::cell::Cell::new(None);
+}
+
 #[derive(Script, ScriptHook)]
 pub struct App {
     #[live]
@@ -4941,6 +5368,19 @@ pub struct App {
     /// warnings). Empty when no toast is showing.
     #[rust]
     toast_timer: Timer,
+    /// Trailing debounce for keystroke-driven L0 re-renders. Each `on_change`
+    /// dispatch applies its state change immediately (the field echoes locally)
+    /// and re-arms this; the card re-resolves once, ~a third of a second after
+    /// the LAST keystroke, instead of ~120 ms of re-parse per character with the
+    /// results rows re-laying the sheet out under the user's finger.
+    ///
+    /// `L0_TYPING_PENDING` rides with it: the epoch half of ChatList's cache key
+    /// would otherwise re-resolve the card every time a partial query's search
+    /// response LANDED — measured, three rebuilds per keystroke — so while the
+    /// debounce is pending the epoch is frozen too, and the pause pays for one
+    /// rebuild that reads whatever has arrived by then.
+    #[rust]
+    l0_typing_rebuild: Timer,
     /// After a card renders, a brief repaint burst so the newest card's remote
     /// background image adopts its decoded texture from the ImageCache (the
     /// Image widget self-heals on draw, but the app is otherwise idle after the
@@ -5153,82 +5593,44 @@ impl App {
         if app_id != "web" && app_id != "youtube" {
             cx.system_browser(web_card_browser_id()).detach();
         }
-        if app_id == "youtube" {
-            // Resolve ground-truth live ids, then serve the COMPLETE hand-authored
-            // youtube app DIRECTLY (no LLM — the on-device model under-generates the
-            // 14 KB app to a bare player) with the fresh ids substituted in.
-            refresh_youtube_live_ids();
-            for _ in 0..20 {
-                if youtube_live_cache().lock().unwrap().len() >= 3 {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(150));
+        // youtube WAS served here as a complete hand-authored HTML app, with
+        // its live ids patched in at serve time. It is an L0 card now (see
+        // L0_APPS): the card SEARCHES rather than carrying ids the model
+        // remembered — which is what the patching existed to paper over —
+        // and hands a player url to sys.link for playback, so the WebView is
+        // still what plays the video and no longer what draws the app.
+        // NAV IS GENERATED, not served.
+        //
+        // It was direct-served: the client emitted the 664-line L2 trip planner
+        // verbatim because "the on-device model under-generates / truncates this
+        // ~14 KB card". That rationale was about the CARD'S SIZE, and the card is
+        // not that size any more — `apps/nav/exemplar.card` is the same screen in
+        // 92 lines of L0, which is a request a capable model answers.
+        //
+        // So nav now falls through to the ordinary generation path with every
+        // other app. What it still needs is the TRIP: the AMA already parsed the
+        // origin and destination out of the request onto its decision line, and
+        // that has to reach the model or the card generates with empty search
+        // boxes and the user types the place they just said.
+        let intent = if app_id == "nav" {
+            let (orig, dest) = parse_nav_places(decision);
+            let dest = dest.or_else(|| extract_nav_destination(&intent));
+            match (orig, dest) {
+                (Some(o), Some(d)) => format!(
+                    "{intent}\n\nThe trip is FROM \"{o}\" TO \"{d}\". Put those in the card's \
+                     own state as the initial origin and destination queries, so it opens on that \
+                     route instead of on an empty search box."
+                ),
+                (None, Some(d)) => format!(
+                    "{intent}\n\nThe destination is \"{d}\". Put it in the card's own state as \
+                     the initial destination query, so it opens on that route instead of on an \
+                     empty search box. The origin is the device's position."
+                ),
+                _ => intent,
             }
-            let card = youtube_reference_card();
-            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Ok(mut data) = CHAT_DATA.write() {
-                data.messages.push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    text: format!("```runhtml\n{card}\n```"),
-                });
-                data.is_streaming = false;
-            }
-            let chat_list = self.ui.widget(cx, ids!(chat_list));
-            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
-            self.apps[idx].repair_attempted = false;
-            self.update_empty_state_visibility(cx);
-            self.sync_app_tabs(cx);
-            cx.redraw_all();
-            return;
-        }
-        if app_id == "nav" {
-            // Serve the COMPLETE canonical trip-planner card DIRECTLY (no LLM —
-            // same rationale as youtube above: the on-device model
-            // under-generates / truncates this ~14 KB card). It is a fixed app,
-            // so serve it verbatim; the render pipeline still makes it fully
-            // interactive because it tags `agent.notify` and substitutes
-            // `{{state.*}}` by the card's slot id, not by who authored the body.
-            let card = NAV_CANONICAL_CARD;
-            // Intent-based navigation ("LLM drives, card renders"): the AMA
-            // already understood the request and appended the parsed origin +
-            // destination to its decision line as `from="..."; to="..."`, using
-            // world knowledge to qualify ambiguous places (e.g. "nvidia
-            // headquarters" -> "nvidia santa clara"). Seed them as the card's
-            // origin/destination search QUERIES so it opens on the A->B route
-            // preview and routes correctly. Seeding STATE (not the card text)
-            // keeps the in-card search boxes live for re-searching. Fall back to
-            // the local destination extractor if the AMA gave nothing.
-            let (seed_orig, ama_dest) = parse_nav_places(decision);
-            let seed_dest = ama_dest.or_else(|| extract_nav_destination(&intent));
-            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if let Ok(mut data) = CHAT_DATA.write() {
-                data.messages.push(ChatMessage {
-                    role: ChatRole::Assistant,
-                    text: format!("```runsplash\n{card}\n```"),
-                });
-                if seed_dest.is_some() || seed_orig.is_some() {
-                    let item_id = data.messages.len() - 1;
-                    let st = data.a2app_state.entry(item_id).or_default();
-                    if let Some(q) = seed_dest {
-                        st.insert("q".to_string(), q);
-                        st.insert("sel".to_string(), "1".to_string());
-                    }
-                    // Origin query — the card resolves its top hit and routes
-                    // from there instead of the San Jose default.
-                    if let Some(o) = seed_orig {
-                        st.insert("oq".to_string(), o);
-                    }
-                }
-                data.is_streaming = false;
-            }
-            let chat_list = self.ui.widget(cx, ids!(chat_list));
-            chat_list.portal_list(cx, ids!(list)).set_tail_range(true);
-            self.apps[idx].repair_attempted = false;
-            self.update_empty_state_visibility(cx);
-            self.sync_app_tabs(cx);
-            cx.redraw_all();
-            return;
-        }
+        } else {
+            intent
+        };
         // New foreground → drop ChatList's render cache so the card re-parses.
         CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         // Dispatch the domain-specialised generation prompt to the chosen agent.
@@ -5242,8 +5644,9 @@ impl App {
         let prompt = app_splash_router_for(app_id, &intent);
         let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &prompt);
         self.apps[idx].current_prompt = Some(pid);
-        // Fresh intent → fresh one-shot repair budget (see card_lint).
+        // Fresh intent → fresh repair budgets (see card_lint / L0_REPAIR_BUDGET).
         self.apps[idx].repair_attempted = false;
+        self.apps[idx].l0_repair_attempts = 0;
         self.sync_app_tabs(cx);
         self.ui.redraw(cx);
     }
@@ -5916,6 +6319,19 @@ impl App {
     /// app ids before spawning a peer for them.
     #[cfg(target_os = "android")]
     fn app_spec_exists(app_id: &str) -> bool {
+        // An L0 spec is COMPILED IN, so looking for it on disk asks the wrong
+        // question. `L0_APPS` holds each app's requirements and exemplar via
+        // `include_str!`; they cannot be missing at runtime.
+        //
+        // Checking only the device tree meant the guard rejected apps that were
+        // certainly present: routing "where should I go" produced `AMA named
+        // unknown app 'activity' (no apps/activity/app.md)` and fell back to
+        // weather — which then received a request that is not about weather,
+        // invented `pick`/`picked_lat`/`picked_lon`, and had the card refused.
+        // The refusal was the checker doing its job; the defect was here.
+        if L0_APPS.iter().any(|(d, _, _)| *d == app_id) {
+            return true;
+        }
         let Ok(home) = std::env::var("HOME") else {
             return false;
         };
@@ -6065,6 +6481,10 @@ impl App {
             self.ama_session = Some(agent.create_session(cx, ama_config));
             log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
         }
+        // §5.12: hand the durable store to the VM before anything renders, or
+        // the first card drawn after a launch shows an empty list and fills in
+        // only once something else happens to write.
+        app::l0_card::publish_collections();
         self.update_empty_state_visibility(cx);
         self.sync_app_tabs(cx);
         self.ui.redraw(cx);
@@ -6220,6 +6640,26 @@ impl App {
             self.apps.len(),
             self.foreground
         );
+    }
+
+    /// Offer a system gesture to the latest L0 card and redraw it if a cell
+    /// moved. Returns whether the gesture was consumed. The redraw is the same
+    /// rewrite the notify path does: replace lowered DSL, bump the generation.
+    fn l0_gesture(&mut self, cx: &mut Cx, event: &str) -> bool {
+        let Some((item, body)) = app::l0_card::gesture(cx, event) else {
+            return false;
+        };
+        if let Ok(mut chat) = CHAT_DATA.write() {
+            if let Some(msg) = chat.messages.get_mut(item) {
+                if !msg.text.contains("```runl0") {
+                    msg.text = format!("```runsplash\n{body}\n```");
+                }
+            }
+        }
+        CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        cx.redraw_all();
+        log::info!("[l0] {event} gesture -> redrew item {item}");
+        true
     }
 
     fn update_empty_state_visibility(&self, cx: &mut Cx) {
@@ -6532,7 +6972,7 @@ impl App {
                 let unwrapped = unwrap_outer_markdown_fence(&text);
                 let materialized = materialize_runplan_for_display(unwrapped);
                 let rendered = wrap_bare_latex(&materialized);
-                let rendered = resolve_a2app_card(&rendered, item_id, &state);
+                let rendered = resolve_a2app_card(cx, &rendered, item_id, &state);
                 item.markdown(cx, ids!(selectable)).set_text(cx, &rendered);
                 // Also push the resolved `runsplash` body straight to the
                 // Splash widget — its `set_text` re-evals on change, and this
@@ -6674,23 +7114,14 @@ impl App {
     // navigate_to_coding / navigate_to_producer removed with the Coding /
     // Studio / Slides / Sites navs (unsupported in this build).
 
-    /// Phone-width helper: the desktop shell keeps sidebar and chat side by
-    /// side, which pushes the chat off-screen on a portrait phone. Collapse
-    /// the sidebar after sidebar-driven navigation when the window is
-    /// narrow; the top-bar ☰ button brings it back.
+    /// The side panel is removed from the product (it covered the AMA
+    /// surface; see the sidebar declaration) — this keeps it and the desktop
+    /// glass toolbar hidden at every width, from every path that used to
+    /// collapse them conditionally.
     fn collapse_sidebar_if_narrow(&self, cx: &mut Cx) {
-        let w = self
-            .ui
-            .window(cx, ids!(main_window))
-            .get_inner_size(cx)
-            .x;
-        if w > 0.0 && w < 600.0 {
-            self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
-            // The glass-opacity toolbar is a desktop nicety; its 318pt
-            // fixed width alone overflows a phone top bar.
-            self.ui.view(cx, ids!(glass_toolbar)).set_visible(cx, false);
-            cx.redraw_all();
-        }
+        self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
+        self.ui.view(cx, ids!(glass_toolbar)).set_visible(cx, false);
+        cx.redraw_all();
     }
 
     /// Spawn an off-thread `task/output/read` and post the reply back as
@@ -7302,20 +7733,58 @@ impl MatchEvent for App {
                 // navigate on an unattributable event.
                 if card_id.is_none() {
                     log!("[splash] ignoring untagged agent.notify({ev:?})");
-                } else if ev == "l0" {
-                    // A tap on an L0 card. The payload carries the instance key
-                    // (WHICH row), the event name, and the value — the event
-                    // travels in the payload because `tag_notify_calls` rewrites
-                    // only a literal channel, and an untagged notify is dropped
-                    // above as unattributable.
-                    let l0_key = pj.get("key").and_then(|v| v.as_str()).unwrap_or_default();
-                    let l0_event = pj.get("event").and_then(|v| v.as_str()).unwrap_or_default();
-                    let l0_value = pj.get("value").and_then(|v| v.as_str()).unwrap_or_default();
-                    match app::l0_card::tap(l0_key, l0_event, l0_value) {
+                } else if ev == app::l0_widgets::TAP_CHANNEL {
+                    // A tap on an L0 card.
+                    //
+                    // THE CHANNEL AND THE PAYLOAD MUST MATCH `l0_widgets::emit`.
+                    // This listened for `"l0"` with flat `key`/`event`/`value`
+                    // while the emitter sent `"l0kit"` with `{target: "l0:{…}"}`,
+                    // so every tap on every L0 card fell through this branch and
+                    // did nothing at all. Nothing caught it: the only tests that
+                    // exercised a tap called `l0_card::tap` directly — the seeded
+                    // `SEED_L0_EVENT` path does exactly that — so dispatch was
+                    // well covered and the wire between the button and dispatch
+                    // was covered nowhere.
+                    //
+                    // `target` is one string because `tag_notify_calls` rewrites
+                    // only a LITERAL channel, so everything else has to travel in
+                    // the payload. The `l0:` prefix distinguishes it from this
+                    // renderer's own `set:` verbs (see `kit::tap_target`).
+                    let target = pj.get("target").and_then(|v| v.as_str()).unwrap_or_default();
+                    let (l0_key, l0_event, l0_value) =
+                        app::l0_widgets::parse_tap(target).unwrap_or_default();
+                    let (l0_key, l0_event, l0_value) =
+                        (l0_key.as_str(), l0_event.as_str(), l0_value.as_str());
+                    // The motion that just paged a card is not also a tap on
+                    // the row it swept across (see L0_SWIPE_AT).
+                    let swept = L0_SWIPE_AT.with(|t| {
+                        t.get().is_some_and(|at| at.elapsed().as_millis() < 300)
+                    });
+                    if swept {
+                        log!("[l0] tap suppressed: it was the swipe");
+                        continue;
+                    }
+                    // A keystroke's state is applied NOW; its re-render is coalesced.
+                    let is_keystroke = target.contains("\"c\":1");
+                    match app::l0_card::tap(cx, card_id.unwrap_or(0), l0_key, l0_event, l0_value) {
+                        Ok(Some((item, body))) if is_keystroke => {
+                            let _ = (item, body);
+                            L0_TYPING_PENDING.store(true, std::sync::atomic::Ordering::Relaxed);
+                            self.l0_typing_rebuild = cx.start_timeout(0.35);
+                        }
                         Ok(Some((item, body))) => {
+                            // Only a message that still holds LOWERED DSL is
+                            // rewritten. A `runl0` ledger is left alone: the
+                            // draw path resolves it from the session, whose
+                            // store the tap just wrote, so replacing the text
+                            // with this body would trade a live card for the
+                            // photograph of one — and every later fetch, tap and
+                            // re-theme would land on nothing.
                             if let Ok(mut chat) = CHAT_DATA.write() {
                                 if let Some(msg) = chat.messages.get_mut(item) {
-                                    msg.text = format!("```runsplash\n{body}\n```");
+                                    if !msg.text.contains("```runl0") {
+                                        msg.text = format!("```runsplash\n{body}\n```");
+                                    }
                                 }
                             }
                             // The render cache is keyed by (item, raw text,
@@ -7447,12 +7916,11 @@ impl MatchEvent for App {
         // Layer 3 (W08) — new-app / switch now live in the NATIVE composer pill
         // (see the NativeComposerNewApp/Switch action handlers above); no
         // top-strip or sidebar buttons.
-        // Top-bar ☰ — bring the collapsed sidebar back (or hide it again).
+        // The ☰ toggle went with the side panel: nothing may bring the
+        // pane back over the AMA surface. (The button's row is already
+        // invisible; this keeps a stray action from resurrecting the pane.)
         if self.ui.button(cx, ids!(nav_toggle)).clicked(actions) {
-            let sidebar = self.ui.view(cx, ids!(sidebar));
-            let vis = sidebar.borrow().map(|v| v.visible()).unwrap_or(true);
-            sidebar.set_visible(cx, !vis);
-            cx.redraw_all();
+            self.ui.view(cx, ids!(sidebar)).set_visible(cx, false);
         }
         if self
             .ui
@@ -7522,22 +7990,35 @@ impl MatchEvent for App {
                 .downcast_ref::<makepad_widgets::makepad_platform::event::NativeQrScanned>()
             {
                 let json = scan.json.clone();
-                match crate::app::login::apply_provision_config_json(&json) {
+                // A TOAST, not the status label: that label lives in the
+                // desktop header, which this app hides ("no header chrome"),
+                // so a scan reported success to a surface the phone never
+                // draws — the user saw nothing and could not tell a good
+                // scan from a bad one. Measured on the OnePlus 6.
+                let (kind, message) = match crate::app::login::apply_provision_config_json(&json) {
                     Ok(what) => {
                         log::info!("QR provisioned LLM: {what}");
                         self.connect_transport(cx); // respawn kernel → reads new _main.json
                         self.clear_chat(cx);
-                        self.ui
-                            .label(cx, ids!(status_label))
-                            .set_text(cx, &format!("LLM configured · {what}"));
+                        (
+                            octos_app_store::toasts::ToastKind::ReconnectSuccess,
+                            format!("✓ {what}"),
+                        )
                     }
                     Err(e) => {
                         log::warn!("QR provision failed: {e}");
-                        self.ui
-                            .label(cx, ids!(status_label))
-                            .set_text(cx, &format!("QR error: {e}"));
+                        (
+                            octos_app_store::toasts::ToastKind::Error,
+                            format!("QR error: {e}"),
+                        )
                     }
+                };
+                if let Ok(mut st) = APP_STATE.write() {
+                    st.toasts
+                        .push(octos_app_store::toasts::Toast::new(kind, message.clone()));
                 }
+                self.ui.label(cx, ids!(status_label)).set_text(cx, &message);
+                self.sync_toasts(cx);
             }
         }
 
@@ -8226,18 +8707,54 @@ impl MatchEvent for App {
                     let data: serde_json::Value =
                         serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
                     let store = splash_ui_l0::InstanceStore::default();
-                    match app::l0_card::render(&source, &data, &store) {
-                        Ok(body) => {
+                    // Realize once to CHECK it, and report the reason if it
+                    // fails — a seeded card that cannot realize must say so
+                    // rather than leave a blank screen.
+                    match app::l0_card::render(cx, &source, &data, &store) {
+                        Ok(_) => {
+                            // Then inject the LEDGER, not what it lowered to.
+                            //
+                            // This pushed the lowered DSL, and that made the
+                            // seeded card a photograph: `resolve_a2app_card`
+                            // finds no `runl0` fence in it, so no redraw ever
+                            // resolves it again. The stock card's prices stayed
+                            // em dashes over data that had already arrived —
+                            // the epoch bumped, the cache cleared, the frame
+                            // drew, and the message still held the dead text
+                            // rendered before the fetch landed.
+                            //
+                            // A ledger goes through the same path a generated
+                            // card does, which is also the only way seeding
+                            // tests anything the app actually runs.
                             let item = if let Ok(mut chat) = CHAT_DATA.write() {
                                 chat.messages.push(ChatMessage {
                                     role: ChatRole::Assistant,
-                                    text: format!("```runsplash\n{body}\n```"),
+                                    text: format!("```runl0\n{source}\n```"),
                                 });
                                 chat.messages.len() - 1
                             } else {
                                 0
                             };
                             app::l0_card::begin(source, data, item);
+                            // `--es makepad.SEED_L0_EVENT <event> --es
+                            // makepad.SEED_L0_VALUE <payload>` opens the card on
+                            // a state a tap would have reached. The harness has
+                            // passed these all along and nothing read them, so
+                            // every "detail view" capture was silently a capture
+                            // of the list.
+                            if let Ok(event) = std::env::var("MAKEPAD_SEED_L0_EVENT") {
+                                let value =
+                                    std::env::var("MAKEPAD_SEED_L0_VALUE").unwrap_or_default();
+                                match app::l0_card::tap(cx, item, "root", &event, &value) {
+                                    Ok(Some(_)) => {
+                                        log::info!("SEED_L0 event {event}({value}) applied")
+                                    }
+                                    Ok(None) => {
+                                        log::warn!("SEED_L0 event {event}({value}) applied to nothing")
+                                    }
+                                    Err(why) => log::warn!("SEED_L0 event failed: {why}"),
+                                }
+                            }
                             self.update_empty_state_visibility(cx);
                             cx.redraw_all();
                             log::info!("SEED_L0 injected from {card_path} as item {item}");
@@ -8262,6 +8779,60 @@ impl MatchEvent for App {
                     card.err(),
                     blob.err()
                 ),
+            }
+        }
+
+        // `--es makepad.FAKE_GPS_FILE <path>` walks a track of `lat,lon` lines,
+        // one fix per interval, as if the device were driving it.
+        //
+        // DEBUG SCAFFOLDING, and it exists because there is no other way to test
+        // that navigation MOVES. Everything downstream of `sys.gps` was verified
+        // correct and frozen: the follow camera, the turn instruction, the distance
+        // remaining. The handset that renders these cards sits 3.7 km from the
+        // nearest routable road, so every route that can be named near it reports
+        // zero progress — correctly — and a broken follow camera and a working one
+        // are the same screenshot. Driving the phone is the only alternative.
+        //
+        // A card cannot see this. It writes the same store the Android
+        // `LocationListener` writes, through the same function, so the fix arrives
+        // by the path a real one does and bumps the same epoch. Nothing in the
+        // language, the kit or the widgets knows the difference — which is the
+        // point: it tests the real chain rather than a parallel one.
+        if let Ok(track_path) = std::env::var("MAKEPAD_FAKE_GPS_FILE") {
+            match std::fs::read_to_string(&track_path) {
+                Ok(text) => {
+                    let track: Vec<(f64, f64)> = text
+                        .lines()
+                        .filter_map(|l| {
+                            let (a, b) = l.trim().split_once(',')?;
+                            Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
+                        })
+                        .collect();
+                    let step_ms: u64 = std::env::var("MAKEPAD_FAKE_GPS_MS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1000);
+                    log::info!(
+                        "FAKE_GPS: walking {} fixes from {track_path} every {step_ms}ms",
+                        track.len()
+                    );
+                    // The track OWNS the position from here on: the real
+                    // LocationListener is muted, or a phone whose location wakes
+                    // up mid-run feeds the camera two positions 700 ms apart and
+                    // live nav jumps between the drive and the desk.
+                    makepad_widgets::makepad_draw::makepad_platform::gps::claim_fake_gps();
+                    std::thread::spawn(move || {
+                        for (i, (lat, lon)) in track.iter().enumerate() {
+                            makepad_widgets::makepad_draw::makepad_platform::gps::set_gps_fix(
+                                *lat, *lon, 8.0,
+                            );
+                            log::info!("FAKE_GPS: fix {i} at {lat:.5},{lon:.5}");
+                            std::thread::sleep(std::time::Duration::from_millis(step_ms));
+                        }
+                        log::info!("FAKE_GPS: track finished");
+                    });
+                }
+                Err(e) => log::warn!("FAKE_GPS_FILE read failed: {e}"),
             }
         }
 
@@ -8317,6 +8888,85 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // The L0 reader overlay (a card wrote a page to `sys.link`). The spawn
+        // happened in l0_card::tap, where no widget area exists — the native
+        // view is positioned HERE, once, to the full window, on the first
+        // event after it. System back closes the reader instead of the app;
+        // `handled` is how the platform is told the press was consumed.
+        if app::l0_card::L0_READER_OPEN.load(std::sync::atomic::Ordering::Relaxed) {
+            if let Event::BackPressed { handled } = event {
+                cx.system_browser(web_card_browser_id()).detach();
+                makepad_widgets::splash::set_link("");
+                app::l0_card::L0_READER_OPEN
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                handled.set(true);
+            } else if !app::l0_card::L0_READER_PLACED
+                .swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                // The Window WidgetRef's own area is a zero rect (measured);
+                // the chat list is the drawn region the card occupies, which
+                // is exactly what the reader should cover.
+                let over = self.ui.widget(cx, ids!(chat_list)).area();
+                log::info!("[l0] reader placed over {:?}", over.rect(cx));
+                cx.system_browser(web_card_browser_id()).update(over, true);
+            }
+        } else if let Event::BackPressed { handled } = event {
+            // No reader up: offer the press to the latest card as its own
+            // `back` event — the edge-swipe gesture is how a story detail
+            // returns to its list. Consumed only when a cell actually moved,
+            // so at the card's top view the press still leaves the app.
+            if !handled.get() && self.l0_gesture(cx, "back") {
+                handled.set(true);
+            }
+        } else if let Event::TouchUpdate(tu) = event {
+            // A horizontal swipe over the card, offered as the card's own
+            // swipe event — how the weather card pages through saved cities.
+            // The raw touch stream carries no start position, so Start points
+            // are remembered here and matched by uid at Stop. Thresholds are
+            // tuned to a THUMB, not to adb: a real swipe takes up to a second
+            // and arcs diagonally (measured — a 700ms drag with 80px of drift
+            // is a normal human swipe, and the first cut rejected it), so the
+            // gate is mostly-horizontal, far enough to be deliberate, and
+            // under 1.5s; only a slow press-and-hold drag stays excluded.
+            use makepad_widgets::makepad_draw::makepad_platform::event::TouchState;
+            for touch in &tu.touches {
+                match touch.state {
+                    TouchState::Start => {
+                        L0_TOUCH_STARTS.with(|m| {
+                            m.borrow_mut()
+                                .insert(touch.uid, (touch.abs.x, touch.abs.y, touch.time))
+                        });
+                    }
+                    TouchState::Stop => {
+                        let start =
+                            L0_TOUCH_STARTS.with(|m| m.borrow_mut().remove(&touch.uid));
+                        if let Some((x0, y0, t0)) = start {
+                            let dx = touch.abs.x - x0;
+                            let dy = touch.abs.y - y0;
+                            let dt = touch.time - t0;
+                            // No time cap: a person testing a reveal drags
+                            // SLOWLY, expecting the row to follow the finger,
+                            // and a 2s deliberate drag is still a swipe. Only
+                            // direction and distance gate now.
+                            let fired = dx.abs() > 48.0 && dx.abs() > dy.abs() * 1.2;
+                            // One line per stroke, fired or not — "not
+                            // working" is only diagnosable if the rejected
+                            // stroke's numbers are in the log.
+                            log::info!(
+                                "[l0] stroke dx={dx:.0} dy={dy:.0} dt={dt:.2}s fired={fired}"
+                            );
+                            if fired {
+                                let ev =
+                                    if dx < 0.0 { "swipe_left" } else { "swipe_right" };
+                                L0_SWIPE_AT.with(|t| t.set(Some(std::time::Instant::now())));
+                                self.l0_gesture(cx, ev);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         // Build with OCTOS_SEED_CARD=1 to push one of the prebuilt Splash
         // weather cards straight into the conversation, bypassing the AMA and
         // the LLM entirely. The card is pure Splash DSL with live
@@ -8440,6 +9090,33 @@ impl AppMain for App {
                         Some(format!("```runhtml\n{card}\n```"))
                     }
                 }
+                // A card lowered from a real PLAN, so the plan pipeline and its
+                // live bindings can be exercised on device without a backend --
+                // the seed-prompt path needs the agent, and the agent needs a
+                // gateway. This is the same `lower_plan` the runplan fence uses.
+                Some(kind @ ("aimovers" | "shanghai")) => {
+                    let plan = if kind == "aimovers" {
+                        SEED_PLAN_AI_MOVERS
+                    } else {
+                        SEED_PLAN_SHANGHAI
+                    };
+                    match crate::app::plan::lower_plan(plan) {
+                        Ok(dsl) => {
+                            log::info!("seed card: {kind} plan -> {} bytes", dsl.len());
+                            Some(format!("```runsplash\n{dsl}\n```"))
+                        }
+                        Err(e) => {
+                            log::warn!("seed plan {kind} rejected: {e}");
+                            Some(format!(
+                                "```runsplash\n{}\n```",
+                                {
+                                    log::warn!("seed plan refused, not rendered: {e}");
+                                    app::l0_card::quiet_card()
+                                }
+                            ))
+                        }
+                    }
+                }
                 _ => {
                     let card = include_str!("../../../docs/weather-styles/style-glass.splash");
                     log::info!("seed card: {} bytes of splash", card.len());
@@ -8532,6 +9209,12 @@ impl AppMain for App {
             }
         }
         // Toast auto-dismiss: pop the shown toast and advance to the next.
+        if self.l0_typing_rebuild.is_event(event).is_some() {
+            // The coalesced rebuild for everything the keystrokes changed.
+            L0_TYPING_PENDING.store(false, std::sync::atomic::Ordering::Relaxed);
+            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            cx.redraw_all();
+        }
         if self.toast_timer.is_event(event).is_some() {
             self.toast_timer = Timer::empty();
             if let Ok(mut state) = APP_STATE.write() {
@@ -8783,6 +9466,11 @@ impl AppMain for App {
                         // lint rules; fired as ONE repair turn after the message
                         // is stored (the corrected card streams in over it).
                         let mut card_repair: Option<String> = None;
+                        // Which budget the pending repair draws from: an L0
+                        // CHECKER refusal spends `l0_repair_attempts` (up to
+                        // L0_REPAIR_BUDGET); lint/security spend the one-shot
+                        // `repair_attempted` as before.
+                        let mut l0_refusal_repair = false;
                         let mut data = CHAT_DATA.write().unwrap();
                         let streamed = std::mem::take(&mut data.streaming_text);
                         let authoritative = std::mem::take(&mut data.authoritative_text);
@@ -8909,6 +9597,76 @@ impl AppMain for App {
                                     }
                                     } // end else (safe card path)
                                 }
+                                // An L0 card is checked HERE, where a repair turn
+                                // is still possible.
+                                //
+                                // `card_lint` only sees a `runsplash` body, and an
+                                // L0 ledger is a different fence — so a refused L0
+                                // card fell through to render time, where
+                                // `resolve_l0_blocks` draws the diagnostics and
+                                // there is no way back to the model. The first
+                                // live GLM-5.2 card died exactly there: it read
+                                // `quote.volume` without listing `volume` in the
+                                // source's `fields:`, and the user got an error
+                                // card instead of a second attempt.
+                                //
+                                // The checker's own message is the repair prompt.
+                                // It already names the line, the offending field
+                                // and the alternatives, which is more than a
+                                // hand-written instruction would say.
+                                if card_repair.is_none() {
+                                    if let Some(owner_idx) = prompt_owner {
+                                        if self.apps[owner_idx].l0_repair_attempts
+                                            < L0_REPAIR_BUDGET
+                                        {
+                                            let mut why: Vec<String> = Vec::new();
+                                            for piece in app::l0_card::split_l0_blocks(&text) {
+                                                if let app::l0_card::Piece::Ledger(src) = piece {
+                                                    let report =
+                                                        splash_ui_l0::check_ui_l0_named("card", src);
+                                                    if !report.valid {
+                                                        why.extend(
+                                                            report.diagnostics.iter().map(|d| {
+                                                                format!(
+                                                                    "line {}: {}",
+                                                                    d.line, d.message
+                                                                )
+                                                            }),
+                                                        );
+                                                    }
+                                                    // A VALID card can still be too
+                                                    // wide for the app that asked for
+                                                    // it. See `l0_level_refusal`.
+                                                    if let Some(domain) =
+                                                        self.apps[owner_idx].domain.as_deref()
+                                                    {
+                                                        why.extend(l0_level_refusal(
+                                                            domain, &report,
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                            if !why.is_empty() {
+                                                rendered_card = true;
+                                                log::warn!(
+                                                    "L0 card refused (attempt {}/{}, {} diagnostic(s)): {}",
+                                                    self.apps[owner_idx].l0_repair_attempts + 1,
+                                                    L0_REPAIR_BUDGET,
+                                                    why.len(),
+                                                    why.join(" | ")
+                                                );
+                                                card_repair = Some(format!(
+                                                    "Your L0 card was REFUSED by the checker. Fix \
+                                                     exactly these and re-emit the whole card in \
+                                                     one ```runl0 block — no prose, no other \
+                                                     fenced blocks:\n- {}",
+                                                    why.join("\n- ")
+                                                ));
+                                                l0_refusal_repair = true;
+                                            }
+                                        }
+                                    }
+                                }
                                 // Webview (runhtml) cards get the same archive
                                 // treatment — previously they were ephemeral.
                                 if let Some(html) = extract_runhtml_body(&text) {
@@ -8962,7 +9720,17 @@ impl AppMain for App {
                             let sid = self.apps[i].session_id;
                             let pid = self.agent.as_mut().unwrap().send_prompt(cx, sid, &repair);
                             self.apps[i].current_prompt = Some(pid);
-                            self.apps[i].repair_attempted = true;
+                            // Draw down the budget the repair belongs to: an
+                            // L0 refusal counts against L0_REPAIR_BUDGET and
+                            // leaves the lint/security one-shot untouched, so
+                            // a later lint miss on the repaired card still
+                            // gets its single turn.
+                            if l0_refusal_repair {
+                                self.apps[i].l0_repair_attempts =
+                                    self.apps[i].l0_repair_attempts.saturating_add(1);
+                            } else {
+                                self.apps[i].repair_attempted = true;
+                            }
                             self.set_fg_prompt(Some(pid));
                             CHAT_DATA.write().unwrap().is_streaming = true;
                             self.ui.label(cx, ids!(status_label)).set_text(
@@ -9270,16 +10038,47 @@ mod tests {
         assert!(!display.contains("\"plan\""), "partial plan JSON leaked into UI");
     }
 
-    /// A rejected plan must yield NO card rather than a partial one — half a card
-    /// looks complete and is not.
+    /// A rejected plan must yield a card that shows NOTHING — never diagnostics.
+    ///
+    /// This asserted the opposite: that the card said "This card was refused" and
+    /// named the offending field. That is the compiler's opinion of source the
+    /// person holding the phone did not write and cannot fix, and showing it to
+    /// them was the wrong audience for the right information. The reasons go to
+    /// the log, where whoever is building the generator reads them, and the
+    /// repair path re-prompts the model with them.
+    ///
+    /// Still never a PARTIAL card — half a card looks complete and is not — and
+    /// still never prose, which is indistinguishable from the model choosing to
+    /// answer in words. An empty surface is what a card still arriving looks
+    /// like, which is what this is.
     #[test]
-    fn a_rejected_plan_yields_no_card() {
+    fn a_rejected_plan_shows_nothing_rather_than_diagnostics() {
         let bad = "```runplan\n{\"plan\":\"weather\",\"locale\":\"en\",\
             \"place\":{\"query\":\"Kyoto\",\"lat\":35.0},\"sections\":[]}\n```";
-        assert!(crate::card_splash_body(bad).is_none(), "a coordinate must reject the whole plan");
+        // A rejected plan renders a DEFAULT ERROR CARD. The two states this
+        // replaces were each wrong in one direction: an empty surface is
+        // indistinguishable from "still loading", so a permanent failure read
+        // as a hang; and dev's `None` dropped the message to ordinary prose, so
+        // a rejected plan and a model that chose to answer in words looked
+        // identical. It says something went wrong and NOT what — the reasons
+        // are about generated source and are unusable by whoever is holding the
+        // phone.
+        let body = crate::card_splash_body(bad).expect("a refusal is still a card");
+        assert!(
+            !body.contains("refused") && !body.contains("lat"),
+            "a refusal must not show its reasons:\n{body}"
+        );
+        assert!(!body.contains("Forecast"), "no fragment of the real card:\n{body}");
+        assert!(body.contains("SolidView"), "it is still a card:\n{body}");
+        assert!(
+            body.contains("Couldn't build that"),
+            "and it SAYS something went wrong:\n{body}"
+        );
+        // The plan itself is still rejected, and still not presented as a card
+        // by the runplan materialiser (dev's half of the contract).
         assert!(
             matches!(materialize_runplan_for_display(bad), std::borrow::Cow::Borrowed(_)),
-            "a rejected plan must not be presented as a card"
+            "a rejected plan must not be materialised as a card"
         );
     }
 
@@ -9422,39 +10221,187 @@ mod tests {
     }
 
     #[test]
-    fn splash_gen_prompt_is_self_contained() {
-        // A DSL domain's prompt must inline the spec + manual and forbid the
-        // invented pseudo-DSL, since octos no longer injects app-cards. `activity` is
-        // used because weather/news/stock now take the PLAN path (see PLAN_DOMAINS).
-        assert!(!crate::app::plan::domain_uses_plan("activity"), "this test needs a DSL domain");
-        let docs = "\n----- apps/activity/app.md — THIS IS YOUR SPEC -----\nmandatory: venues via sys.places\n";
-        let p = splash_gen_prompt("activity", "things to do nearby", docs);
+    fn an_l0_domain_gets_the_l0_memory_and_not_the_splash_manual() {
+        // `activity` has an L0 spec, so its prompt must teach L0 — and must NOT
+        // carry the Splash manual, which describes a language the card cannot
+        // use. A prompt with both is worse than either: the model has two
+        // grammars and no way to know which one is enforced.
+        let p = splash_gen_prompt("activity", "things to do nearby", "");
         assert!(p.contains("things to do nearby"), "carries the user intent");
-        assert!(p.contains("apps/activity/app.md"), "inlines the routed spec");
-        assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
-        assert!(p.contains("```runsplash"), "demands one runsplash block");
-        // Directly targets the GLM-5.2 failure mode.
-        assert!(p.contains("Card {"), "names the forbidden pseudo-DSL");
-        assert!(p.contains("layout:"), "names the forbidden pseudo-DSL");
+        assert!(p.contains("```runl0"), "demands one runl0 block");
+        assert!(p.contains("===== LANGUAGE ====="), "inlines the language");
+        assert!(p.contains("===== CATALOG ====="), "inlines the catalog");
+        assert!(p.contains("source parks"), "inlines a card that meets the spec");
         assert!(
-            !p.contains("in your memory"),
-            "must NOT rely on the dead memory injection"
+            !p.contains("SPLASH SYNTAX MANUAL"),
+            "must not carry the manual for a language this card cannot write"
+        );
+        assert!(
+            !p.contains("```runsplash"),
+            "and must not ask for a Splash card"
         );
     }
 
-    /// A PLAN domain gets a different prompt: emit typed intent, not a card. It must
-    /// NOT carry the DSL warnings — they are about syntax the model can no longer
-    /// write, and leaving them in would only invite it to write a card anyway.
     #[test]
-    fn plan_domain_prompt_asks_for_a_plan_not_a_card() {
-        assert!(crate::app::plan::domain_uses_plan("weather"), "weather is expected on the plan path");
+    fn a_domain_without_an_l0_spec_still_gets_the_splash_path() {
+        // What makes this switchable per app rather than a cutover: an app with
+        // no L0 spec keeps the prompt it always had. If this ever fails, an app
+        // lost its generation path rather than gaining one.
+        let docs = "\n----- apps/web/app.md -----\nmandatory: one runhtml block\n";
+        let p = splash_gen_prompt("web", "make me a todo app", docs);
+        assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
+        assert!(p.contains("```runsplash"), "demands one runsplash block");
+        assert!(p.contains("Card {"), "still names the forbidden pseudo-DSL");
+        assert!(!p.contains("```runl0"), "and does not ask for an L0 card");
+    }
+
+    /// Weather is an L0 domain now, so its prompt asks for a CARD in the L0
+    /// language — not a plan, and not the Splash DSL.
+    ///
+    /// This asserted the opposite while `PLAN_DOMAINS` held weather. The gate
+    /// moved because L0 could not answer `sys.weather`/`sys.geocode` live; with
+    /// those translated it can, so the prompt follows. `lower_plan` still lowers
+    /// a weather plan — the kind outlives the routing — and its own tests cover
+    /// that shape.
+    #[test]
+    fn weather_now_asks_for_an_l0_card() {
+        assert!(!crate::app::plan::domain_uses_plan("weather"), "weather is off the plan path");
         let docs = "\n----- apps/weather/plan.md — THIS IS YOUR SPEC -----\nblocks: Forecast\n";
         let p = splash_gen_prompt("weather", "weather in tokyo", docs);
         assert!(p.contains("weather in tokyo"), "carries the user intent");
-        assert!(p.contains("```runplan"), "demands one runplan block");
-        assert!(!p.contains("```runsplash"), "must not ask for a card");
-        assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the plan path");
-        assert!(p.contains("REJECTED"), "tells the model a bad field is rejected");
+        assert!(p.contains("```runl0"), "demands one runl0 block");
+        assert!(!p.contains("```runplan"), "no longer asks for a plan");
+        assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the L0 path");
+        assert!(p.contains("REFUSED"), "tells the model an off-catalog name is refused");
+    }
+
+    /// Every exemplar is a card the checker accepts, at the level it declares.
+    ///
+    /// `L0_APPS` documented this and nothing enforced it, so an exemplar could
+    /// drift into something the model would be shown as correct and then be
+    /// refused for copying. The exemplar is the single strongest instruction in
+    /// the prompt — it is a worked answer — so a broken one is worse than none.
+    ///
+    /// The level is asserted as DECLARED rather than as L0: `city-picks` is L1
+    /// on purpose, and pinning every app to L0 would have made adding it look
+    /// like a regression.
+    #[test]
+    fn every_exemplar_is_a_card_the_checker_accepts() {
+        for (domain, _, exemplar) in super::L0_APPS {
+            let report = splash_ui_l0::check_ui_l0_named(domain, exemplar);
+            assert!(
+                report.valid,
+                "{domain}'s exemplar must be valid: {:#?}",
+                report.diagnostics
+            );
+            let declared = exemplar
+                .lines()
+                .find_map(|l| l.trim().strip_prefix("# level:"))
+                .map(|l| l.trim().to_owned())
+                .unwrap_or_else(|| "L0".to_owned());
+            let got = format!("{:?}", report.level);
+            assert_eq!(
+                got, declared,
+                "{domain}'s exemplar declares {declared} and checks as {got}"
+            );
+        }
+    }
+
+    /// An L0 app refuses a card that declares a wider grammar.
+    ///
+    /// §7: "escalation is never silent." The level was derived for the prompt's sake
+    /// and then never compared to what came back — `render_ledger` admits on `valid`
+    /// alone, and an L1 card with no diagnostics is valid AT L1. So a model that put
+    /// `# level: L1` on a weather card got it drawn, and the header the profile calls
+    /// the whole point of raising a level was decorative in the one direction that
+    /// matters.
+    #[test]
+    fn a_card_wider_than_its_app_is_refused() {
+        let l1 = splash_ui_l0::check_ui_l0_named(
+            "probe",
+            "# level: L1\n\
+             source w sys.weather(lat: 1, lon: 2, fields: [temp])\n\
+             view root Surface { TextHero(value: w.temp) }\n",
+        );
+        assert_eq!(format!("{:?}", l1.level), "L1", "the probe is L1");
+        assert!(l1.valid, "and valid at its own level: {:#?}", l1.diagnostics);
+
+        let refusal = super::l0_level_refusal("weather", &l1).expect("an L0 app refuses it");
+        // The message is a REPAIR PROMPT — the model reads it and re-emits. It has to
+        // name the level it wrote, the level it may use, and what to remove.
+        assert!(
+            refusal.contains("L1") && refusal.contains("L0") && refusal.contains("# level:"),
+            "the refusal must be actionable: {refusal}"
+        );
+
+        // And the same card is accepted by an app that IS approved for L1, or the
+        // rule would just be "never L1".
+        let l1_app = super::L0_APPS
+            .iter()
+            .map(|(d, _, _)| *d)
+            .find(|d| super::l0_level_for(d) == Some(splash_ui_l0::Level::L1));
+        if let Some(d) = l1_app {
+            assert!(
+                super::l0_level_refusal(d, &l1).is_none(),
+                "{d} is approved for L1 and must accept an L1 card"
+            );
+        }
+
+        // An L0 card is never refused by this rule, at any app.
+        let l0 = splash_ui_l0::check_ui_l0_named(
+            "probe",
+            "source w sys.weather(lat: 1, lon: 2, fields: [temp])\n\
+             view root Surface { TextHero(value: w.temp) }\n",
+        );
+        for (d, _, _) in super::L0_APPS {
+            assert!(
+                super::l0_level_refusal(d, &l0).is_none(),
+                "{d} must accept an L0 card"
+            );
+        }
+    }
+
+    /// An L1 app must not be told there is no arithmetic.
+    ///
+    /// The prompt carried L0's rule for every app while the spec beside it asked
+    /// `city-picks` for one expression — two instructions in one prompt, in
+    /// direct contradiction, with nothing telling the model which wins.
+    #[test]
+    fn the_prompt_states_the_rule_for_the_apps_own_level() {
+        let l0 = super::l0_prompt_for("weather", "weather in kyoto").expect("weather has a spec");
+        assert!(l0.contains("Write an L0 CARD"), "an L0 app is told L0");
+        assert!(l0.contains("There is no arithmetic"), "and gets L0's rule");
+
+        let l1 = super::l0_prompt_for("city-picks", "compare my cities").expect("city-picks has a spec");
+        assert!(l1.contains("Write an L1 CARD"), "an L1 app is told L1");
+        assert!(!l1.contains("There is no arithmetic"), "and is NOT told L0's rule:\n{l1}");
+        assert!(l1.contains("must READ something"), "it gets L1's rule instead");
+    }
+
+    /// The two syntax classes live generation actually shipped as blank
+    /// screens — a `when` guard nested inside a constructor's argument list,
+    /// and a comma where an argument's `:` belongs — must be warned against
+    /// IN the prompt, with the wrong form shown next to the right one. The
+    /// guidance lives in framework/l0.md §5, which `l0_prompt_for` inlines.
+    #[test]
+    fn the_prompt_warns_against_the_observed_syntax_classes() {
+        let p = super::l0_prompt_for("weather", "weather in kyoto").expect("weather has a spec");
+        assert!(
+            p.contains("never an argument"),
+            "states that a guard is a statement, not an argument"
+        );
+        assert!(
+            p.contains("cannot appear inside an argument list"),
+            "shows the refusal a nested `when` causes"
+        );
+        assert!(
+            p.contains("commas separate arguments"),
+            "states the `name: value` comma-separated argument form"
+        );
+        assert!(
+            p.contains("expected \":\" after argument name"),
+            "shows the refusal a bare value / stray comma causes"
+        );
     }
 
     /// Every plan domain must be served its PLAN spec, and every other domain its DSL
@@ -9586,37 +10533,64 @@ mod tests {
         }
     }
 
+    /// nav is GENERATED, not served — and its L0 spec has to be reachable.
+    ///
+    /// This asserted the opposite: that the client emitted the 664-line L2 trip
+    /// planner verbatim and that `a2app/apps/nav/app.md` embedded it byte for
+    /// byte. That rationale was the card's SIZE — "the on-device model
+    /// under-generates / truncates this ~14 KB card" — and the card is not that
+    /// size any more. `a2app-l0/apps/nav/exemplar.card` is the same screen in 92
+    /// lines of L0, which is a request a capable model answers.
+    ///
+    /// What matters now is that nav reaches the generation path with a spec, so
+    /// the test guards that instead of guarding a card nobody serves.
     #[test]
-    fn nav_is_served_as_a_valid_canonical_card() {
-        // nav is a DIRECT-SERVE app (like youtube): the client emits
-        // NAV_CANONICAL_CARD verbatim on a `nav` route — no LLM, because the
-        // on-device model under-generates a card this large. Guard the served
-        // card's structural invariants so a truncated/broken exemplar can't ship.
-        let c = NAV_CANONICAL_CARD;
+    fn nav_is_generated_from_an_l0_spec() {
+        let prompt = super::l0_prompt_for("nav", "directions to SFO").expect("nav has an L0 spec");
+        assert!(prompt.contains("```runl0"), "it must ask for an L0 card");
+        // The exemplar travels with it, and it is the SHORT one.
+        let (_, _, exemplar) = super::L0_APPS
+            .iter()
+            .find(|(d, _, _)| *d == "nav")
+            .expect("nav is registered");
+        // CODE lines, not commentary. The L0 exemplar is heavily annotated —
+        // most of its length is the record of what each declaration replaced —
+        // and counting comments measured the wrong thing: it failed when the card
+        // gained travel modes, a waypoint and per-leg times, which is the card
+        // getting closer to the L2 app's function rather than further from the
+        // claim. The comparison worth asserting is statements against statements.
+        let code = exemplar
+            .lines()
+            .filter(|l| {
+                let t = l.trim();
+                !t.is_empty() && !t.starts_with('#')
+            })
+            .count();
+        // 250, and the SAME number `splash-ui-l0`'s `the_nav_trip_planner_is_
+        // expressible_at_l0` asserts. Two copies of one rule, in two repositories,
+        // and this one was missed every time the other moved — which is how the
+        // exemplar came to be 100 lines behind the fixture without any test saying
+        // so. `exemplar_drift` in `l0_card.rs` now pins them to the same card, so
+        // this bound and that one have to be raised together or the sync test fails
+        // first.
+        // 300, raised with its twin in `the_nav_trip_planner_is_expressible_at_l0`,
+        // which carries the reasoning: both endpoints became tappable rows that open
+        // a find state, because a permanently-live `Field` cannot be focused on this
+        // renderer and both were inert.
         assert!(
-            c.starts_with("// name: nav-app"),
-            "served card must open with its name directive"
+            code < 300,
+            "the exemplar must be the L0 rewrite, not the 664-line L2 card; \
+             this is {code} lines of declarations"
         );
-        assert!(c.contains("fn tick()"), "drive screen is a no-rebuild tick card");
-        assert_eq!(
-            c.matches('{').count(),
-            c.matches('}').count(),
-            "served card braces must balance"
-        );
-        // every screen present (truncation canary — drive is the last screen)
-        for scr in ["\"search\"", "\"find\"", "\"preview\"", "\"plan\"", "\"drive\""] {
-            assert!(c.contains(scr), "served card missing screen {scr}");
-        }
-        // live bindings (never hardcoded places/ETAs) + the four nav maps
         assert!(
-            c.contains("sys.search(") && c.contains("sys.navroute(") && c.contains("sys.navstep("),
-            "search + routing + turn helpers must be bound"
+            splash_ui_l0::check_ui_l0_named("nav", exemplar).valid,
+            "and it must be a card the checker admits"
         );
-        assert!(c.matches("MapView{").count() >= 4, "needs the four nav maps");
-        // drift-guard: the app.md contract embeds the EXACT card that is served.
+        // The map guard is MANDATORY — an unguarded map centres on -9999 and
+        // loads tiles without bound (441% CPU, 3 GB, measured).
         assert!(
-            baked_app_md("nav").unwrap().contains(c.trim()),
-            "apps/nav/app.md must embed the exact canonical card it documents"
+            exemplar.contains("here.ok == 1"),
+            "the exemplar must guard its Map on having a position"
         );
     }
 
@@ -9752,5 +10726,60 @@ Here is a broken diagram:
 
         assert!(!assistant_message_is_safe_to_store(text));
         assert!(!assistant_message_is_safe_for_history(text));
+    }
+}
+
+#[cfg(test)]
+mod state_injection_review {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// A state value is spliced into the card SOURCE unescaped, and the
+    /// framework documents reading it from INSIDE a string literal
+    /// (`a2app/framework.md`: `Label{ text: "Count: {{state.count}}" }`,
+    /// `apps/nav/app.md:187`: `let q = "{{state.q}}"`). A value containing a
+    /// quote therefore terminates the literal.
+    #[test]
+    fn a_quote_in_state_breaks_out_of_the_card_string() {
+        let mut st: CardState = BTreeMap::new();
+        st.insert("q".to_string(), "Bei\"jing".to_string());
+        let card = r#"let q = "{{state.q}}""#;
+        let out = substitute_state_keys(card, &st);
+        assert_eq!(out, r#"let q = "Bei"jing""#);
+    }
+
+    /// The same splice accepts arbitrary card DSL, so a crafted value is not
+    /// merely a parse break — it lands as code in the card's VM.
+    #[test]
+    fn a_crafted_state_value_injects_dsl() {
+        let mut st: CardState = BTreeMap::new();
+        st.insert(
+            "q".to_string(),
+            r#"x" + sys.notify("pwned") + ""#.to_string(),
+        );
+        let out = substitute_state_keys(r#"let q = "{{state.q}}""#, &st);
+        assert!(out.contains(r#"sys.notify("pwned")"#), "{out}");
+    }
+}
+
+#[cfg(test)]
+mod plan_fence_tolerance {
+    /// A correct plan in a ```json fence still builds a card — measured on
+    /// device, a model emitted exactly this and the whole answer rendered as
+    /// raw JSON to the user.
+    #[test]
+    fn a_plan_in_a_json_fence_is_accepted() {
+        let msg = "here you go\n\n```json\n{\"plan\":\"weather\",\"locale\":\"en\",\
+            \"place\":{\"query\":\"Shanghai\"},\"photo\":\"x\",\
+            \"sections\":[{\"block\":\"CurrentConditions\"}]}\n```";
+        let body = crate::card_splash_body(msg).expect("a plan is a plan");
+        assert!(body.contains("Shanghai"), "{body}");
+    }
+
+    /// Tolerant, not credulous: JSON that is not a plan stays text.
+    #[test]
+    fn unrelated_json_is_left_alone() {
+        let msg = "```json\n{\"hello\":\"world\"}\n```";
+        assert!(crate::card_splash_body(msg).is_none());
     }
 }
