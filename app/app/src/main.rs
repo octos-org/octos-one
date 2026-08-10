@@ -1938,6 +1938,60 @@ fn defer_unclosed_runsplash(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// A semantic plan is not user-facing source code. While its fence is still
+/// streaming, hide the partial JSON just like we hide a partial Splash program;
+/// once closed, [`materialize_runplan_for_display`] replaces it with the card.
+fn defer_unclosed_runplan(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let Some(start) = text.rfind("```runplan") else {
+        return Cow::Borrowed(text);
+    };
+    let after = &text[start + "```runplan".len()..];
+    let closed = match after.find('\n') {
+        Some(nl) => after[nl + 1..].contains("```"),
+        None => false,
+    };
+    if closed {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(format!("{}\u{1F6E0} Building app UI\u{2026}", &text[..start]))
+    }
+}
+
+/// Replace a completed semantic-plan fence with the trusted Splash DSL lowered
+/// by the runtime. The raw plan is still used by the save path before this
+/// display-only conversion, so metadata and the plain-data sibling retain their
+/// single semantic source of truth.
+fn materialize_runplan_for_display(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let Some(start) = text.find("```runplan") else {
+        return Cow::Borrowed(text);
+    };
+    let after_marker = start + "```runplan".len();
+    let Some(line_end) = text[after_marker..].find('\n') else {
+        return Cow::Borrowed(text);
+    };
+    let body_start = after_marker + line_end + 1;
+    let Some(close) = text[body_start..].find("```") else {
+        return Cow::Borrowed(text);
+    };
+    let body_end = body_start + close;
+    let Ok(dsl) = crate::app::plan::lower_plan(text[body_start..body_end].trim_end()) else {
+        return Cow::Borrowed(text);
+    };
+    let fence_end = body_end + 3;
+    let mut out = String::with_capacity(text.len() + dsl.len());
+    out.push_str(&text[..start]);
+    out.push_str("```runsplash\n");
+    out.push_str(&dsl);
+    if !dsl.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("```");
+    out.push_str(&text[fence_end..]);
+    Cow::Owned(out)
+}
+
 /// Strip Splash `//` line and `/* */` block comments and ALL whitespace,
 /// producing a scan-only form. Used by the security gate so `net . http_request`,
 /// `net./*x*/http_request`, and an aliased `n . http_request` all collapse to a
@@ -4736,7 +4790,10 @@ impl Widget for ChatList {
                             // Gate order: hold back an unclosed block, THEN
                             // neutralize EVERY closed-but-forbidden one before it
                             // reaches the Splash renderer (net-write exfil).
-                            let deferred = defer_unclosed_runsplash(&data.streaming_text);
+                            let deferred_plan = defer_unclosed_runplan(&data.streaming_text);
+                            let materialized_plan =
+                                materialize_runplan_for_display(&deferred_plan);
+                            let deferred = defer_unclosed_runsplash(&materialized_plan);
                             let safe = neutralize_forbidden_cards(&deferred);
                             streaming_body = streaming_display_with_latex_autowrap_remend(
                                 &safe,
@@ -4786,7 +4843,8 @@ impl Widget for ChatList {
                         // on the raw message text, which for a card is runsplash DSL,
                         // so the affordance is meaningless — hide both. User messages
                         // have neither button, so these are no-ops there.
-                        let is_splash_card = msg.text.contains("```runsplash");
+                        let is_splash_card = msg.text.contains("```runsplash")
+                            || msg.text.contains("```runplan");
                         item_widget
                             .button(cx, ids!(copy_button))
                             .set_visible(cx, !is_splash_card);
@@ -4809,7 +4867,8 @@ impl Widget for ChatList {
                             // wrap_bare_latex wraps `\cmd{…}` with `$…$` so MathView can
                             // render them.
                             let unwrapped = unwrap_outer_markdown_fence(&msg.text);
-                            let rendered = wrap_bare_latex(unwrapped);
+                            let materialized = materialize_runplan_for_display(unwrapped);
+                            let rendered = wrap_bare_latex(&materialized);
                             let rendered = resolve_a2app_card(&rendered, item_id, card_state);
                             markdown.set_text(cx, &rendered);
                             self.rendered_cache =
@@ -6471,7 +6530,8 @@ impl App {
             if let Some((_, item)) = list.get_item(item_id) {
                 // Re-feed the whole markdown (keeps non-splash content current).
                 let unwrapped = unwrap_outer_markdown_fence(&text);
-                let rendered = wrap_bare_latex(unwrapped);
+                let materialized = materialize_runplan_for_display(unwrapped);
+                let rendered = wrap_bare_latex(&materialized);
                 let rendered = resolve_a2app_card(&rendered, item_id, &state);
                 item.markdown(cx, ids!(selectable)).set_text(cx, &rendered);
                 // Also push the resolved `runsplash` body straight to the
@@ -8871,7 +8931,8 @@ impl AppMain for App {
                                 // must not survive in history to be re-rendered
                                 // by the completed-message path or a session
                                 // hydrate (which don't run the streaming gate).
-                                let stored = neutralize_forbidden_cards(&text).into_owned();
+                                let materialized = materialize_runplan_for_display(&text);
+                                let stored = neutralize_forbidden_cards(&materialized).into_owned();
                                 data.messages.push(ChatMessage {
                                     role: ChatRole::Assistant,
                                     text: stored,
@@ -9010,7 +9071,8 @@ mod tests {
         app_card_docs, assistant_message_is_safe_for_history,
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
         embeddable_card, expand_card_embeds, extract_nav_destination, matching_brace,
-        namespace_child_state, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
+        defer_unclosed_runplan, materialize_runplan_for_display, namespace_child_state,
+        parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
         rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_card_state,
         substitute_props, EmitHandler, DEFAULT_GLASS_OPACITY,
         FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
@@ -9191,6 +9253,21 @@ mod tests {
         let body = crate::card_splash_body(&msg).expect("runplan fence must lower");
         assert_shippable(&substitute_card_state(&body, 4, &BTreeMap::new()));
         assert!(body.contains("// name: weather-app"), "needs the name line to be saved");
+
+        // The completed message shown to the user must contain the lowered card,
+        // never the implementation-detail JSON fence that the model emitted.
+        let display = materialize_runplan_for_display(&msg);
+        assert!(display.contains("```runsplash\n"), "lowered card fence missing: {display}");
+        assert!(!display.contains("```runplan"), "raw plan leaked into UI: {display}");
+        assert!(display.contains("// name: weather-app"), "lowered body missing: {display}");
+    }
+
+    #[test]
+    fn an_unclosed_runplan_is_hidden_while_streaming() {
+        let partial = "before\n```runplan\n{\"plan\":\"news\"";
+        let display = defer_unclosed_runplan(partial);
+        assert_eq!(display, "before\n\u{1F6E0} Building app UI\u{2026}");
+        assert!(!display.contains("\"plan\""), "partial plan JSON leaked into UI");
     }
 
     /// A rejected plan must yield NO card rather than a partial one — half a card
@@ -9200,6 +9277,10 @@ mod tests {
         let bad = "```runplan\n{\"plan\":\"weather\",\"locale\":\"en\",\
             \"place\":{\"query\":\"Kyoto\",\"lat\":35.0},\"sections\":[]}\n```";
         assert!(crate::card_splash_body(bad).is_none(), "a coordinate must reject the whole plan");
+        assert!(
+            matches!(materialize_runplan_for_display(bad), std::borrow::Cow::Borrowed(_)),
+            "a rejected plan must not be presented as a card"
+        );
     }
 
     #[test]
