@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""
+Render L0 cards on a real device and check what actually reached the screen.
+
+Unit tests prove a card parses, realizes and lowers. They cannot prove it is
+LEGIBLE. Three bugs in this work were invisible to 48 passing tests and obvious
+in one screenshot: a forced width wrapped a hero one character per line, a tint
+was passed through and ignored, and hero text clipped off the right edge.
+
+`uiautomator` cannot help here — makepad renders to a GPU surface, so the view
+hierarchy holds 14 nodes and one string. The screen is the only witness, so this
+compares pixels against a golden image.
+
+    device-l0-test.py capture <case>   # record a golden (review it by eye first)
+    device-l0-test.py run [case…]      # check against goldens; exit 1 on failure
+
+Goldens live in docs/tools/golden/. Regenerate deliberately, never to make a
+failure go away — a golden updated without looking is a test that asserts
+whatever the code currently does.
+"""
+
+import io
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parents[2]
+SPLASH = ROOT.parent / "Splash"
+GOLDEN = Path(__file__).parent / "golden"
+ADB = Path.home() / "Library/Android/sdk/platform-tools/adb"
+DEVICE = "bf0a4730"  # OnePlus 6T
+PKG = "dev.makepad.octos_app"
+CARDS = f"/storage/emulated/0/Android/media/{PKG}/cards"
+
+# Status bar carries a clock and battery; the nav bar, FAB and composer move.
+# Comparing them would fail on the minute rather than on the card.
+#
+# 180 was measured before the harness learned to dismiss the keyboard, and left
+# 13 rows of the composer bar in frame — enough to fail news at 0.54% on a card
+# that rendered correctly. 195 excludes it. The cost is real but small: the last
+# card content sits at ~row 2035 of the crop, so nothing rendered is lost.
+CROP_TOP = 90
+CROP_BOTTOM = 195
+
+# Cases: (name, card, data, event, payload, static_band). An event means
+# "dispatch this first", so a case can assert a post-interaction state — the
+# thing a static screenshot cannot reach.
+#
+# `static_band` is (top, bottom) in golden coordinates, and it exists because a
+# card can now be LIVE. Where a source lowers to a `sys.*` call the backend
+# answers, the rendered number is today's, not the seeded blob's — so a pixel
+# golden over the whole screen asserts a share price and fails tomorrow. That is
+# not a test, it is a time bomb.
+#
+# For such a case the comparison is restricted to a band that is still
+# deterministic. Everything outside it is checked only for "the card rendered at
+# all", which is weaker and honest; a whole-screen golden would have been
+# stronger and false.
+CASES = [
+    ("weather", "weather.card", "weather.json", None, None, None),
+    ("stock-list", "stock.card", "stock.json", None, None, None),
+    # Name, price, change %, high, low and the chart are live. The Mkt Cap / P/E
+    # row is not: `sys.stock` exposes neither, so both keep their seeded value.
+    ("stock-detail", "stock.card", "stock.json", "open_quote", "NVDA", (1740, 2010)),
+    ("news", "news.card", "news.json", None, None, None),
+]
+
+# Measured, not guessed: a clean re-run of all four cases differs by 0.00%, so
+# rendering is deterministic once the photo backdrop is cached. 2% was the first
+# guess and it was too loose — reintroducing a real regression drifted stock-list
+# by 1.82% and PASSED. 0.5% leaves margin for a re-fetched backdrop while still
+# failing on a layout change.
+PIXEL_TOLERANCE = 24
+FAIL_FRACTION = 0.005
+
+# Seconds to wait for the app's own "SEED_CARD injected" marker, then for the
+# frame to stop changing. Both poll rather than sleep, so the common case is
+# faster than the 13s fixed sleep these replaced and the slow case still waits.
+LOAD_TIMEOUT = 20
+SETTLE_TIMEOUT = 20
+
+
+def adb(*args, **kw):
+    return subprocess.run([str(ADB), "-s", DEVICE, *args], capture_output=True, **kw)
+
+
+def lower(case):
+    """Realize a card (optionally after one event) and return the DSL."""
+    _, card, data, event, payload = case[:5]
+    card_path = SPLASH / "crates/splash-ui-l0/tests/fixtures" / card
+    data_path = Path(__file__).parent / "data" / data
+
+    if event:
+        args = ["--example", "tap_l0", "--", str(card_path), str(data_path), event]
+        if payload:
+            args.append(payload)
+    else:
+        args = ["--example", "lower_l0", "--", str(card_path), str(data_path)]
+
+    out = subprocess.run(
+        ["cargo", "run", "-q", "-p", "splash-ui-l0", *args],
+        cwd=SPLASH, capture_output=True, text=True,
+    )
+    if out.returncode != 0:
+        raise SystemExit(f"lowering {case[0]} failed:\n{out.stderr}")
+    return out.stdout
+
+
+class LaunchFailed(Exception):
+    """The app never loaded the card. Distinct from the card rendering wrongly."""
+
+
+# Above this, a diff is not a rendering change — it is app chrome covering the
+# card. Three classes have done it so far: the soft keyboard (40%), the composer
+# bar (0.54%, at the crop edge) and the navigation drawer (85%). A real layout
+# regression moved a card by 1.8%, and the injected 8px padding change by 4.8%,
+# so there is a wide gap between "the card changed" and "something is on top of
+# it".
+CHROME_SUSPICION = 0.40
+
+
+def dismiss_chrome():
+    """Close anything covering the card: keyboard, drawer, dialog.
+
+    Unlike `dismiss_ime` this does not ask what is open — it presses BACK and
+    lets the app close whatever is topmost. That is safe here because the card
+    was just seeded and BACK on a bare card is a no-op, and it is the only
+    approach that generalises: the drawer has no `dumpsys` flag as convenient as
+    `mIsInputViewShown`, and the next contaminant will not either.
+    """
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    subprocess.run(["sleep", "1"])
+
+
+def dismiss_ime():
+    """Close the soft keyboard if it is up.
+
+    The app's composer keeps focus across a force-stop, so the IME can be
+    covering the bottom 40% of the screen when the card renders — which the
+    comparison reports as a 40% drift on a card that is in fact correct. The
+    goldens were captured with no keyboard, so make that true before capturing
+    rather than encoding a keyboard into them.
+    """
+    for _ in range(3):
+        state = adb("shell", "dumpsys", "input_method").stdout.decode("utf-8", "replace")
+        if "mIsInputViewShown=true" not in state:
+            return
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        subprocess.run(["sleep", "1"])
+
+
+def grab():
+    """One cropped screenshot."""
+    shot = adb("exec-out", "screencap", "-p").stdout
+    img = Image.open(io.BytesIO(shot)).convert("RGB")
+    return img.crop((0, CROP_TOP, img.width, img.height - CROP_BOTTOM))
+
+
+def render(name, dsl, attempts=3):
+    """Push, launch, wait for the card to actually load, settle, screenshot.
+
+    A fixed sleep used to stand in for all of this, and it lied in the expensive
+    direction: when the launch raced, the app showed its own splash and the
+    comparison reported "40% of pixels differ" — a number that looks exactly
+    like a layout regression. Re-running made it pass, which is the habit that
+    lets a real regression through. So wait for the app's own load marker, and
+    when it never arrives say THAT instead of producing a pixel percentage.
+    """
+    local = Path(f"/tmp/l0-{name}.splash")
+    local.write_text(dsl)
+    remote = f"{CARDS}/l0-{name}.splash"
+    adb("push", str(local), remote)
+
+    for attempt in range(1, attempts + 1):
+        adb("shell", "am", "force-stop", PKG)
+        adb("logcat", "-c")
+        adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
+        adb("shell", f"am start -n {PKG}/.MakepadApp "
+                     f"--es makepad.SEED_CARD_FILE {remote}")
+
+        # The app logs the seed it injected. Waiting for that marker rather than
+        # for a duration is the difference between "the card is up" and "enough
+        # time has probably passed".
+        for _ in range(LOAD_TIMEOUT):
+            subprocess.run(["sleep", "1"])
+            log = adb("logcat", "-d").stdout.decode("utf-8", "replace")
+            if "SEED_CARD injected" in log and remote in log:
+                break
+        else:
+            print(f"    {name}: card not loaded (attempt {attempt}/{attempts})")
+            continue
+
+        # Loaded. Clear the keyboard, then wait for the frame to stop changing —
+        # the photo backdrop arrives over the network, so "loaded" and "finished
+        # drawing" are different moments.
+        dismiss_ime()
+        previous = grab()
+        stable = 0
+        for _ in range(SETTLE_TIMEOUT):
+            subprocess.run(["sleep", "1"])
+            current = grab()
+            # Three consecutive identical frames, not two: an intermediate state
+            # can hold still for a second, and returning on the first match is
+            # how a half-drawn card becomes the answer.
+            stable = stable + 1 if compare(previous, current) == 0.0 else 0
+            previous = current
+            if stable >= 2:
+                return current
+        return previous
+
+    raise LaunchFailed(
+        f"{name}: the app never logged loading {remote} after {attempts} attempts"
+    )
+
+
+def compare(a, b):
+    """Fraction of pixels differing beyond tolerance on any channel."""
+    if a.size != b.size:
+        return 1.0
+    d = np.abs(np.asarray(a, dtype=np.int16) - np.asarray(b, dtype=np.int16))
+    return float((d.max(axis=2) > PIXEL_TOLERANCE).mean())
+
+
+def crop_band(shot, gold, band):
+    """Both images narrowed to a case's deterministic band, or unchanged.
+
+    A live card's numbers change between runs, so only the band a case declares
+    static can be compared. Returning both images keeps the caller's `compare`
+    symmetric and makes it impossible to compare a crop against a full frame.
+    """
+    if band is None:
+        return shot, gold
+    top, bottom = band
+    box = (0, top, shot.width, min(bottom, shot.height))
+    return shot.crop(box), gold.crop((0, top, gold.width, min(bottom, gold.height)))
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "run"
+    wanted = sys.argv[2:]
+    cases = [c for c in CASES if not wanted or c[0] in wanted]
+    GOLDEN.mkdir(exist_ok=True)
+
+    if adb("get-state").stdout.strip() != b"device":
+        raise SystemExit(f"device {DEVICE} is not attached")
+
+    failures = []
+    for case in cases:
+        name = case[0]
+        try:
+            shot = render(name, lower(case))
+        except LaunchFailed as e:
+            print(f"  ERR  {name:<14} {e}")
+            failures.append(str(e))
+            continue
+        gold_path = GOLDEN / f"{name}.png"
+
+        if mode == "capture":
+            shot.save(gold_path)
+            print(f"  captured {name} -> {gold_path.name} (review it by eye)")
+            continue
+
+        if not gold_path.exists():
+            failures.append(f"{name}: no golden; run `capture` and review it")
+            continue
+
+        gold = Image.open(gold_path).convert("RGB")
+        band = case[5] if len(case) > 5 else None
+        drift = compare(*crop_band(shot, gold, band))
+
+        # A diff this large is chrome, not layout. Take ONE corrective pass —
+        # press BACK, recapture — and report what happened either way.
+        #
+        # This is not "re-run until green". The retry performs a specific
+        # corrective action for a specific known cause, it happens once, and a
+        # genuine regression fails both times because BACK does not change what
+        # the card renders. Re-running on any failure is the habit that lets a
+        # real regression through; this is narrower on purpose.
+        if drift > CHROME_SUSPICION:
+            print(f"  ...  {name:<14} {drift * 100:5.2f}% — chrome suspected, clearing")
+            dismiss_chrome()
+            shot = grab()
+            drift = compare(*crop_band(shot, gold, band))
+
+        ok = drift <= FAIL_FRACTION
+        print(f"  {'ok  ' if ok else 'FAIL'} {name:<14} {drift * 100:5.2f}% pixels differ")
+        if not ok:
+            diff_path = Path(f"/tmp/diff-{name}.png")
+            shot.save(diff_path)
+            failures.append(f"{name}: {drift*100:.2f}% drift, actual at {diff_path}")
+
+    if failures:
+        print("\n" + "\n".join(f"  {f}" for f in failures))
+        return 1
+    if mode == "run":
+        print(f"\nall {len(cases)} cards render as expected on {DEVICE}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,69 @@
+{
+  "lead": [
+    {
+      "id": "1",
+      "title": "Rust 1.95 lands with const generics improvements",
+      "author": "steveklabnik",
+      "points": 412,
+      "comments": 137,
+      "url": "blog.rust-lang.org"
+    }
+  ],
+  "feed": [
+    {
+      "id": "2",
+      "title": "A new approach to incremental compilation",
+      "author": "nikomatsakis",
+      "points": 288
+    },
+    {
+      "id": "3",
+      "title": "Show HN: I built a terminal UI framework",
+      "author": "jdoe",
+      "points": 194
+    },
+    {
+      "id": "4",
+      "title": "The case against microservices, revisited",
+      "author": "mfowler",
+      "points": 151
+    },
+    {
+      "id": "5",
+      "title": "WebGPU shipping in all major browsers",
+      "author": "kvark",
+      "points": 133
+    },
+    {
+      "id": "6",
+      "title": "Why your database is slower than you think",
+      "author": "aphyr",
+      "points": 97
+    },
+    {
+      "id": "7",
+      "title": "Notes on distributed consensus",
+      "author": "hjfreyd",
+      "points": 74
+    },
+    {
+      "id": "8",
+      "title": "An illustrated guide to lifetimes",
+      "author": "fasterthanlime",
+      "points": 61
+    }
+  ],
+  "article": {
+    "title": "Rust 1.95 lands",
+    "author": "steveklabnik",
+    "points": 412,
+    "comments": 137,
+    "url": "blog.rust-lang.org"
+  },
+  "selected": "",
+  "env": {
+    "locale": {
+      "lang": "en"
+    }
+  }
+}

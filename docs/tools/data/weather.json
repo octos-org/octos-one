@@ -1,0 +1,93 @@
+{
+  "place": {
+    "name": "Kyoto"
+  },
+  "now": {
+    "temp": 18,
+    "feels": 16,
+    "hi": 21,
+    "lo": 12,
+    "cond": 2,
+    "humidity": 61,
+    "wind": 9,
+    "pressure": 1013,
+    "uv": 3,
+    "visibility": 10
+  },
+  "sun": {
+    "rise": 5.1,
+    "set": 18.9,
+    "now": 13.5
+  },
+  "moon": {
+    "phase": 0.62,
+    "illumination": 0.71
+  },
+  "aqi": {
+    "grid": [
+      1,
+      2,
+      3
+    ],
+    "index": 42,
+    "band": "good"
+  },
+  "scene": "https://image.pollinations.ai/prompt/kyoto%20skyline?width=1080&height=1920&nologo=true",
+  "units": "c",
+  "days": 7,
+  "city": "Kyoto",
+  "env": {
+    "locale": {
+      "temp_unit": "c",
+      "lang": "en"
+    }
+  },
+  "week": {
+    "days": [
+      {
+        "dayname": "Mon",
+        "hi": 21,
+        "lo": 12,
+        "cond": 2
+      },
+      {
+        "dayname": "Tue",
+        "hi": 23,
+        "lo": 13,
+        "cond": 0
+      },
+      {
+        "dayname": "Wed",
+        "hi": 19,
+        "lo": 11,
+        "cond": 3
+      },
+      {
+        "dayname": "Thu",
+        "hi": 17,
+        "lo": 10,
+        "cond": 3
+      },
+      {
+        "dayname": "Fri",
+        "hi": 20,
+        "lo": 11,
+        "cond": 1
+      },
+      {
+        "dayname": "Sat",
+        "hi": 24,
+        "lo": 14,
+        "cond": 0
+      },
+      {
+        "dayname": "Sun",
+        "hi": 22,
+        "lo": 13,
+        "cond": 1
+      }
+    ],
+    "min_lo": 10,
+    "max_hi": 24
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "schema": "octos.card.plan/1",
+  "plan": "weather",
+  "theme": "octos.weather.immersive",
+  "locale": "en",
+  "place": { "query": "Kyoto" },
+  "photo": "kyoto city cloudy sky",
+  "sections": [
+    { "block": "CurrentConditions", "args": { "condition": "cloudy" } },
+    { "block": "Forecast", "args": { "days": 7,
+        "conditions": ["cloudy", "partly_cloudy", "rain", "cloudy", "clear", "partly_cloudy", "cloudy"] } },
+    { "block": "AirQualityField", "args": {} },
+    { "block": "SunMoon", "args": {} },
+    { "block": "Details", "args": { "tiles": ["aqi", "uv", "humidity", "wind"] } }
+  ]
+}

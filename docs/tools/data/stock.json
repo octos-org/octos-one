@@ -1,0 +1,60 @@
+{
+  "movers": [
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA",
+      "last": 184.2,
+      "change": 3.1,
+      "pct": 1.7
+    },
+    {
+      "ticker": "AAPL",
+      "name": "Apple",
+      "last": 231.4,
+      "change": -1.2,
+      "pct": -0.5
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft",
+      "last": 429.8,
+      "change": 2.4,
+      "pct": 0.6
+    },
+    {
+      "ticker": "TSLA",
+      "name": "Tesla",
+      "last": 248.9,
+      "change": -4.7,
+      "pct": -1.9
+    }
+  ],
+  "quote": {
+    "name": "NVIDIA",
+    "last": 184.2,
+    "change": 3.1,
+    "pct": 1.7,
+    "open": 181.0,
+    "high": 185.6,
+    "low": 180.2,
+    "volume": 41200000,
+    "mktcap": 4520000000000,
+    "pe": 58.3
+  },
+  "series": {
+    "points": [
+      1,
+      2,
+      3
+    ],
+    "min": 180.2,
+    "max": 185.6
+  },
+  "selected": "",
+  "range": "m1",
+  "env": {
+    "locale": {
+      "lang": "en"
+    }
+  }
+}

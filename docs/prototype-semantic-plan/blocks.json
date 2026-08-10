@@ -1,0 +1,302 @@
+{
+  "schema": "octos.card.plan/1",
+  "_note": "The block REGISTRY: the closed vocabulary a plan may use, in the shape of MCP-style typed tool declarations. A plan that names an unlisted block, or passes an arg outside these schemas, is REJECTED before any lowering happens — it cannot reach the renderer and fail invisibly. Note what is absent by construction: no lat/lon, no colours, no fonts, no sizes, no draw_bg.*. Those are theme or runtime concerns, so a plan is structurally incapable of getting them wrong.",
+  "types": {
+    "PlaceRef": {
+      "_note": "A NAME, never coordinates. The runtime geocodes. The LLM's job is disambiguation ('nvidia' -> 'Santa Clara'); turning a name into digits is not its job.",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "query"
+          ],
+          "properties": {
+            "query": {
+              "type": "string"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "Condition": {
+      "enum": [
+        "clear",
+        "partly_cloudy",
+        "cloudy",
+        "rain",
+        "thunderstorm",
+        "snow",
+        "wind",
+        "fog"
+      ]
+    },
+    "Locale": {
+      "enum": [
+        "en",
+        "zh"
+      ]
+    },
+    "Ticker": {
+      "type": "string",
+      "pattern": "^[A-Z.]{1,6}$"
+    },
+    "Range": {
+      "enum": [
+        "1d",
+        "5d",
+        "1mo",
+        "6mo",
+        "1y"
+      ]
+    }
+  },
+  "blocks": {
+    "CurrentConditions": {
+      "version": 2,
+      "args": {
+        "condition": {
+          "$ref": "Condition",
+          "required": true
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "city name, hero temperature, condition row, high/low/feels line — all resolved from PlaceRef + live data"
+    },
+    "Forecast": {
+      "version": 3,
+      "args": {
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7,
+          "default": 7
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "$ref": "Condition"
+          },
+          "_note": "one per day; the only per-day thing the model knows that the data does not give as an icon"
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "day names from the platform calendar, lo/hi from live data, week extent from sys.weekmin/weekmax, TempBar wiring"
+    },
+    "AirQualityField": {
+      "version": 1,
+      "args": {},
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "the 4x4 AQI sample grid and its 16 shader uniforms — the plan never sees a uniform"
+    },
+    "SunMoon": {
+      "version": 1,
+      "args": {},
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "sunrise/sunset, daylight progress, moon phase + illumination, all computed"
+    },
+    "Details": {
+      "version": 2,
+      "args": {
+        "tiles": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": {
+            "enum": [
+              "aqi",
+              "uv",
+              "humidity",
+              "wind",
+              "pressure",
+              "visibility"
+            ]
+          }
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "tile captions per locale, live values, category words, colour ramp"
+    },
+    "MoversList": {
+      "version": 1,
+      "args": {
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 10
+        },
+        "eyebrow": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "onTap": {
+          "action": "select",
+          "_note": "row emits select(ticker)"
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "the 10 rows, rank/symbol/name/price/change, one cached fetch, hairlines, per-row tap targets"
+    },
+    "QuoteHeader": {
+      "version": 1,
+      "args": {
+        "ticker": {
+          "$ref": "Ticker",
+          "required": true
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "symbol, name, exchange, currency, price, range-aware change line + colour"
+    },
+    "PriceChart": {
+      "version": 1,
+      "args": {
+        "ticker": {
+          "$ref": "Ticker",
+          "required": true
+        },
+        "range": {
+          "$ref": "Range",
+          "required": true
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "the plot itself — StockPlot already takes semantic args, so this block is a straight pass-through. Precedent for AqiContour."
+    },
+    "RangeChips": {
+      "version": 1,
+      "args": {
+        "ranges": {
+          "type": "array",
+          "items": {
+            "$ref": "Range"
+          }
+        },
+        "onTap": {
+          "action": "setRange"
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "the chip row, selected styling from state.range, tap targets"
+    },
+    "StatGrid": {
+      "version": 1,
+      "args": {
+        "ticker": {
+          "$ref": "Ticker",
+          "required": true
+        },
+        "stats": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "open",
+              "high",
+              "low",
+              "prev",
+              "volume",
+              "mktcap"
+            ]
+          }
+        }
+      },
+      "backends": [
+        "makepad"
+      ],
+      "_supplies": "tile captions per locale, live values, formatting"
+    }
+  },
+  "state": {
+    "_note": "Weather is a pure function of (place, locale). Stocks is NOT: it has a selected ticker and a chart range that the USER changes. So a plan needs declared state, and blocks need to emit actions against it. This is the first thing the weather vocabulary could not express.",
+    "selected": {
+      "type": "string",
+      "default": ""
+    },
+    "range": {
+      "$ref": "Range",
+      "default": "1d"
+    }
+  },
+  "actions": {
+    "_note": "Declared, named, and validated — a plan may only reference an action the registry defines. `select` sets state.selected, `setRange` sets state.range. The runtime owns what they DO.",
+    "select": {
+      "args": {
+        "ticker": {
+          "$ref": "Ticker"
+        }
+      }
+    },
+    "setRange": {
+      "args": {
+        "range": {
+          "$ref": "Range"
+        }
+      }
+    }
+  },
+  "views": {
+    "_note": "Weather was one screen. Stocks is two, chosen by state. A plan lists views with a `when` predicate over state.",
+    "when": "a predicate over state, e.g. 'selected == \"\"'"
+  },
+  "plans": {
+    "_note": "Per-plan-kind requirements. The first validator hardcoded weather's: it demanded `place` and a top-level `sections`, so the stocks plan was rejected out of hand. Which was the useful failure — a generic vocabulary needs the SHAPE declared too, not just the blocks.",
+    "weather": {
+      "requires": [
+        "place",
+        "locale",
+        "sections"
+      ],
+      "blocks": [
+        "CurrentConditions",
+        "Forecast",
+        "AirQualityField",
+        "SunMoon",
+        "Details"
+      ]
+    },
+    "stock": {
+      "requires": [
+        "locale",
+        "views"
+      ],
+      "blocks": [
+        "MoversList",
+        "QuoteHeader",
+        "PriceChart",
+        "RangeChips",
+        "StatGrid"
+      ]
+    }
+  }
+}
