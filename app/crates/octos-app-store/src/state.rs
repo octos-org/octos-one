@@ -444,8 +444,6 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
         // can't fold into `state.files` (FileMeta) — history rehydrate
         // delivers the real FileMeta for attachments.
         UiNotification::FileAttached(_) => {}
-        // Durable-history bookkeeping; REST hydrate remains canonical.
-        UiNotification::MessagePersisted(_) => {}
         // Sub-agent / orchestration surfaces are a follow-up workstream
         // (multi-agent dock); no state home in the app shell yet.
         UiNotification::TurnSpawnComplete(_) => {}
@@ -492,6 +490,21 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
         UiNotification::VoiceAudioChunk(_) => {}
         // Transport-level wrapper; the ws layer unwraps before folding.
         UiNotification::Envelope(_) => {}
+        // Stage-1 canonical projection envelope, and since octos #1746 the ONLY
+        // lane the server speaks for persisted rows — delivered unconditionally.
+        // Nothing to fold here: the store's own state comes from the typed
+        // notifications above, and the one thing the envelope adds (the
+        // authoritative assistant text) is bridged in the app's agent layer
+        // (`app/src/backend/octos_ui.rs`), not through AppState.
+        UiNotification::EnvelopeV2(_) => {}
+        // Background skill-action job snapshots; the app has no jobs surface.
+        UiNotification::SkillActionJobUpdated(_) => {}
+        // Peer staging (#1801): the model staged a sub-agent and asks the
+        // client to open its pane. Same follow-up workstream as the sub-agent
+        // events above — octos-app has no peer pane, so the peer runs to
+        // completion unopened rather than the app half-rendering one.
+        UiNotification::PeerStaged(_) => {}
+        UiNotification::PeerClosed(_) => {}
         // 2026-07 protocol catch-up: model-authored plan checklists have no
         // surface in octos-app (the AMA routes to app cards, not plans).
         UiNotification::PlanUpdated(_) => {}

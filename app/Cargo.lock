@@ -1836,7 +1836,7 @@ dependencies = [
 
 [[package]]
 name = "octos-core"
-version = "2.0.2-rc.11"
+version = "2.0.3-rc.1"
 dependencies = [
  "chrono",
  "eyre",

@@ -4048,6 +4048,30 @@ script_mod! {
                             }
 
                             chat_list := ChatList {}
+
+                            // The waiting curtain: "the model is working on it",
+                            // full screen. It replaced an 84px pill docked above
+                            // the composer, which on a full-bleed card was easy
+                            // to miss entirely. LAST child of this Overlay so it
+                            // paints over the card.
+                            //
+                            // The opaque backing is belt-and-braces. Measured on
+                            // device: while a turn runs, the previous card is not
+                            // drawn at all (the streaming item stays hidden until
+                            // it completes), so what sits behind the blobs is the
+                            // app background — every sampled pixel of a photo card
+                            // was gone. The backing is here so that if a partial
+                            // card ever does draw, it cannot peek between blobs.
+                            thinking_curtain := View {
+                                width: Fill
+                                height: Fill
+                                visible: false
+                                show_bg: true
+                                draw_bg +: {
+                                    color: #x000000F5
+                                }
+                                octo := OctoThinking {}
+                            }
                         }
 
                         // W05 — typed approval cards. The pane hides itself
@@ -4056,10 +4080,11 @@ script_mod! {
                         // approvals are pending it pins above the composer.
                         approvals_pane := ApprovalsPane {}
 
-                        // toast_row + octo_row live inside composer_row (bottom
-                        // stack) so the thinking indicator and toasts sit just
-                        // above the floating composer — not at the top of the
-                        // Overlay flow.
+                        // toast_row lives inside composer_row (bottom stack) so
+                        // toasts sit just above the floating composer — not at
+                        // the top of the Overlay flow. The thinking indicator is
+                        // NOT here: it is `thinking_curtain`, full screen over
+                        // the card.
 
                         composer_row := View {
                             width: Fill
@@ -4093,17 +4118,6 @@ script_mod! {
                                         draw_text.text_style.font_size: 11
                                     }
                                 }
-                            }
-
-                            // Swimming-octopus thinking indicator — visible only
-                            // while a turn is streaming (`is_streaming`); sits
-                            // directly above the composer.
-                            octo_row := View {
-                                width: Fill
-                                height: Fit
-                                visible: false
-                                align: Align{x: 0.5}
-                                octo := OctoThinking {}
                             }
 
                             // Collapsed state: a slim translucent pill that
@@ -4298,9 +4312,7 @@ script_mod! {
                     // toggles `app_shell.visible` and `login_overlay.visible`
                     // in lockstep so only one of the two is interactive at a
                     // time. Default: hidden — `App::after_new_from_script`
-                    // flips it on if no token is in the keychain. Resize
-                    // grip stays after this in z-order so the user can
-                    // resize the window even from Login.
+                    // flips it on if no token is in the keychain.
                     login_overlay := LoginScreen {
                         visible: false
                     }
@@ -4311,16 +4323,16 @@ script_mod! {
                     // ContentAction::Open. Mirrors `login_overlay`.
                     viewer_overlay := ViewerOverlay {}
 
-                    resize_grip := Vector{
-                        width: 34
-                        height: 34
-                        margin: Inset{right: 18 bottom: 18}
-                        align: Align{x: 1.0 y: 1.0}
-                        viewbox: vec4(0 0 34 34)
-                        Path{d: "M 18 28 L 28 18" fill: false stroke: #xEAD8B8AA stroke_width: 1.5 stroke_linecap: "round"}
-                        Path{d: "M 12 28 L 28 12" fill: false stroke: #xF3E3C788 stroke_width: 1.2 stroke_linecap: "round"}
-                        Path{d: "M 24 28 L 28 24" fill: false stroke: #x9F7E4BAA stroke_width: 1.5 stroke_linecap: "round"}
-                    }
+                    // There WAS a desktop window-resize grip here — three
+                    // diagonal strokes meant for the bottom-right corner. It
+                    // drew at the window's TOP-LEFT instead, over every card,
+                    // on every platform: `Vector::draw_walk` rebuilds its Walk
+                    // from abs_pos/margin/width/height and never reads
+                    // `self.layout` (aichat/widgets/src/vector.rs), so
+                    // `align: Align{x: 1.0 y: 1.0}` was a silent no-op and in a
+                    // `flow: Overlay` parent the margins don't shift a child
+                    // either. Removed rather than re-aligned: the phone has no
+                    // window to resize.
                 }
             }
         }
@@ -4857,6 +4869,14 @@ impl ChatData {
 pub struct AppRecord {
     pub session_id: SessionId,
     pub title: String,
+    /// The request this app's current card is FOR, kept for the repair turn.
+    ///
+    /// A repair prompt that only lists diagnostics invites the model to
+    /// re-emit the EXEMPLAR — whose weather card declares `city: ""` (device
+    /// location). Measured on device: "weather in osaka" refused five times,
+    /// repaired, and rendered San Jose, while the same request accepted
+    /// first-try rendered Osaka. The intent has to travel with the repair.
+    pub last_request: Option<String>,
     /// The app domain this session is specialised for ("weather"/"stock"/"news").
     /// The AMA's routing decision names a domain; we activate the app agent whose
     /// `domain` matches. `None` for a generic app (Layer-3 "open another app").
@@ -4899,6 +4919,7 @@ impl AppRecord {
         Self {
             session_id,
             title: title.into(),
+            last_request: None,
             domain: None,
             current_prompt: None,
             has_updates: false,
@@ -5586,6 +5607,8 @@ impl App {
             return;
         };
         log::info!("AMA → activate '{app_id}' app agent (idx {idx}) | {decision}");
+        // Remember what this card is FOR, so a repair turn can restate it.
+        self.apps[idx].last_request = Some(intent.clone());
         // This domain agent takes the screen.
         self.foreground = idx;
         // A non-web app taking the screen must not leave a web card's native
@@ -6008,9 +6031,16 @@ impl App {
     #[cfg(target_os = "android")]
     fn find_embedded_kernel(
         lib_dir: &std::path::Path,
-        home: &std::path::Path,
+        _home: &std::path::Path,
     ) -> Option<std::path::PathBuf> {
-        [lib_dir.join("liboctos.so"), home.join(".bin/liboctos.so")]
+        // The APK's native-lib dir, and ONLY that. A copy under the app's own
+        // octos-home cannot be exec'd on Android 10+: W^X forbids executing
+        // from app-writable storage, so the spawn dies with
+        // `avc: denied { execute_no_trans }` — measured on a OnePlus 6T, where
+        // stdio found the file, spawned it, and SELinux killed it. Keeping that
+        // candidate read as a supported side-load and was not one. (The ohos
+        // arm below still lists it: untested there, so left alone.)
+        [lib_dir.join("liboctos.so")]
             .into_iter()
             .find(|p| p.exists())
     }
@@ -6673,9 +6703,10 @@ impl App {
         self.ui
             .view(cx, ids!(empty_state))
             .set_visible(cx, show_empty_state);
-        // Swimming octopus = "the model is working on it".
+        // Metaballs over the whole screen = "the model is working on it". Full
+        // screen so the card being replaced can't be mistaken for the answer.
         self.ui
-            .view(cx, ids!(octo_row))
+            .view(cx, ids!(thinking_curtain))
             .set_visible(cx, is_streaming);
     }
 
@@ -9655,11 +9686,32 @@ impl AppMain for App {
                                                     why.len(),
                                                     why.join(" | ")
                                                 );
+                                                // The REQUEST rides along. Without it the
+                                                // model re-emits something closer to the
+                                                // exemplar, whose weather card declares
+                                                // `city: ""` — device location — so a
+                                                // repaired card answered the wrong place
+                                                // while reporting success (measured: five
+                                                // refusals for "weather in osaka", repaired,
+                                                // rendered San Jose).
+                                                let asked = self.apps[owner_idx]
+                                                    .last_request
+                                                    .as_deref()
+                                                    .unwrap_or("");
+                                                let restate = if asked.is_empty() {
+                                                    String::new()
+                                                } else {
+                                                    format!(
+                                                        "\n\nThe card must still answer THIS \
+                                                         request, with the same places, tickers \
+                                                         and options it named: {asked:?}"
+                                                    )
+                                                };
                                                 card_repair = Some(format!(
                                                     "Your L0 card was REFUSED by the checker. Fix \
                                                      exactly these and re-emit the whole card in \
                                                      one ```runl0 block — no prose, no other \
-                                                     fenced blocks:\n- {}",
+                                                     fenced blocks:\n- {}{restate}",
                                                     why.join("\n- ")
                                                 ));
                                                 l0_refusal_repair = true;

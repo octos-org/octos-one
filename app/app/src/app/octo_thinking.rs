@@ -16,22 +16,32 @@ script_mod! {
     use mod.prelude.widgets.*
 
     mod.widgets.OctoThinking = #(crate::app::octo_thinking::OctoThinking::register_widget(vm)) {
-        // Full page width so blobs glide edge-to-edge instead of being
-        // clipped inside a small centered box.
+        // Fills whatever it is given. Its only consumer is the full-screen
+        // waiting curtain, so both axes Fill.
         width: Fill
-        height: 84
+        height: Fill
         show_bg: true
         draw_bg +: {
             time: uniform(0.0)
             pixel: fn() {
-                let t = self.time
                 let w = self.rect_size.x
                 let h = self.rect_size.y
 
-                // Center + normalize so y ∈ [-1,1], x scaled by aspect. The
-                // field lives in this space; blobs glide across the width.
-                let aspect = w / h
-                let p = (self.pos - vec2(0.5, 0.5)) * vec2(2.0 * aspect, 2.0)
+                // Center, and scale the field by a FIXED number of pixels per
+                // unit rather than by the box. A blob is a constant size on
+                // screen — the box only decides how far it may roam. (Dividing
+                // by the box height, as this did while it was an 84px band, made
+                // the blobs grow with the widget: full-screen they came out
+                // wider than the viewport and the field saturated to one wash.)
+                let unit = 42.0
+                let ax = w * 0.5 / unit
+                let ay = h * 0.5 / unit
+                let p = (self.pos - vec2(0.5, 0.5)) * vec2(2.0 * ax, 2.0 * ay)
+
+                // Speed is per-unit, so a field this much larger would fling the
+                // blobs across it. Slow time in proportion past ~3 units of
+                // extent, which keeps the drift at the pace of the original band.
+                let t = self.time * min(1.0, 3.0 / max(ax, ay))
 
                 // Four wandering centers (phase-shifted sin/cos). Amplitudes
                 // are bounded to (extent − visible radius) on each axis so the
@@ -39,8 +49,8 @@ script_mod! {
                 // the borders instead of being clipped at the edges. `vr` ≈ the
                 // metaball's visible radius for the radii² below.
                 let vr = 0.70
-                let xr = aspect - vr
-                let yr = 1.0 - vr
+                let xr = ax - vr
+                let yr = ay - vr
                 let c0 = vec2(sin(t * 1.3) * xr, sin(t * 1.7) * yr)
                 let c1 = vec2(sin(t * 0.9 + 2.0) * xr, sin(t * 1.1 + 1.0) * yr)
                 let c2 = vec2(cos(t * 1.5 + 0.5) * xr, cos(t * 1.9) * yr)
@@ -90,11 +100,18 @@ script_mod! {
                 // Flashing color: cosine palette driven mainly by time (a
                 // smooth global cycle) with a slow spatial drift, so the whole
                 // cluster sweeps the spectrum instead of banding into rings.
-                let hue = t * 0.11 + p.x * 0.05 - p.y * 0.04
+                // Colour keeps UNSLOWED time — only the motion is slowed above,
+                // and a colour cycle stretched to half a minute stops reading as
+                // "the model is working". The drift is in normalized position,
+                // not field units, so widening the field doesn't turn one sweep
+                // into a fixed rainbow gradient.
+                let tc = self.time
+                let hue = tc * 0.11 + (self.pos.x - 0.5) * 0.44
+                    - (self.pos.y - 0.5) * 0.08
                 let pal = vec3(0.55, 0.5, 0.55)
                     + vec3(0.45, 0.5, 0.45)
                         * cos(6.28318 * (hue + vec3(0.0, 0.33, 0.67)))
-                let pulse = 0.85 + 0.15 * sin(t * 2.6)
+                let pulse = 0.85 + 0.15 * sin(tc * 2.6)
 
                 let lit = pal * (0.42 + 0.72 * diff) * pulse
                     + vec3(spec, spec, spec)
