@@ -563,11 +563,31 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
 /// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
 /// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
 /// they have no baked copy and rely on the deployed tree.
+use crate::app::plan::domain_uses_plan;
+
 fn baked_app_md(domain: &str) -> Option<&'static str> {
     Some(match domain {
-        "weather" => include_str!("../../../a2app/apps/weather/app.md"),
-        "stock" => include_str!("../../../a2app/apps/stock/app.md"),
-        "news" => include_str!("../../../a2app/apps/news/app.md"),
+        "weather" => {
+            if domain_uses_plan("weather") {
+                include_str!("../../../a2app/apps/weather/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/weather/app.md")
+            }
+        }
+        "stock" => {
+            if domain_uses_plan("stock") {
+                include_str!("../../../a2app/apps/stock/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/stock/app.md")
+            }
+        }
+        "news" => {
+            if domain_uses_plan("news") {
+                include_str!("../../../a2app/apps/news/plan.md")
+            } else {
+                include_str!("../../../a2app/apps/news/app.md")
+            }
+        }
         "quake" => include_str!("../../../a2app/apps/quake/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
@@ -629,6 +649,24 @@ fn app_card_docs(domain: &str) -> String {
 /// "only real Splash syntax" clause targets the observed GLM-5.2 failure mode of
 /// inventing `Card {}` / `layout: {}` / `background:` pseudo-DSL.
 fn splash_gen_prompt(domain: &str, intent: &str, docs: &str) -> String {
+    if domain_uses_plan(domain) {
+        // A PLAN domain: the model emits typed intent, not a card. Almost all of
+        // the DSL prompt's warnings are about syntax it can no longer write, so
+        // they are omitted rather than left to confuse it.
+        return format!(
+            "You ARE the {domain} app agent. Your PLAN SPEC is INLINED BELOW — you \
+have everything you need, so do NOT claim anything is missing, do NOT read or fetch \
+files, and do NOT ask questions.\n\n\
+You do NOT write the card. You choose WHAT IT SHOWS and the runtime builds it. Emit \
+EXACTLY ONE ```runplan fenced block containing the JSON the spec describes, as your \
+ENTIRE final answer — no prose before or after, never truncated.\n\n\
+Only the fields the spec lists exist. Anything absent from the schema — a \
+coordinate, a temperature, a font, a colour, a size — is supplied by the runtime, \
+and a plan carrying one is REJECTED with the offending field named. Choose the \
+place, the condition words, the sections and the locale; nothing else.\n\
+{docs}\n\nUser request: {intent}"
+        );
+    }
     format!(
         "You ARE the {domain} app agent and you OWN the entire card generation. Your \
 SPEC and the widget patterns are INLINED BELOW — you have everything you need, so \
@@ -1662,6 +1700,10 @@ fn strip_card_name_line(body: &str) -> std::borrow::Cow<'_, str> {
 /// `<name>.meta.json` sidecar (substrate, owning domain, session, triggering
 /// prompt, timestamp), and one appended line in `index.jsonl` — the
 /// append-only ledger that makes every generation/refinement traceable.
+///
+/// `plan_source` is the plan the card was lowered from, when there was one. It is
+/// carried so the plain-data form can be published alongside the makepad one — the two
+/// are siblings from a single plan, not translations of each other.
 fn save_card_artifact(
     name: &str,
     substrate: &str,
@@ -1669,6 +1711,12 @@ fn save_card_artifact(
     domain: Option<&str>,
     prompt: Option<&str>,
     session_id: Option<&str>,
+    // LAST, matching every call site. It was briefly 4th while the calls passed it 7th,
+    // and because four consecutive parameters are all `Option<&str>` the compiler could
+    // not tell — the domain silently arrived as the plan and the lowering was skipped
+    // with "plan is not JSON: \"weather\"". Same-typed positional parameters are the
+    // hazard; keeping the new one at the end is the cheap guard.
+    plan_source: Option<&str>,
 ) {
     let Some(dir) = a2app_cards_dir() else {
         log::warn!("a2app: cannot save card '{name}' — no HOME/cards dir");
@@ -1677,6 +1725,42 @@ fn save_card_artifact(
     let _ = std::fs::create_dir_all(&dir);
     let ext = if substrate == "runhtml" { "html" } else { "splash" };
     let path = dir.join(format!("{name}.{ext}"));
+    // Also publish the PLAIN-DATA form of the same plan, for backends that render
+    // Splash without makepad's widget registry (see app/splash-native). A makepad card
+    // says `SolidView{…}`; a registry-free renderer needs `{t: "col", …}`. Both come
+    // from the ONE plan the model emitted, so this is a second lowering rather than a
+    // translation — and publishing it here means such a backend renders the model's real
+    // output instead of a hand-written stand-in.
+    if let Some(plan_json) = plan_source {
+        match crate::app::plan::nodes::try_plain(plan_json) {
+            Ok(plain) => {
+                // The app's own media directory: writable by this app without any
+                // permission, and world-READABLE, which is what a second renderer needs.
+                // `/data/local/tmp` looked simpler and is not writable by an app at all —
+                // SELinux blocks it whatever the mode bits say, which is why the first
+                // attempt failed with EACCES on a 777 directory.
+                let handoff = std::path::Path::new(
+                    "/storage/emulated/0/Android/media/dev.makepad.octos_app/cards",
+                );
+                if let Err(e) = std::fs::create_dir_all(handoff) {
+                    log::warn!("a2app: cannot create handoff dir: {e}");
+                } else {
+                    let p = handoff.join(format!("{name}.splash"));
+                    match std::fs::write(&p, &plain) {
+                        Ok(()) => log::info!(
+                            "a2app: published plain-data card ({} bytes) → {}",
+                            plain.len(),
+                            p.display()
+                        ),
+                        Err(e) => log::warn!("a2app: plain-data publish failed: {e}"),
+                    }
+                }
+            }
+            // Say WHY. "no plain-data lowering" alone sent me guessing at the cause
+            // when the real answer was in the text I had not printed.
+            Err(e) => log::warn!("a2app: plain-data lowering skipped — {e}"),
+        }
+    }
     match std::fs::write(&path, body) {
         Ok(()) => log::info!("a2app: saved card '{name}' ({substrate}, {} bytes) → {}", body.len(), path.display()),
         Err(e) => log::warn!("a2app: save card '{name}' failed: {e}"),
@@ -1728,7 +1812,7 @@ fn save_completed_stream_cards(
         .rev()
         .find(|m| m.role == ChatRole::User)
         .map(|m| m.text.clone());
-    if let Some(body) = extract_runsplash_body(text) {
+    if let Some(body) = card_splash_body(text) {
         // Never persist a forbidden card (same rule as the turn-complete
         // path): scan ALL blocks, not just the first.
         let forbidden = extract_all_runsplash_bodies(text)
@@ -1736,15 +1820,16 @@ fn save_completed_stream_cards(
             .find_map(runsplash_body_forbidden)
             .is_some();
         if !forbidden {
-            if let Some(name) = extract_card_name(body) {
+            if let Some(name) = extract_card_name(&body) {
                 if data.saved_stream_cards.insert(format!("runsplash:{name}")) {
                     save_card_artifact(
                         &name,
                         "runsplash",
-                        body,
+                        &body,
                         domain.as_deref(),
                         prompt.as_deref(),
                         session.as_deref(),
+                        extract_runplan_body(text),
                     );
                 }
             }
@@ -1760,6 +1845,8 @@ fn save_completed_stream_cards(
                     domain.as_deref(),
                     prompt.as_deref(),
                     session.as_deref(),
+                    // A hand-written HTML card has no plan, so no plain-data sibling.
+                    None,
                 );
             }
         }
@@ -1890,6 +1977,60 @@ fn defer_unclosed_runsplash(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// A semantic plan is not user-facing source code. While its fence is still
+/// streaming, hide the partial JSON just like we hide a partial Splash program;
+/// once closed, [`materialize_runplan_for_display`] replaces it with the card.
+fn defer_unclosed_runplan(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let Some(start) = text.rfind("```runplan") else {
+        return Cow::Borrowed(text);
+    };
+    let after = &text[start + "```runplan".len()..];
+    let closed = match after.find('\n') {
+        Some(nl) => after[nl + 1..].contains("```"),
+        None => false,
+    };
+    if closed {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(format!("{}\u{1F6E0} Building app UI\u{2026}", &text[..start]))
+    }
+}
+
+/// Replace a completed semantic-plan fence with the trusted Splash DSL lowered
+/// by the runtime. The raw plan is still used by the save path before this
+/// display-only conversion, so metadata and the plain-data sibling retain their
+/// single semantic source of truth.
+fn materialize_runplan_for_display(text: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let Some(start) = text.find("```runplan") else {
+        return Cow::Borrowed(text);
+    };
+    let after_marker = start + "```runplan".len();
+    let Some(line_end) = text[after_marker..].find('\n') else {
+        return Cow::Borrowed(text);
+    };
+    let body_start = after_marker + line_end + 1;
+    let Some(close) = text[body_start..].find("```") else {
+        return Cow::Borrowed(text);
+    };
+    let body_end = body_start + close;
+    let Ok(dsl) = crate::app::plan::lower_plan(text[body_start..body_end].trim_end()) else {
+        return Cow::Borrowed(text);
+    };
+    let fence_end = body_end + 3;
+    let mut out = String::with_capacity(text.len() + dsl.len());
+    out.push_str(&text[..start]);
+    out.push_str("```runsplash\n");
+    out.push_str(&dsl);
+    if !dsl.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str("```");
+    out.push_str(&text[fence_end..]);
+    Cow::Owned(out)
+}
+
 /// Strip Splash `//` line and `/* */` block comments and ALL whitespace,
 /// producing a scan-only form. Used by the security gate so `net . http_request`,
 /// `net./*x*/http_request`, and an aliased `n . http_request` all collapse to a
@@ -1931,9 +2072,18 @@ fn normalize_splash_for_scan(s: &str) -> String {
 /// (`.http_request`, `.socket`) on ANY receiver — that catches module aliasing
 /// (`let n = net; n.http_request(...)`) too — plus the `net.HttpMethod` enum.
 /// Scans the comment/whitespace-normalized body (see normalize_splash_for_scan).
-/// NOT a hard boundary: a determined model could still build the call by exotic
-/// means the Splash VM might support; the real fix is VM-level capability
-/// gating. This stops the naive/observed cases.
+///
+/// A LINT, not the boundary. The boundary it used to ask for now exists: card
+/// isolates are built with `script_mod_sandboxed`, so `fs`, `run`, `net` and
+/// `cx.quit` are never registered and the names simply do not resolve
+/// (`aichat/widgets/src/widget_async.rs`, `alloc_splash_vm`).
+///
+/// This is kept because a card tripping it is worth surfacing early with a
+/// readable message rather than as a nil deref at eval time — and because a
+/// denylist that has stopped being load-bearing is cheap to keep and expensive
+/// to have removed if a future host wires the full surface back in by accident.
+/// Its previous note read "NOT a hard boundary … the real fix is VM-level
+/// capability gating"; that fix has landed.
 fn runsplash_body_forbidden(body: &str) -> Option<&'static str> {
     let n = normalize_splash_for_scan(body).to_ascii_lowercase();
     if n.contains(".http_request")
@@ -2032,6 +2182,42 @@ fn extract_all_runsplash_bodies(text: &str) -> Vec<&str> {
 /// Pull the body of the first ```runsplash fenced block out of a message so
 /// it can be fed straight to a `Splash` widget. Returns the raw Splash script
 /// (still containing any `{{state.*}}` placeholders).
+/// Pull the body of the first ```runplan fenced block (the semantic-plan
+/// substrate — typed JSON the runtime lowers into a card).
+fn extract_runplan_body(text: &str) -> Option<&str> {
+    let start = text.find("```runplan")?;
+    let after = &text[start + "```runplan".len()..];
+    let body_start = after.find('\n')? + 1;
+    let body = &after[body_start..];
+    let end = body.find("```")?;
+    Some(body[..end].trim_end())
+}
+
+/// The Splash body for a message: a ```runsplash block as the model wrote it, or a
+/// ```runplan block LOWERED to one.
+///
+/// This is the seam where intent becomes realization. A plan carries only what the
+/// model can be trusted with — which place, which condition, which sections — and
+/// `plan::lower_plan` supplies everything else: the coordinates (geocoded, never
+/// typed), the week's temperature extent, the weekday names, the font chain, the
+/// layout invariants. A malformed plan is REJECTED with a message naming the field,
+/// which is a far better repair target than one bad line in 16 KB of free-form DSL.
+fn card_splash_body(text: &str) -> Option<String> {
+    if let Some(b) = extract_runsplash_body(text) {
+        return Some(b.to_string());
+    }
+    let plan = extract_runplan_body(text)?;
+    match crate::app::plan::lower_plan(plan) {
+        Ok(dsl) => Some(dsl),
+        Err(e) => {
+            // Loud, and specific enough to repair from. Never fall through to a
+            // partial card: half a card looks complete and is not.
+            log::warn!("runplan rejected: {e}");
+            None
+        }
+    }
+}
+
 fn extract_runsplash_body(text: &str) -> Option<&str> {
     let start = text.find("```runsplash")?;
     let after = &text[start + "```runsplash".len()..];
@@ -4649,7 +4835,10 @@ impl Widget for ChatList {
                             // Gate order: hold back an unclosed block, THEN
                             // neutralize EVERY closed-but-forbidden one before it
                             // reaches the Splash renderer (net-write exfil).
-                            let deferred = defer_unclosed_runsplash(&data.streaming_text);
+                            let deferred_plan = defer_unclosed_runplan(&data.streaming_text);
+                            let materialized_plan =
+                                materialize_runplan_for_display(&deferred_plan);
+                            let deferred = defer_unclosed_runsplash(&materialized_plan);
                             let safe = neutralize_forbidden_cards(&deferred);
                             streaming_body = streaming_display_with_latex_autowrap_remend(
                                 &safe,
@@ -4699,7 +4888,8 @@ impl Widget for ChatList {
                         // on the raw message text, which for a card is runsplash DSL,
                         // so the affordance is meaningless — hide both. User messages
                         // have neither button, so these are no-ops there.
-                        let is_splash_card = msg.text.contains("```runsplash");
+                        let is_splash_card = msg.text.contains("```runsplash")
+                            || msg.text.contains("```runplan");
                         item_widget
                             .button(cx, ids!(copy_button))
                             .set_visible(cx, !is_splash_card);
@@ -4722,7 +4912,8 @@ impl Widget for ChatList {
                             // wrap_bare_latex wraps `\cmd{…}` with `$…$` so MathView can
                             // render them.
                             let unwrapped = unwrap_outer_markdown_fence(&msg.text);
-                            let rendered = wrap_bare_latex(unwrapped);
+                            let materialized = materialize_runplan_for_display(unwrapped);
+                            let rendered = wrap_bare_latex(&materialized);
                             let rendered = resolve_a2app_card(&rendered, item_id, card_state);
                             markdown.set_text(cx, &rendered);
                             self.rendered_cache =
@@ -6394,15 +6585,16 @@ impl App {
             if let Some((_, item)) = list.get_item(item_id) {
                 // Re-feed the whole markdown (keeps non-splash content current).
                 let unwrapped = unwrap_outer_markdown_fence(&text);
-                let rendered = wrap_bare_latex(unwrapped);
+                let materialized = materialize_runplan_for_display(unwrapped);
+                let rendered = wrap_bare_latex(&materialized);
                 let rendered = resolve_a2app_card(&rendered, item_id, &state);
                 item.markdown(cx, ids!(selectable)).set_text(cx, &rendered);
                 // Also push the resolved `runsplash` body straight to the
                 // Splash widget — its `set_text` re-evals on change, and this
                 // guarantees the update even if the markdown re-parse doesn't
                 // re-dispatch to the pooled splash_view.
-                if let Some(body) = extract_runsplash_body(&text) {
-                    let resolved = substitute_card_state(body, item_id, &state);
+                if let Some(body) = card_splash_body(&text) {
+                    let resolved = substitute_card_state(&body, item_id, &state);
                     item.widget(cx, ids!(splash_view)).set_text(cx, &resolved);
                 }
             }
@@ -7161,7 +7353,45 @@ impl MatchEvent for App {
                 // Navigation: a weather-list row fires agent.notify("city",
                 // {value:"<name>|<lat>|<lon>|<cond>"}). Render that city's REAL-glass
                 // detail card directly (no LLM) and tail to it.
-                if ev.contains("city") {
+                // An event the runtime cannot attribute to a card is not
+                // trustworthy: `tag_notify_calls` only rewrites a LITERAL first
+                // argument, so a card that builds its event id dynamically
+                // arrives untagged. State writes below are already gated on
+                // `card_id` and so fail safe; this branch was not, and would
+                // navigate on an unattributable event.
+                if card_id.is_none() {
+                    log!("[splash] ignoring untagged agent.notify({ev:?})");
+                } else if ev == "l0" {
+                    // A tap on an L0 card. The payload carries the instance key
+                    // (WHICH row), the event name, and the value — the event
+                    // travels in the payload because `tag_notify_calls` rewrites
+                    // only a literal channel, and an untagged notify is dropped
+                    // above as unattributable.
+                    let l0_key = pj.get("key").and_then(|v| v.as_str()).unwrap_or_default();
+                    let l0_event = pj.get("event").and_then(|v| v.as_str()).unwrap_or_default();
+                    let l0_value = pj.get("value").and_then(|v| v.as_str()).unwrap_or_default();
+                    match app::l0_card::tap(l0_key, l0_event, l0_value) {
+                        Ok(Some((item, body))) => {
+                            if let Ok(mut chat) = CHAT_DATA.write() {
+                                if let Some(msg) = chat.messages.get_mut(item) {
+                                    msg.text = format!("```runsplash\n{body}\n```");
+                                }
+                            }
+                            // The render cache is keyed by (item, raw text,
+                            // state); the text changed, so it misses on its own.
+                            // The generation bump is what makes the list rebuild
+                            // the item rather than reuse its widget tree.
+                            CHAT_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            cx.redraw_all();
+                            log!("[l0] {l0_event} on {l0_key} -> redrew item {item}");
+                        }
+                        // Distinguishable on purpose: "applied to nothing" and
+                        // "refused" look identical on screen and are completely
+                        // different to whoever is debugging.
+                        Ok(None) => log!("[l0] {l0_event} on {l0_key} applied to nothing"),
+                        Err(why) => log!("[l0] {l0_event} failed: {why}"),
+                    }
+                } else if ev.contains("city") {
                     if let Some(v) = value.as_deref() {
                         let p: Vec<&str> = v.split('|').collect();
                         if p.len() == 4 {
@@ -8055,6 +8285,59 @@ impl MatchEvent for App {
             }
         }
 
+        // `--es makepad.SEED_L0_FILE <card> --es makepad.SEED_L0_DATA <json>`
+        // seeds an L0 LEDGER rather than a lowered card, so the app holds the
+        // source and can re-realize it when a tap arrives. SEED_CARD_FILE above
+        // pushes already-lowered DSL, which is inert by construction: nothing on
+        // device knows what card produced it or what a tap would mean.
+        if let Ok(card_path) = std::env::var("MAKEPAD_SEED_L0_FILE") {
+            let data_path = std::env::var("MAKEPAD_SEED_L0_DATA").unwrap_or_default();
+            let card = std::fs::read_to_string(&card_path);
+            let blob = std::fs::read_to_string(&data_path);
+            match (card, blob) {
+                (Ok(source), Ok(raw)) => {
+                    let data: serde_json::Value =
+                        serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null);
+                    let store = splash_ui_l0::InstanceStore::default();
+                    match app::l0_card::render(&source, &data, &store) {
+                        Ok(body) => {
+                            let item = if let Ok(mut chat) = CHAT_DATA.write() {
+                                chat.messages.push(ChatMessage {
+                                    role: ChatRole::Assistant,
+                                    text: format!("```runsplash\n{body}\n```"),
+                                });
+                                chat.messages.len() - 1
+                            } else {
+                                0
+                            };
+                            app::l0_card::begin(source, data, item);
+                            self.update_empty_state_visibility(cx);
+                            cx.redraw_all();
+                            log::info!("SEED_L0 injected from {card_path} as item {item}");
+                        }
+                        // A card that does not realize is a blank screen with
+                        // the reason in logcat, so say the reason on screen.
+                        Err(why) => {
+                            if let Ok(mut chat) = CHAT_DATA.write() {
+                                chat.messages.push(ChatMessage {
+                                    role: ChatRole::Assistant,
+                                    text: format!("L0 card did not realize: {why}"),
+                                });
+                            }
+                            self.update_empty_state_visibility(cx);
+                            cx.redraw_all();
+                            log::warn!("SEED_L0 realize failed: {why}");
+                        }
+                    }
+                }
+                (card, blob) => log::warn!(
+                    "SEED_L0 read failed: card={:?} data={:?}",
+                    card.err(),
+                    blob.err()
+                ),
+            }
+        }
+
         // Phone boot: land on the chat surface, not the menu — ☰ opens it.
         self.collapse_sidebar_if_narrow(cx);
         // Settle composer visibility now (not only via the auth→clear_chat
@@ -8617,7 +8900,8 @@ impl AppMain for App {
                                     .map(|m| m.text.clone());
                                 // Persist a named A2App card so it can be
                                 // retrieved by name and refined over time.
-                                if let Some(body) = extract_runsplash_body(&text) {
+                                if let Some(body) = card_splash_body(&text) {
+                                    let body: &str = &body;
                                     rendered_card = true;
                                     // Never PERSIST a forbidden card (it would be
                                     // reused by name later); repair it instead.
@@ -8645,6 +8929,10 @@ impl AppMain for App {
                                     for (i, chunk) in body.as_bytes().chunks(600).enumerate() {
                                         log::info!("CARDDSL[{i}]{}", String::from_utf8_lossy(chunk));
                                     }
+                                    // The plan this card was lowered from, when the model
+                                    // emitted one. `None` for a hand-written runsplash
+                                    // card, which simply has no plain-data sibling.
+                                    let last_plan = extract_runplan_body(&text).map(str::to_string);
                                     match extract_card_name(body) {
                                         Some(name) => save_card_artifact(
                                             &name,
@@ -8653,6 +8941,7 @@ impl AppMain for App {
                                             card_domain.as_deref(),
                                             card_prompt.as_deref(),
                                             card_session.as_deref(),
+                                            last_plan.as_deref(),
                                         ),
                                         None => log::warn!(
                                             "a2app: runsplash card has no `// name:` line — not saved"
@@ -8664,9 +8953,17 @@ impl AppMain for App {
                                     // belong to a different domain (a stock
                                     // card must not be checked by weather
                                     // rules). Orphan prompts (no owner) skip
-                                    // lint rather than guess.
+                                    // lint rather than guess. A card LOWERED
+                                    // from a semantic plan also skips lint: its
+                                    // DSL is runtime-built, not model-written,
+                                    // so a violation there is a plan-builder
+                                    // bug the model can neither cause nor fix —
+                                    // a repair turn only burns tokens and puts
+                                    // the agent's explanation above the card.
                                     if let Some(owner_idx) = prompt_owner {
-                                        if !self.apps[owner_idx].repair_attempted {
+                                        if last_plan.is_none()
+                                            && !self.apps[owner_idx].repair_attempted
+                                        {
                                             if let Some(domain) =
                                                 self.apps[owner_idx].domain.clone()
                                             {
@@ -8704,6 +9001,7 @@ impl AppMain for App {
                                             card_domain.as_deref(),
                                             card_prompt.as_deref(),
                                             card_session.as_deref(),
+                                            None,
                                         ),
                                         None => log::warn!(
                                             "a2app: runhtml card has no `<!-- name: -->` — not saved"
@@ -8714,7 +9012,8 @@ impl AppMain for App {
                                 // must not survive in history to be re-rendered
                                 // by the completed-message path or a session
                                 // hydrate (which don't run the streaming gate).
-                                let stored = neutralize_forbidden_cards(&text).into_owned();
+                                let materialized = materialize_runplan_for_display(&text);
+                                let stored = neutralize_forbidden_cards(&materialized).into_owned();
                                 data.messages.push(ChatMessage {
                                     role: ChatRole::Assistant,
                                     text: stored,
@@ -8857,7 +9156,8 @@ mod tests {
         app_card_docs, assistant_message_is_safe_for_history,
         assistant_message_is_safe_to_store, baked_app_md, baked_widget_md, card_root_height,
         embeddable_card, expand_card_embeds, extract_nav_destination, matching_brace,
-        namespace_child_state, parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
+        defer_unclosed_runplan, materialize_runplan_for_display, namespace_child_state,
+        parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
         rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_card_state,
         substitute_props, EmitHandler, DEFAULT_GLASS_OPACITY,
         FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
@@ -9011,6 +9311,63 @@ mod tests {
         );
     }
 
+    /// A LOWERED PLAN must be shippable through the same pipeline as a
+    /// model-written card. This is the verification that does not need a device:
+    /// `assert_shippable` catches the fatal class — an unbalanced brace crashes the
+    /// Splash eval outright — plus unexpanded embeds and unresolved tokens.
+    #[test]
+    fn lowered_plan_is_shippable_through_the_full_pipeline() {
+        let plan = r#"{
+            "plan": "weather", "locale": "en",
+            "place": { "query": "Kyoto" },
+            "photo": "kyoto city cloudy sky",
+            "sections": [
+                { "block": "CurrentConditions" },
+                { "block": "Forecast", "args": { "days": 7 } },
+                { "block": "AirQualityField" },
+                { "block": "SunMoon" },
+                { "block": "Details", "args": { "tiles": ["aqi","uv","humidity","wind"] } }
+            ]
+        }"#;
+        let card = crate::app::plan::lower_plan(plan).expect("plan must lower");
+        let out = substitute_card_state(&card, 3, &BTreeMap::new());
+        assert_shippable(&out);
+        // And it must survive as a `runplan` fence in a message, which is how it
+        // actually arrives.
+        let msg = format!("```runplan\n{plan}\n```");
+        let body = crate::card_splash_body(&msg).expect("runplan fence must lower");
+        assert_shippable(&substitute_card_state(&body, 4, &BTreeMap::new()));
+        assert!(body.contains("// name: weather-app"), "needs the name line to be saved");
+
+        // The completed message shown to the user must contain the lowered card,
+        // never the implementation-detail JSON fence that the model emitted.
+        let display = materialize_runplan_for_display(&msg);
+        assert!(display.contains("```runsplash\n"), "lowered card fence missing: {display}");
+        assert!(!display.contains("```runplan"), "raw plan leaked into UI: {display}");
+        assert!(display.contains("// name: weather-app"), "lowered body missing: {display}");
+    }
+
+    #[test]
+    fn an_unclosed_runplan_is_hidden_while_streaming() {
+        let partial = "before\n```runplan\n{\"plan\":\"news\"";
+        let display = defer_unclosed_runplan(partial);
+        assert_eq!(display, "before\n\u{1F6E0} Building app UI\u{2026}");
+        assert!(!display.contains("\"plan\""), "partial plan JSON leaked into UI");
+    }
+
+    /// A rejected plan must yield NO card rather than a partial one — half a card
+    /// looks complete and is not.
+    #[test]
+    fn a_rejected_plan_yields_no_card() {
+        let bad = "```runplan\n{\"plan\":\"weather\",\"locale\":\"en\",\
+            \"place\":{\"query\":\"Kyoto\",\"lat\":35.0},\"sections\":[]}\n```";
+        assert!(crate::card_splash_body(bad).is_none(), "a coordinate must reject the whole plan");
+        assert!(
+            matches!(materialize_runplan_for_display(bad), std::borrow::Cow::Borrowed(_)),
+            "a rejected plan must not be presented as a card"
+        );
+    }
+
     #[test]
     fn compose_navigate_to_x_full_pipeline() {
         // "navigate to NVIDIA": one-line host embeds nav.navigate, dest seeded
@@ -9151,12 +9508,14 @@ mod tests {
 
     #[test]
     fn splash_gen_prompt_is_self_contained() {
-        // The routed generation prompt must inline the spec + manual and forbid
-        // the invented pseudo-DSL, since octos no longer injects app-cards.
-        let docs = "\n----- apps/weather/app.md — THIS IS YOUR SPEC -----\nmandatory: 7-day forecast via sys.weather\n";
-        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
-        assert!(p.contains("weather in tokyo"), "carries the user intent");
-        assert!(p.contains("apps/weather/app.md"), "inlines the routed spec");
+        // A DSL domain's prompt must inline the spec + manual and forbid the
+        // invented pseudo-DSL, since octos no longer injects app-cards. `activity` is
+        // used because weather/news/stock now take the PLAN path (see PLAN_DOMAINS).
+        assert!(!crate::app::plan::domain_uses_plan("activity"), "this test needs a DSL domain");
+        let docs = "\n----- apps/activity/app.md — THIS IS YOUR SPEC -----\nmandatory: venues via sys.places\n";
+        let p = splash_gen_prompt("activity", "things to do nearby", docs);
+        assert!(p.contains("things to do nearby"), "carries the user intent");
+        assert!(p.contains("apps/activity/app.md"), "inlines the routed spec");
         assert!(p.contains("SPLASH SYNTAX MANUAL"), "inlines the syntax manual");
         assert!(p.contains("```runsplash"), "demands one runsplash block");
         // Directly targets the GLM-5.2 failure mode.
@@ -9166,6 +9525,39 @@ mod tests {
             !p.contains("in your memory"),
             "must NOT rely on the dead memory injection"
         );
+    }
+
+    /// A PLAN domain gets a different prompt: emit typed intent, not a card. It must
+    /// NOT carry the DSL warnings — they are about syntax the model can no longer
+    /// write, and leaving them in would only invite it to write a card anyway.
+    #[test]
+    fn plan_domain_prompt_asks_for_a_plan_not_a_card() {
+        assert!(crate::app::plan::domain_uses_plan("weather"), "weather is expected on the plan path");
+        let docs = "\n----- apps/weather/plan.md — THIS IS YOUR SPEC -----\nblocks: Forecast\n";
+        let p = splash_gen_prompt("weather", "weather in tokyo", docs);
+        assert!(p.contains("weather in tokyo"), "carries the user intent");
+        assert!(p.contains("```runplan"), "demands one runplan block");
+        assert!(!p.contains("```runsplash"), "must not ask for a card");
+        assert!(!p.contains("SPLASH SYNTAX MANUAL"), "no DSL manual on the plan path");
+        assert!(p.contains("REJECTED"), "tells the model a bad field is rejected");
+    }
+
+    /// Every plan domain must be served its PLAN spec, and every other domain its DSL
+    /// spec. Asserting both directions means moving a domain in or out of PLAN_DOMAINS
+    /// cannot silently serve the wrong one.
+    #[test]
+    fn plan_domain_is_served_the_plan_spec() {
+        for d in crate::app::plan::PLAN_DOMAINS {
+            let md = baked_app_md(d).unwrap_or_else(|| panic!("{d} spec must be baked in"));
+            assert!(md.contains("```runplan"), "{d} must get plan.md");
+            assert!(
+                md.contains("You do **not** write the card"),
+                "{d} plan spec must say the runtime builds it"
+            );
+        }
+        // A DSL domain still gets its DSL spec.
+        let act = baked_app_md("activity").expect("activity spec must be baked in");
+        assert!(!act.contains("```runplan"), "activity must stay on the DSL path");
     }
 
     #[test]

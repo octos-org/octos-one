@@ -80,3 +80,15 @@ reqwest = { workspace = true }
 keyring = { workspace = true }
 # `log` is re-exported via makepad-widgets — adding it here would shadow that
 # glob and break aichat-lifted `log::warn!` calls. Don't add it back.
+
+# L0 profile checker/realizer. Depends on serde_json alone -- deliberately NOT
+# on splash-core, whose vendored makepad lineage collides with this app's in the
+# lockfile (same package name+version at two paths is fatal). That collision is
+# why the crate was extracted.
+splash-ui-l0 = { path = "../../splash/crates/splash-ui-l0" }
+
+# The Splash UI node model — §1.1's branch point, where one card reaches three
+# backends. Depends on nothing, which is what makes it adoptable here: taking
+# `splash-render` instead fails on `makepad-error-log v1.0.0` existing at two
+# paths, the same collision that forced `splash-ui-l0` out of `splash-core`.
+splash-node = { path = "../../splash-makepad/crates/splash-node" }

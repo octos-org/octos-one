@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.octos.splashnative">
+
+    <!-- A Splash card resolves its own data at render time: the sys.* helpers here
+         perform live HTTP, exactly as octos-one's do. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- To read the card octos-one publishes into its own media directory. That is the
+         handoff between the two apps: octos-one's LLM writes there, this renders it. -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <!-- Scoped storage blocks reading ANOTHER package's media directory, whatever the
+         mode bits say, so READ_EXTERNAL_STORAGE alone is not enough. All-files access is
+         the mechanism Android actually provides for this, and it is the honest cost of
+         the two apps being separate: a renderer living INSIDE octos-one would need none
+         of it. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
+    <application android:label="Octos Splash Native" android:allowBackup="false">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

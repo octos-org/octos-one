@@ -54,8 +54,7 @@ Whatever the style, **adapt the city name to the request and resolve its
 coordinates with `sys.geocodenum` — never typed digits** (see LIVE DATA below), and keep
 EVERY temperature a `sys.weather(...)` call (the style files are hardcoded demos —
 Shanghai/Tokyo/SF — you MUST swap in the requested city and its lat/lon). All
-styles load the bundled Roboto weights via
-`crate_resource("makepad_widgets:resources/Roboto-*.ttf")` and show whole-degree
+styles get their weights from the TEXT ROLE widgets below — never a font file — and show whole-degree
 temps (`sys.weather` rounds temperature paths automatically — do NOT round in the
 card). Full catalog + previews: `docs/weather-styles/README.md`.
 
@@ -89,56 +88,42 @@ word, the day names, every tile caption and every sub-line — not just the head
 (新月 / 蛾眉月 / 上弦月 / 盈凸月 / 满月 / 亏凸月 / 下弦月 / 残月) on a Chinese card.
 Numbers, `°`, `%`, `km/h` and the ↑ ↓ ≈ glyphs are language-neutral and stay as-is.
 
-## FONT WEIGHTS — how a weather card gets its 秀气
+## TEXT ROLES — never name a font
 
-Weight, not size, is what makes this card look refined. `draw_text.text_style.font_size: N`
-on its own leaves the DEFAULT weight and the result reads heavy and generic. Set
-a full `TextStyle` with an explicit `font_family` on every line that matters:
+Weight, not size, is what makes this card look refined — but you do NOT write a
+font stack to get it. Use a **text role** widget, which carries the weight, the
+size and the full glyph coverage:
 
-```
-draw_text.text_style: TextStyle{
-    font_family: FontFamily{
-        latin   := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Thin.ttf") asc: 0.0 desc: 0.0 }
-        chinese := FontMember{ res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 }
-    }
-    font_size: 76
-}
-```
+| role | use | weight / size |
+|---|---|---|
+| `TextHero` | the big temperature, alone on its line | Thin 76 |
+| `TextTitle` | the place name | Light 26 |
+| `TextBody` | the condition beside the icon | Light 17 |
+| `TextStat` | the ↑ ↓ ≈ figures line | Light 14 |
+| `TextRow` | a forecast-row label or temperature | Light 14 |
+| `TextCaption` | a small caption over a value | Light 11 |
+| `TextValue` | the prominent figure in a detail tile | Light 20 |
 
-Bundled weights: `Roboto-Thin` (hero temperature ONLY), `Roboto-Light` (city,
-condition, stat lines, forecast rows), `Roboto-Regular`, `Roboto-Medium`,
-`Roboto-Bold`. Bigger + thinner beats smaller + heavier every time.
-
-**ALWAYS include the `chinese` member.** Writing an explicit `font_family`
-REPLACES the whole default chain, which had Chinese and emoji members in it.
-Roboto contains NO CJK glyphs, so a Chinese card whose hero declares only a
-`latin` member renders 上海 and 多云 as empty TOFU BOXES (▯▯) — the card looks
-broken at its largest text. `LXGWWenKaiRegular.ttf` covers CJK at every weight
-above; there is no Thin/Light CJK face, and it is not missed at these sizes.
-
-Carry the member even on an English card: it costs nothing when unused, and it is
-the difference between a city name rendering and not.
-
-**Do NOT set `font_family` on a label carrying colour emoji** (the ☀️ ⛅ 🌧️ in
-forecast rows). Overriding the family drops the `NotoColorEmoji` member the same
-way, and the emoji turns into tofu. Leave those labels on the default chain.
-
-**Glyph fallback.** `FontFamily` is an ORDERED chain: any glyph missing from one
-member is looked up in the next. Roboto has NO arrows (`↑` `↓`) — a line using
-them MUST add a NotoSans member or they render as tofu boxes:
+So the hero temperature is simply:
 
 ```
-font_family: FontFamily{
-    latin   := FontMember{ res: crate_resource("makepad_widgets:resources/Roboto-Light.ttf") asc: 0.0 desc: 0.0 }
-    sym     := FontMember{ res: crate_resource("makepad_widgets:resources/NotoSans-Regular.ttf") asc: 0.0 desc: 0.0 }
-    chinese := FontMember{ res: crate_resource("makepad_widgets:resources/LXGWWenKaiRegular.ttf") asc: 0.0 desc: 0.0 }
-}
+TextHero{ text: sys.weather(LAT, LON, "current.temperature_2m") + "°"
+          draw_text.color: #ffffff margin: Inset{top: 2 bottom: 0} }
 ```
 
-The member NAMES are arbitrary labels; only the order matters. `°` and `≈` ARE in
-Roboto and need no fallback. Colour emoji (☀️ ⛅ 🌧️) resolve through
-`NotoColorEmoji` but inflate the line box, which is why forecast rows pin a fixed
-`height`.
+**Set `draw_text.color` yourself; never `font_family`, `font_size` or
+`text_style`.** Colour is genuinely per-use — an AQI value is coloured by
+category, a dim row differs from a bright one — whereas weight and glyph coverage
+are not, and the role already owns them.
+
+Do NOT write `crate_resource("…Roboto-Thin.ttf")`, `FontMember`, `FontFamily` or
+`asc: 0.0` in a card. Every role already chains Roboto → NotoSans (for `↑ ↓`) →
+LXGWWenKai (for CJK) → NotoColorEmoji, so a role cannot lose coverage whatever
+you put in it. Writing your own `font_family` REPLACES that chain and is how
+上海 and 多云 came out as empty tofu boxes at the largest text on the screen.
+
+Emoji are safe in any role — the emoji member is always present. Forecast rows
+still pin a fixed `height`, because colour emoji inflate the line box.
 
 ## LIVE DATA — MANDATORY (never hardcode weather numbers)
 
@@ -228,29 +213,25 @@ and must reproduce them per THIS spec — same content, same live bindings.
 its lines in a `View{ width: Fill height: Fit flow: Down align: Align{x: 0.5} }`
 and give the condition row `align: Align{x: 0.5 y: 0.5}` (a left-aligned hero
 reads as a draft). Use `Align{x: …}` — there is no `alignx` property.
-The hero must read DELICATE (秀气), not heavy. Weight carries that, not size: set
-an explicit `font_family` on every line of this block — a bare
-`draw_text.text_style.font_size` leaves the default weight and the block renders
-chunky. Use `Roboto-Thin.ttf` for the big temperature and `Roboto-Light.ttf` for
-the text around it (both bundled; see the FONT WEIGHTS section below).
+The hero must read DELICATE (秀气), not heavy. Weight carries that, not size — and
+the TEXT ROLES section above owns it, so use a role and set only the colour.
 
-- City — Roboto-Light, font 26, `#ffffffe6`.
-- The hero temperature ALONE on its line — **Roboto-Thin**, font 76,
-  `margin: Inset{top: 2 bottom: 0}` so its tall glyphs are not clipped. Thin is
-  what makes a 76pt number elegant instead of shouty; at the default weight this
-  line alone ruins the block. Its text is LIVE:
-  `text: sys.weather(LAT, LON, "current.temperature_2m") + "°"`.
+- City — `TextTitle{ … draw_text.color: #ffffffe6 }`.
+- The hero temperature ALONE on its line — `TextHero`, with
+  `margin: Inset{top: 2 bottom: 0}` so its tall glyphs are not clipped. Its text
+  is LIVE:
+  `TextHero{ text: sys.weather(LAT, LON, "current.temperature_2m") + "°" draw_text.color: #ffffff }`.
 - A `flow: Right` row (height 52, align x 0.5 y 0.5, spacing 8) holding an ANIMATED
   `WeatherIcon{ draw_bg.cond: <N> width: 46 height: 46 }` followed by the condition
-  `Label` (Roboto-Light, font 17, `#ffffffe6`). `WeatherIcon` is a live
+  `TextBody` (`draw_text.color: #ffffffe6`). `WeatherIcon` is a live
   shader-animated weather glyph (rays rotate, rain/snow falls, wind/fog drifts,
   lightning flashes); pick `draw_bg.cond` by CURRENT condition: 0 clear/sunny,
   1 partly cloudy, 2 cloudy/overcast, 3 rain/drizzle, 4 thunderstorm, 5 snow,
   6 wind, 7 fog/haze/mist. (See `widgets/weather-icon.md`.)
 - Then the high/low/feels line — **ICON GLYPHS, never the words "H:", "L:" or
   "Feels"** (spelled-out labels read as a data table, not a weather app). Use
-  `↑` high, `↓` low, `≈` feels-like, THREE spaces between groups. Roboto-Light,
-  font 14, `#ffffffb3`, every number LIVE:
+  `↑` high, `↓` low, `≈` feels-like, THREE spaces between groups. Use `TextStat`
+  with `draw_text.color: #ffffffb3`; every number LIVE:
   `"↑" + sys.weather(LAT, LON, "daily.temperature_2m_max.0") + "°   ↓" +
   sys.weather(LAT, LON, "daily.temperature_2m_min.0") + "°   ≈" +
   sys.weather(LAT, LON, "current.apparent_temperature") + "°"`.
@@ -352,23 +333,21 @@ is its own row so the maps read large), each a `width: Fill` RoundedView
   monitoring stations, and over most cities it is very nearly empty. The contour
   is translucent, so the basemap beneath still gives geographic context.
 
-  It takes a 4×4 grid of readings as the sixteen uniforms `a0`..`a15`, ROW-MAJOR
-  with the NORTH row first. Emit ALL SIXTEEN — every call shares one cached fetch,
-  so the cost is a single request. `span` is the width in degrees (use `1.6` for a
-  city); pass the SAME LAT, LON as the maps:
+  `AqiContour` samples and wires its own field — pass the PLACE and how wide an
+  area to cover, nothing else:
 
 ```
 AqiContour{ width: Fill height: 190
-    draw_bg.a0:  sys.aqigrid(LAT, LON, 1.6, 0)   draw_bg.a1:  sys.aqigrid(LAT, LON, 1.6, 1)
-    draw_bg.a2:  sys.aqigrid(LAT, LON, 1.6, 2)   draw_bg.a3:  sys.aqigrid(LAT, LON, 1.6, 3)
-    draw_bg.a4:  sys.aqigrid(LAT, LON, 1.6, 4)   draw_bg.a5:  sys.aqigrid(LAT, LON, 1.6, 5)
-    draw_bg.a6:  sys.aqigrid(LAT, LON, 1.6, 6)   draw_bg.a7:  sys.aqigrid(LAT, LON, 1.6, 7)
-    draw_bg.a8:  sys.aqigrid(LAT, LON, 1.6, 8)   draw_bg.a9:  sys.aqigrid(LAT, LON, 1.6, 9)
-    draw_bg.a10: sys.aqigrid(LAT, LON, 1.6, 10)  draw_bg.a11: sys.aqigrid(LAT, LON, 1.6, 11)
-    draw_bg.a12: sys.aqigrid(LAT, LON, 1.6, 12)  draw_bg.a13: sys.aqigrid(LAT, LON, 1.6, 13)
-    draw_bg.a14: sys.aqigrid(LAT, LON, 1.6, 14)  draw_bg.a15: sys.aqigrid(LAT, LON, 1.6, 15)
-}
+    lat:  sys.geocodenum("<place>", "lat")
+    lon:  sys.geocodenum("<place>", "lon")
+    span: 1.6 }
 ```
+
+  `span` is the width of the sampled square in degrees; 1.6 suits a city. The
+  widget fetches the 4×4 grid itself in ONE request and sets its own shader
+  uniforms, so there is nothing per-cell to write. Do NOT set `draw_bg.a0`..`a15`
+  — those are internal and setting them by hand is how a GPU detail used to end
+  up in a card.
 
   (See `widgets/sys-helpers.md`.)
 
@@ -380,7 +359,7 @@ padding 16, flow: Down, spacing 10) holding TWO parts:
   sys.daylight(LAT, LON) }`, with a `flow: Right` row beneath it carrying the two
   times at the ends: sunrise `Label` (`sys.weather(LAT, LON, "daily.sunrise.0")`,
   already "HH:MM") then a `Filler` then sunset (`daily.sunset.0`), both
-  Roboto-Light font 13 `#ffffffb3`, and a caption (font 11, `#ffffff99`) —
+  `TextRow` with `draw_text.color: #ffffffb3`, and a `TextCaption` (`#ffffff99`) —
   `Sunrise / Sunset` or `日出 / 日落` per the LANGUAGE rule.
   `SunArc` draws a hairline arc from sunrise to sunset with the sun
   riding it at the CURRENT time; `sys.daylight` returns 0 at sunrise and 1 at
@@ -390,7 +369,7 @@ padding 16, flow: Down, spacing 10) holding TWO parts:
 
 - **The moon phase (月相)** — a `flow: Right` row (align y 0.5, spacing 14) holding
   a `MoonPhase{ width: 72 height: 72 draw_bg.phase: sys.moonnum("phase") }` beside
-  a `flow: Down` column with the phase NAME (Roboto-Light font 16, `#ffffffe6`)
+  a `flow: Down` column with the phase NAME (`TextBody`, `#ffffffe6`)
   over an illumination line (font 12, `#ffffff99`). BOTH follow the LANGUAGE rule:
   `sys.moonphase("name") … + "% illuminated"` on an English card,
   `sys.moonphase("name_zh") … + "% 照亮"` on a Chinese one.
@@ -404,7 +383,7 @@ padding 16, flow: Down, spacing 10) holding TWO parts:
 (4) The detail grid — below the SUN & MOON panel. A `flow: Down` View of TWO
 `flow: Right` rows, each holding TWO equal frosted tiles (`width: Fill`). Every
 tile is a RoundedView (draw_bg.color #ffffff1f, border_radius 18) stacking an
-UPPERCASE caption (font 11, #ffffff99), a big value (Roboto-Light font 20), and a
+`TextCaption` (#ffffff99), a big value (`TextValue`), and a
 sub-line (font 12, #ffffffcc). The FOUR tiles in order:
 Every value here is LIVE (sys.airquality / sys.weather); only captions, sub-lines
 and the color category are yours:

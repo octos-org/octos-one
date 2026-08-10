@@ -1,0 +1,6 @@
+# Build output. These were committed by accident in the first splash-native commit —
+# ~1500 files of dex, gradle caches and Rust artifacts, which bloat the repo and conflict
+# on every build.
+.gradle/
+app/build/
+rust/target/
