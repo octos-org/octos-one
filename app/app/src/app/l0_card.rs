@@ -27,7 +27,7 @@ use std::sync::RwLock;
 
 /// The theme kit, baked in. §1.1's middle layer: the card names roles and this
 /// answers them, so no colour or size is decided in Rust.
-const KIT: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+const KIT: &str = include_str!("../../../../splash-makepad/components/l0/_kit.splash");
 
 /// Realize, lower to role calls, evaluate, and render as widgets.
 ///
