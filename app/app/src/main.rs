@@ -189,13 +189,8 @@ const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of 
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
-/// The domain-specialised app-agent prompt. The AMA routed `intent` to `domain`,
-/// so tell THAT agent to generate a card of exactly that app type (following the
-/// matching `apps/<domain>/app.md` spec + exemplar in its injected memory).
-const YOUTUBE_CARD_CONTRACT: &str = include_str!("../../../a2app/apps/youtube/app.md");
-
 /// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
-/// (like the youtube contract) so a "dark/glass/minimal/photo weather" request
+/// so a "dark/glass/minimal/photo weather" request
 /// reproduces that style precisely without needing the profile MEMORY updated.
 /// The default (no style keyword) still uses the injected canonical exemplar.
 const WEATHER_STYLE_DARK: &str = include_str!("../../../a2app/apps/weather/exemplars/style-dark.splash");
@@ -723,7 +718,10 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
         "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
         "web" => include_str!("../../../a2app/apps/web/app.md"),
-        "youtube" => YOUTUBE_CARD_CONTRACT,
+        // The L0 spec, not `a2app/apps/youtube/app.md`. The old one is the HTML
+        // contract that asks the agent for video ids; handing it out here would
+        // put the two youtube specs one fallback apart and disagreeing.
+        "youtube" => include_str!("../../../a2app-l0/apps/youtube/app.md"),
         _ => return None,
     })
 }
@@ -819,37 +817,17 @@ after, never truncated.\n\n\
 }
 
 fn app_splash_router_for(domain: &str, intent: &str) -> String {
-    if domain == "youtube" {
-        let cache = youtube_live_cache().lock().unwrap();
-        let live_block = if cache.is_empty() {
-            String::new()
-        } else {
-            let mut lines = String::new();
-            for (handle, label) in YOUTUBE_LIVE_CHANNELS {
-                if let Some(id) = cache.get(handle) {
-                    lines.push_str(&format!("- {label} (@{handle}): videoId `{id}`\n"));
-                }
-            }
-            format!(
-                "\n\nCURRENT LIVE VIDEO IDS (ground truth — resolved by the app runtime \
-moments ago; for live content USE THESE EXACT IDS and SKIP the web_fetch step):\n{lines}"
-            )
-        };
-        drop(cache);
-        return format!(
-            "You ARE the youtube app agent and you OWN the card generation. Follow the \
-CONTRACT below EXACTLY — it is your complete spec.\n\nSTEP 1 (MANDATORY for any \
-live/radio/news/music-stream intent): call the `web_fetch` tool on the matching \
-channel live page (e.g. https://www.youtube.com/@LofiGirl/live) and extract the \
-FIRST \"videoId\":\"...\" (11 chars) from the fetched page — that is the CURRENT \
-live id. Any live id you remember from training is ALWAYS dead; NEVER use one. If \
-the fetch fails, use the live_stream?channel= fallback from the contract.\n\nSTEP \
-2: emit EXACTLY ONE ```runhtml fenced block as your ENTIRE final answer (the \
-COMPLETE html document, first line <!-- name: youtube-player -->, never truncated, \
-no prose, no other tool calls).{live_block}\n\n----- CONTRACT (apps/youtube/app.md) \
------\n{YOUTUBE_CARD_CONTRACT}\n----- END CONTRACT -----\n\nUser request: {intent}"
-        );
-    }
+    // `youtube` USED to be overridden here with the old HTML contract: it told
+    // the agent to `web_fetch` a channel's live page, dig an 11-char videoId out
+    // of the markup, and emit a `runhtml` document. That override survived the L0
+    // refactor and short-circuited the L0 branch below, so the youtube app ran on
+    // its predecessor's prompt. Measured on the 6T with "top trump videos": the
+    // agent spent the whole turn narrating a hunt for ids it could verify — "Both
+    // 404 — dead ids", "Let me add 2 more famous ones to round out the catalog" —
+    // and the screen never showed a video. Ids are facts (§4), which is exactly
+    // why the L0 spec says "You are NOT the search engine. Never write a video id
+    // into a card." Removed, so youtube reaches `l0_prompt_for` like every other
+    // app and its card DECLARES `sys.video(query: state.q, …)`.
     if domain == "weather" {
         if let Some((style_name, style_dsl)) = detect_weather_style(intent) {
             return format!(
@@ -6448,9 +6426,6 @@ impl App {
         // A previous web app card floats as a native overlay — hide it with the
         // chat it belonged to.
         cx.system_browser(web_card_browser_id()).detach();
-        // Warm the youtube live-id cache so a routed youtube intent can inject
-        // ground-truth live ids into its generation prompt.
-        refresh_youtube_live_ids();
         {
             let mut data = CHAT_DATA.write().unwrap();
             data.messages.clear();
@@ -6745,9 +6720,12 @@ impl App {
     }
 
     fn submit_prompt(&mut self, cx: &mut Cx, text: String) {
-        // Start (or top up) the live-id resolution now: by the time the AMA
-        // routes a youtube intent (~5-10s), the cache is warm.
-        refresh_youtube_live_ids();
+        // The youtube live-id cache used to be warmed here, on EVERY submit, so a
+        // routed youtube intent could inject ground-truth ids into its generation
+        // prompt. That prompt is gone (the L0 card searches instead), and the only
+        // remaining reader is the `OCTOS_SEED_CARD` reference card — a build-time
+        // diagnostic — so four channel fetches per prompt fed nothing. Warmed
+        // where that card is actually built now.
         if text.trim().is_empty() {
             return;
         }
@@ -9011,6 +8989,10 @@ impl AppMain for App {
             && CHAT_DATA.read().map(|d| d.messages.is_empty()).unwrap_or(false)
         {
             self.seed_card_shown = true;
+            // The reference card substitutes freshly-resolved live ids over its
+            // baked placeholders (live ids rotate every few days). This is the
+            // only reader of that cache, so it warms it itself.
+            refresh_youtube_live_ids();
             // OCTOS_SEED_CARD=web (or =youtube) seeds a `runhtml` web app card
             // instead of the native Splash one, so the webview substrate can be
             // exercised without an LLM. The card embeds a YouTube live stream,
