@@ -186,7 +186,7 @@ fn render_through_kit(
     };
     // What each source's fetch is doing, for the NEXT realize to read as `$state`.
     // After realize because a source's arguments are only resolved here.
-    observe_source_states(cx, source, &root);
+    observe_source_states(cx, source, &root, data, store);
     let src = format!("{}\n{}", kit_for(source), splash_ui_l0::kit::lower(&root));
     // With capabilities: the kit lowers a source this backend can answer into a
     // `sys.*` call, and on a bare VM that call is undefined — the concatenation
@@ -1188,12 +1188,18 @@ fn probe_call(binding: &splash_ui_l0::SourceBinding) -> Option<String> {
         return splash_ui_l0::makepad::vm_call(binding);
     }
     for field in splash_ui_l0::catalog::answers(&binding.helper)? {
-        let probe = splash_ui_l0::SourceBinding {
-            field: (*field).to_owned(),
-            ..binding.clone()
-        };
-        if let Some(call) = splash_ui_l0::makepad::vm_call(&probe) {
-            return Some(call);
+        // Both shapes. A LIST source is addressed by row — `sys.places` answers
+        // `0.name` and nothing at all for a bare `name` — so trying only the bare
+        // field meant no list source could be probed, which is precisely the set
+        // that gates its rows on `$state` and needs probing most.
+        for field in [(*field).to_owned(), format!("0.{field}")] {
+            let probe = splash_ui_l0::SourceBinding {
+                field,
+                ..binding.clone()
+            };
+            if let Some(call) = splash_ui_l0::makepad::vm_call(&probe) {
+                return Some(call);
+            }
         }
     }
     None
@@ -1217,6 +1223,8 @@ fn observe_source_states(
     cx: &mut makepad_widgets::Cx,
     ledger: &str,
     root: &splash_ui_l0::UiNode,
+    data: &serde_json::Value,
+    store: &splash_ui_l0::InstanceStore,
 ) {
     // Worst state per HELPER, then attributed to the sources that name it.
     let mut by_helper: BTreeMap<String, &'static str> = BTreeMap::new();
@@ -1255,6 +1263,38 @@ fn observe_source_states(
             }
         }
         stack.extend(node.children.iter());
+    }
+
+    // AND THE SOURCES THE CARD GATES ON, which the walk above can never reach.
+    //
+    // Harvesting bindings out of the realized tree makes `$state` a property of
+    // what RENDERED. A card that gates its rows on the state it is waiting for is
+    // then a closed loop — no data, so pending; pending, so the rows do not
+    // realize; nothing realized, so nothing binds the source; nothing bound, so
+    // no status is written. Measured on the 6T: the activity card for Beijing
+    // drew "Finding places nearby…" and nothing else, with `L0 $state:` empty on
+    // every realize, indefinitely.
+    //
+    // It is the shipped exemplar's shape, so every generated activity card
+    // inherited it, and the apps that escape do so by accident: `weather-activity`
+    // puts its `for` beside the pending guard instead of behind a ready one, and
+    // `quake`'s gated feed shares a helper with an ungated lead.
+    //
+    // Only the GATED ones, so this costs nothing for a card that merely displays a
+    // source — that one's bindings are in the tree and the walk above has already
+    // answered it. Same fetch policy as `resolve_guards`: the card's own `when`s
+    // say what has to be answered before it can decide what to draw.
+    for probe in splash_ui_l0::guarded_state_bindings(ledger, data, store) {
+        if by_helper.contains_key(&probe.binding.helper) {
+            continue;
+        }
+        let Some(call) = probe_call(&probe.binding) else {
+            continue;
+        };
+        let Some(text) = eval_text(cx, &call) else {
+            continue;
+        };
+        by_helper.insert(probe.binding.helper.clone(), state_of_answer(&text));
     }
 
     let mut states: BTreeMap<String, String> = BTreeMap::new();
