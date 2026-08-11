@@ -870,7 +870,13 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         }
     }
     if node.kind == NodeKind::Image {
-        if let Some(src) = a.src.as_deref() {
+        // An EMPTY src is not a src. This emitted `http_resource("")`, so a
+        // photo whose subject had not resolved yet, or a row thumbnail with no
+        // image, still went out as a request — for nothing, once per redraw.
+        // Omitted, the widget simply draws no image and the page keeps its base
+        // colour and scrim underneath, which is what a card that is still
+        // loading should look like.
+        if let Some(src) = a.src.as_deref().filter(|s| !s.is_empty()) {
             let _ = write!(out, " src: http_resource({src:?})");
         }
     }
@@ -1218,6 +1224,37 @@ mod tests {
         let mut out = String::new();
         sizing(&Attrs { fillw: Some(1), h: Some(44.0), ..Default::default() }, &mut out);
         assert_eq!(out, " width: Fill height: 44");
+    }
+
+    /// An image with no source asks for nothing.
+    ///
+    /// This emitted `http_resource("")`, so a photo whose subject had not
+    /// resolved yet still went out as a request — once per redraw, for nothing.
+    /// It paired badly with `sys.photo`, which was handed the placeholder while
+    /// the geocode was in flight and generated an AI image of an em dash before
+    /// generating the real one.
+    #[test]
+    fn an_image_with_no_source_asks_for_nothing() {
+        let image = |src: &str| UiNode {
+            kind: NodeKind::Image,
+            attrs: Attrs { src: Some(src.to_owned()), ..Default::default() },
+            children: vec![],
+        };
+        let page = |kid: UiNode| UiNode {
+            kind: NodeKind::Column,
+            attrs: Attrs::default(),
+            children: vec![kid],
+        };
+        let with = to_dsl(&page(image("https://example.test/a.jpg")));
+        assert!(
+            with.contains("src: http_resource(\"https://example.test/a.jpg\")"),
+            "a real source still reaches the widget:\n{with}"
+        );
+        let without = to_dsl(&page(image("")));
+        assert!(
+            !without.contains("http_resource"),
+            "an empty source must not become a request:\n{without}"
+        );
     }
 
     /// The sheet's three shapes, and which of them may cover its own content.
@@ -1669,4 +1706,5 @@ mod two_maps {
         let dsl = to_dsl(&surface(vec![control("zoomin")]));
         assert!(!dsl.contains("nav_zoom_by"), "no call without a map:\n{dsl}");
     }
+
 }
