@@ -321,8 +321,9 @@ mod tests {
     // is a palette prefix (see `l0_card::kit_for`).
     fn kit() -> String {
         format!(
-            "{}\n{}",
+            "{}\n{}\n{}",
             include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash"),
+            include_str!("../../../../../Splash-Makepad/components/l0/_derive.splash"),
             include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash"),
         )
     }

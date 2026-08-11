@@ -44,25 +44,34 @@ pub static L0_READER_PLACED: AtomicBool = AtomicBool::new(false);
 /// would not reach the roles that read it.
 const KIT_BODY: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
 
-/// Every mood the L0 catalog admits, and the palette that answers it. The names
-/// are `splash_ui_l0::catalog::THEMES`; `l0_themes_are_all_answered` pins the two
-/// together, because a mood with no palette here renders in the default and
-/// looks correct.
+/// The base theme: every knob and every colour.
+const PALETTE_BASE: &str =
+    include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash");
+/// Every SIZE, computed from the knobs — concatenated AFTER the mood's delta so a
+/// mood can move a knob (`let` evaluates at its own line, so deriving in the base
+/// would leave a delta's `radius_factor` with nothing left to change).
+const PALETTE_DERIVE: &str =
+    include_str!("../../../../../Splash-Makepad/components/l0/_derive.splash");
+
+/// Each mood the L0 catalog admits, and the DELTA that answers it. `dark` is the
+/// base, so its delta is empty. The names are `splash_ui_l0::catalog::THEMES`;
+/// `l0_themes_are_all_answered` pins the two together, because a mood with no
+/// entry here renders in the base and looks correct.
 const PALETTES: &[(&str, &str)] = &[
-    ("dark", include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash")),
+    ("dark", ""),
     ("light", include_str!("../../../../../Splash-Makepad/components/l0/_palette_light.splash")),
     ("glass", include_str!("../../../../../Splash-Makepad/components/l0/_palette_glass.splash")),
     ("photo", include_str!("../../../../../Splash-Makepad/components/l0/_palette_photo.splash")),
 ];
 
-/// The kit as this host assembles it for `source`: the card's declared mood, or
-/// dark when it declares none.
+/// The kit as this host assembles it for `source`: base, the card's declared
+/// mood, the derivation, then the body — in that order.
 fn kit_for(source: &str) -> String {
     let theme = splash_ui_l0::card_theme(source);
-    let palette = theme
+    let delta = theme
         .as_deref()
         .and_then(|t| PALETTES.iter().find(|(n, _)| *n == t))
-        // A declared theme the parser admitted but this kit has no palette for.
+        // A declared theme the parser admitted but this kit has no delta for.
         // Falling back is right — a card should still draw — but it is a drift
         // between the catalog and the kit and says so out loud.
         .or_else(|| {
@@ -73,7 +82,7 @@ fn kit_for(source: &str) -> String {
         })
         .map(|(_, src)| *src)
         .unwrap_or("");
-    format!("{palette}\n{KIT_BODY}")
+    format!("{PALETTE_BASE}\n{delta}\n{PALETTE_DERIVE}\n{KIT_BODY}")
 }
 
 /// The kit source, for tests that need to reproduce the DEVICE's exact chain.
@@ -811,9 +820,19 @@ mod tests {
                 splash_ui_l0::catalog::theme(name).is_some(),
                 "this kit ships a palette for {name:?}, which the catalog does not admit"
             );
+            // The DELTA may be empty (dark is the base). What must hold is that
+            // the ASSEMBLED kit for that mood has a page colour and a derived
+            // size — assemble it wrong and both are undefined names, which is 0:
+            // transparent, and zero-padded.
+            let _ = src;
+            let assembled = super::kit_for(&format!("theme {name}\nview root Rule()\n"));
             assert!(
-                src.contains("let l0_base"),
-                "palette {name:?} defines no page colour"
+                assembled.contains("let l0_base"),
+                "the kit assembled for {name:?} has no page colour"
+            );
+            assert!(
+                assembled.contains("let pad_page_x"),
+                "the kit assembled for {name:?} has no derived sizes"
             );
         }
     }
