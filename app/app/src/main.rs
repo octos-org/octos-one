@@ -10508,6 +10508,54 @@ mod tests {
         }
     }
 
+    /// The baked framework manual names every app that can be routed to it.
+    ///
+    /// `framework.md` is `include_str!`d into the binary and handed to the AMA as
+    /// its routing list and to each app agent as its manual, so a stale line here
+    /// is shipped guidance — not documentation. And it HAD gone stale in three
+    /// ways at once: it called `city-picks` the only app above L0 after `convert`
+    /// joined it, omitted four routable apps entirely, and told a `youtube`-routed
+    /// agent it was "in the wrong document" for a release after youtube became an
+    /// ordinary L0 card. That last one is not a typo — an agent that believes it
+    /// is in the wrong document does not write a card.
+    ///
+    /// Registration is the source of truth, because that is what routing reads.
+    #[test]
+    fn the_baked_manual_names_every_registered_app() {
+        for (domain, _, _) in super::L0_APPS {
+            assert!(
+                super::L0_FRAMEWORK.contains(&format!("**{domain}**")),
+                "framework.md's routing list omits `{domain}`, which the AMA can \
+                 route to — an agent sent there has no entry to follow"
+            );
+        }
+        // And the level claim, from the exemplars rather than from a fourth list.
+        let above_l0: Vec<&str> = super::L0_APPS
+            .iter()
+            .filter(|(_, _, ex)| {
+                ex.lines()
+                    .any(|l| l.trim().starts_with("# level:") && !l.contains("L0"))
+            })
+            .map(|(d, _, _)| *d)
+            .collect();
+        for d in &above_l0 {
+            assert!(
+                super::L0_FRAMEWORK.contains(d),
+                "`{d}` is above L0 and the manual never mentions it"
+            );
+        }
+        // The manual states the COUNT in prose, so the count has to be right.
+        let claim = match above_l0.len() {
+            1 => "**One app is above L0",
+            2 => "**Two apps are above L0",
+            n => panic!("{n} apps are above L0 and the manual has no phrasing for that"),
+        };
+        assert!(
+            super::L0_FRAMEWORK.contains(claim),
+            "the manual miscounts the apps above L0: {above_l0:?}"
+        );
+    }
+
     /// An L0 app refuses a card that declares a wider grammar.
     ///
     /// §7: "escalation is never silent." The level was derived for the prompt's sake

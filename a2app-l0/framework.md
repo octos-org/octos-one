@@ -11,12 +11,14 @@ over a collection you declared. That is not a restriction to work around — it 
 what makes a card safe to run, and everything you would reach for those with has
 a declared form here instead.
 
-**One app is above L0 and says so.** `city-picks` declares `# level: L1` because
-comparing places needs one arithmetic expression — how much warmer somewhere
-feels than it is — and that is a fact about two facts rather than a fact any
-source carries. It is the only exception, it is written into that app's spec, and
-raising the level is never something you decide: if you are not building an app
-whose spec declares a level, the paragraph above is the whole of the language.
+**Two apps are above L0 and say so.** `city-picks` declares `# level: L1`
+because comparing places needs one arithmetic expression — how much warmer
+somewhere feels than it is — and that is a fact about two facts rather than a
+fact any source carries. `convert` declares it for the same reason: a converter
+computes one value from an amount and a coefficient it already declared. Both are
+written into their own specs, and raising the level is never something you
+decide: if you are not building an app whose spec declares a level, the paragraph
+above is the whole of the language.
 Even at L1 the no-facts rule holds, one level up — an expression must **read**
 something, so an expression made only of literals is refused.
 
@@ -38,17 +40,38 @@ in `apps/<id>/app.md`.
 - **nav** — directions and maps: *going* somewhere. Any travel verb — "directions
   to SFO", "navigate home", "route to the airport", "导航去北京". A bare place
   name is **weather**; things-to-do nearby is **activity**.
-- **weather-activity** — the composed what-to-do-in-this-weather app, where
-  weather or air quality decides the answer.
+- **weather-activity** — ASKING WHAT TO DO, and it does not need the word
+  weather: "what can I do in Beijing", "what should I do today", "在北京能做什么".
+  The conditions decide the answer. A request for a LIST of places — "museums in
+  Beijing", "what's nearby" — is **activity**. Advice here; a list there.
+- **chart** — comparing COUNTRIES on an economic or development measure over
+  years, from the World Bank. "china gdp growth vs india", "life expectancy japan
+  korea", "中国和印度的 GDP". A company's share price is **stock**; a city's
+  weather is **weather**.
+- **convert** — unit conversion. "km to miles", "how many miles is 42 km",
+  "20°C in fahrenheit", "多少英里". `# level: L1`. CURRENCY IS NOT THIS APP: a
+  rate needs a live capability the catalog does not have, and a rate written into
+  a card is wrong within the hour.
+- **quake** — earthquakes. "recent quakes", "any earthquakes today?", "地震".
+  The USGS M2.5+ feed of the last 24 hours.
+- **youtube** — any video, music or live-stream request. "play despacito", "lofi
+  music", "放点音乐". An L0 card like any other: it declares
+  `sys.video(query: state.q, …)` and NEVER writes a video id, because an id is a
+  fact and a wrong one renders as a dead player.
 - **city-picks** — the composed compare-my-saved-cities app. "where should I
   go", "compare my cities", "which of my cities is nicest", "去哪儿好". A request
   about ONE place is **weather**; this one is about the set the user saved, so it
   reads `sys.cities` rather than parsing a place name out of the message.
 
-**Two apps are not cards and you do not write UI for them.** `youtube` and `web`
-have a fixed interface a person authored; your job for those is to supply an
-**intent** — which video, which query — and the app resolves it. If you were
-routed to one of those, you are in the wrong document.
+**One app is not a card.** `web` has a fixed interface a person authored; your
+job there is to supply an **intent** — which query — and the app resolves it. If
+you were routed to `web`, you are in the wrong document.
+
+`youtube` USED to be listed here too, and that was wrong for a whole release: it
+is an ordinary L0 card and reaching it through the old fixed-interface path meant
+an agent spent its turn hunting for video ids it could verify and the screen
+never showed a video. Ids are facts. The card declares a QUERY and the runtime
+finds the videos.
 
 ---
 
