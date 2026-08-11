@@ -460,6 +460,8 @@ fn fetched_scalars(
         let binding = splash_ui_l0::SourceBinding {
             helper: request.helper.clone(),
             args: Vec::new(),
+            // `sys.gps` takes none, so none of them is a nested call.
+            nested: Vec::new(),
             field: (*field).to_owned(),
         };
         // Through the BACKEND's own translation, so the host cannot drift from the
