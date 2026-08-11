@@ -65,6 +65,7 @@ and that looks exactly like data still arriving.
 | `sys.photo` | `query` | — (not a record) |
 | `sys.places` | `lat`, `lon`, `category`, `count`, `fields` | `id`, `name`, `distance`, `lat`, `lon`, `category` |
 | `sys.prefs` | `fields` | `units`, `range`, `home`, `work`, `mode` |
+| `sys.quakes` | `count`, `offset`, `fields` | `id`, `mag`, `place`, `depth`, `ago`, `lat`, `lon` |
 | `sys.quote` | `ticker`, `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange` |
 | `sys.reading` | `fields` | `id`, `title`, `author`, `points`, `comments`, `url` |
 | `sys.route` | `from_lat`, `from_lon`, `to_lat`, `to_lon`, `via`, `mode`, `fields` | `duration`, `distance`, `steps` |
