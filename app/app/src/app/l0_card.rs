@@ -165,6 +165,9 @@ fn render_through_kit(
             map.insert(request.name.clone(), value);
         }
     }
+    // And so do the values the card GUARDS on. Last, because a guard's call is
+    // built from the source's arguments and those may reach anything above.
+    resolve_guards(cx, source, &mut data, store);
     let data = &data;
     let report = splash_ui_l0::realize_with_state(
         source,
@@ -435,7 +438,9 @@ fn fetched_rows(
 /// to ask, and answered synchronously — so writing it on every resolve costs
 /// nothing. Doing the same for a NETWORK source would fire a request per field per
 /// render, which is the sort of thing that looks fine on a desk and melts a phone.
-/// Widening this needs a fetch policy, not another arm in this match.
+/// Widening this needs a fetch policy, not another arm in this match — and
+/// `resolve_guards` below is that policy: a card's own `when`s name the few
+/// fields that have to be answered early, and every other value stays lazy.
 fn fetched_scalars(
     cx: &mut makepad_widgets::Cx,
     request: &splash_ui_l0::SourceRequest,
@@ -472,6 +477,75 @@ fn fetched_scalars(
         out.insert((*field).to_owned(), value);
     }
     (!out.is_empty()).then(|| serde_json::Value::Object(out))
+}
+
+/// The values a card's `when`s compare against, answered before realize.
+///
+/// This is the FETCH POLICY the scope note above `fetched_scalars` was waiting
+/// for, and the card writes it: a `when` on a value is the card saying it needs
+/// that value early. Everything else stays lazy, so a card with no value guards
+/// costs nothing here — which is why this can sit unconditionally in the render
+/// path where resolving every field of every scalar source could not.
+///
+/// What it fixes: guards are decided during realize, against this blob, and a
+/// fetched scalar was never in it. So `when now.precip >= 40` compared against
+/// nothing — and so did its complement `when now.precip < 40`. BOTH FALSE.
+/// Measured on the 6T: `weather-activity` drew a correct header and a rain tile
+/// reading 100 %, with no verdict under either. The tree was right, the data was
+/// right, and the card answered nothing.
+///
+/// The call comes from `guard_bindings` rather than being assembled here, so the
+/// branch is decided on the same call the tile displays. A guard resolved by a
+/// second route is a card that can show one number and act on another.
+fn resolve_guards(
+    cx: &mut makepad_widgets::Cx,
+    source: &str,
+    data: &mut serde_json::Value,
+    store: &splash_ui_l0::InstanceStore,
+) {
+    for guard in splash_ui_l0::guard_bindings(source, data, store) {
+        // Already answered — `sys.gps` arrives through `fetched_scalars`, and a
+        // seeded blob may carry the field outright. Asking again would overwrite
+        // a value the rest of the card is already reading.
+        if data
+            .get(&guard.source)
+            .and_then(|v| v.get(&guard.field))
+            .is_some()
+        {
+            continue;
+        }
+        let Some(call) = splash_ui_l0::makepad::vm_call(&guard.binding) else {
+            continue;
+        };
+        let Some(text) = eval_text(cx, &call) else {
+            continue;
+        };
+        let text = text.trim();
+        // A fetch in flight answers "—"; one that gave up answers "n/a". Neither
+        // is a value, and leaving the field ABSENT is what lets `now.$state` say
+        // `.pending` and the card show it. Injecting a 0 instead would take the
+        // "no rain" branch and answer confidently before the forecast arrived —
+        // the accepted-card, confidently-wrong-screen shape this whole path
+        // exists to avoid.
+        if text.is_empty() || text == "—" || text == "n/a" || text.contains("$[") {
+            continue;
+        }
+        let value = match text.parse::<f64>() {
+            Ok(n) => serde_json::json!(n),
+            Err(_) => serde_json::Value::String(text.to_owned()),
+        };
+        let Some(map) = data.as_object_mut() else {
+            return;
+        };
+        let entry = map
+            .entry(guard.source.clone())
+            .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+        // A ROW source under the same name is a list, not a record. Nothing can
+        // be written into it and a guard on one is not this shape anyway.
+        if let Some(obj) = entry.as_object_mut() {
+            obj.insert(guard.field.clone(), value);
+        }
+    }
 }
 
 fn with_durable(

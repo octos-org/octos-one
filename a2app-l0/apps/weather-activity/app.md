@@ -1,18 +1,5 @@
 # weather-activity — requirements
 
-> **NOT YET REGISTERED, and the reason is a host limitation, not a spec problem.**
-> The card below is valid L0 and its verdict does not render. Guards are evaluated
-> at realize time against injected data, and only ROWS and `sys.gps` are injected
-> there — a live scalar like `now.precip` is resolved lazily by the kit at draw
-> time. Measured on a 6T: `Tile(value: now.precip)` drew `100%` while
-> `when now.precip >= 40` compared against nothing, so both complementary guards
-> were false and the card showed a correct header with no answer.
->
-> What it needs: the fields a card GUARDS on resolved before realize. The narrow
-> version is to ask the checker which source fields appear in guards and resolve
-> only those — cheap, and no change for a card without value guards. Until then
-> `weather-activity` stays absent from `L0_APPS` and keeps its pre-L0 path.
-
 "What should I DO in this weather?" Use it when the weather decides the answer:
 activities, plans, "should I go out", "这个天气适合做什么".
 

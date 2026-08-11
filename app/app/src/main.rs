@@ -84,17 +84,15 @@ const L0_APPS: &[(&str, &str, &str)] = &[
     // source and shows rows, computes nothing, and states no fact.
     ("quake", include_str!("../../../a2app-l0/apps/quake/app.md"),
      include_str!("../../../a2app-l0/apps/quake/exemplar.card")),
-    // `weather-activity` is DELIBERATELY NOT HERE YET, and its spec and exemplar
-    // in `a2app-l0/apps/weather-activity/` say why. The card is valid L0 and its
-    // verdict cannot render: it branches on live SCALARS (`now.precip`, `air.aqi`)
-    // and guards are evaluated at realize time against injected data, where only
-    // rows (`fetched_rows`) and `sys.gps` are present. Live scalars are resolved
-    // lazily by the kit at draw time instead — so `Tile(value: now.precip)` drew
-    // 100% on the 6T while `when now.precip >= 40` compared against nothing and
-    // both complementary guards were false. Registering it would put a card on
-    // screen with a correct header and no answer, which is the one failure §1.1
-    // exists to prevent. It needs the fields a card GUARDS on resolved before
-    // realize; until then the app keeps its pre-L0 path.
+    // COMPOSED, and the app that made value guards work. It branches on live
+    // SCALARS — `now.precip`, `air.aqi`, `now.temp` — and guards are decided at
+    // realize against injected data, where only rows and `sys.gps` used to be. So
+    // both halves of every complementary pair were false: on the 6T it drew a
+    // correct header, a rain tile reading 100 %, and no verdict under either. It
+    // is registered now because `resolve_guards` answers the fields a card GUARDS
+    // on before realize, using the same call the tile beside them displays.
+    ("weather-activity", include_str!("../../../a2app-l0/apps/weather-activity/app.md"),
+     include_str!("../../../a2app-l0/apps/weather-activity/exemplar.card")),
     // COMPOSED, and the first app above L0. `city-picks` compares the user's
     // saved cities, which needs one arithmetic expression — how much warmer it
     // feels than it is — and that is L1. Everything else about it is L0.
@@ -785,7 +783,10 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
             }
         }
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
-        "weather-activity" => include_str!("../../../a2app/apps/weather-activity/app.md"),
+        // The L0 spec, for the reason youtube's is below: this app is in
+        // `L0_APPS` now, so the DSL branch under it is unreachable and a second
+        // spec here could only drift out of agreement with the one that runs.
+        "weather-activity" => include_str!("../../../a2app-l0/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
         "web" => include_str!("../../../a2app/apps/web/app.md"),
         // The L0 spec, not `a2app/apps/youtube/app.md`. The old one is the HTML
@@ -10458,6 +10459,51 @@ mod tests {
             assert_eq!(
                 got, declared,
                 "{domain}'s exemplar declares {declared} and checks as {got}"
+            );
+        }
+    }
+
+    /// Every value `weather-activity` branches on can be answered before realize.
+    ///
+    /// The card being VALID proved nothing here, which is the whole defect class:
+    /// it checked clean, realized clean, built a clean widget tree, and on the 6T
+    /// it drew a correct header, a rain tile reading 100 %, and no verdict at
+    /// all. Both halves of every complementary pair were false, because a guard
+    /// is decided at realize against injected data and a fetched scalar was not
+    /// in it.
+    ///
+    /// So the assertion is not "the card is fine". It is that the three values
+    /// the tree turns on each reach a CALL this backend answers — which is
+    /// exactly what `resolve_guards` walks.
+    #[test]
+    fn the_weather_activity_verdict_has_numbers_to_branch_on() {
+        let (_, _, exemplar) = super::L0_APPS
+            .iter()
+            .find(|(d, _, _)| *d == "weather-activity")
+            .expect("weather-activity is registered");
+
+        let store = splash_ui_l0::InstanceStore::default();
+        let guards = splash_ui_l0::guard_bindings(exemplar, &serde_json::json!({}), &store);
+
+        let mut branched: Vec<String> = guards
+            .iter()
+            .map(|g| format!("{}.{}", g.source, g.field))
+            .collect();
+        branched.sort();
+        assert_eq!(
+            branched,
+            vec!["air.aqi", "now.precip", "now.temp"],
+            "rain, then air, then temperature — the order IS the reasoning"
+        );
+
+        // And each is a call, not a hope. A guard whose field this backend cannot
+        // translate is the original bug wearing a fetch policy.
+        for g in &guards {
+            assert!(
+                splash_ui_l0::makepad::vm_call(&g.binding).is_some(),
+                "nothing answers {}.{} — the guard would be false either way",
+                g.source,
+                g.field
             );
         }
     }
