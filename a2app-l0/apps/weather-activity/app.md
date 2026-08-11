@@ -138,7 +138,14 @@ else may: never a temperature, an AQI value, a venue name or a distance (§4).
 - the §5.9 lifecycle guards on `now` (`.pending` / `.failed`), with copy that
   says which one it is, and a `.pending` guard inside each place panel;
 - `Photo(src: scene)` as the root — the parent weather card's identity is a
-  photograph of the place, and a plain surface is a different app;
+  full-bleed image, and a plain surface is a different app. The scene is a MOOD
+  you write, never the place's name: `sys.photo` is a generative image model, so
+  asking it for "Beijing" asks it to invent one, and it invented a tower that
+  reads as Taipei 101 under a title saying Beijing. Declare
+  `state mood { shape: text, initial: "<a scene, no place name>" }` and
+  `source scene sys.photo(query: state.mood, cond: now.cond)`. Prose asserts
+  nothing, so a mood is yours to write; `cond:` hands the host the live
+  condition so a page reading 92 % rain is not lit like a clear afternoon;
 - the current block: eyebrow, the place's name as title, `WeatherIcon(cond:
   now.cond)` beside `TextHero(value: now.temp, unit: units)`, and the two numbers
   the verdict turned on (rain % and AQI) as `Tile`s — so a reader can see WHY;

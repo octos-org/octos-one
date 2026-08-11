@@ -44,9 +44,22 @@ source in1  sys.search(query: "Kyoto National Museum", count: 1, fields: [name, 
 source in2  sys.search(query: "Nishiki Market Kyoto", count: 1, fields: [name, label])
 source in3  sys.search(query: "Kyoto Railway Museum", count: 1, fields: [name, label])
 
-# The page is a photograph of the place, as in the parent weather card — which is
-# also why this card declares `theme photo` when a request asks for that look.
-source scene sys.photo(query: place.name)
+# ── the backdrop ─────────────────────────────────────────────────────────────
+# A SCENE, never the place's name. `sys.photo` is a generative image model, so
+# asking it for "Beijing" asks it to INVENT a Beijing — and it invented one that
+# reads as Taipei 101, under a title saying Beijing. A fabricated depiction of a
+# real place, rendering as a plausible photograph, with nothing on screen saying
+# it was made up.
+#
+# So the card writes a MOOD instead. Prose asserts nothing: this is §4's
+# `model-copy` doing what it is for, and the image is honestly a backdrop rather
+# than dishonestly a photograph.
+#
+# `cond:` is what keeps it honest about the DAY. The scene is the card's words;
+# the weather is the host's fact, and it folds the live condition into the prompt
+# so a page reading 92 % rain is not lit like a clear afternoon.
+state mood { shape: text, initial: "old city rooftops at street level, cinematic, muted" }
+source scene sys.photo(query: state.mood, cond: now.cond)
 source env.locale sys.locale()
 
 # ── state ────────────────────────────────────────────────────────────────────
