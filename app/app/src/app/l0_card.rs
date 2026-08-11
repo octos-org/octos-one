@@ -67,7 +67,27 @@ const PALETTES: &[(&str, &str)] = &[
 /// The kit as this host assembles it for `source`: base, the card's declared
 /// mood, the derivation, then the body — in that order.
 fn kit_for(source: &str) -> String {
-    let theme = splash_ui_l0::card_theme(source);
+    let declared = splash_ui_l0::card_theme(source);
+    // A `light` mood over a PHOTO page is a legibility failure rather than a
+    // style. `light` is the only mood that inverts the ink, and dark ink over an
+    // arbitrary photograph is unreadable — measured on "minimal weather tokyo",
+    // where the H/L/feels row rendered dark grey directly on a photo of the sky.
+    //
+    // The card is not wrong and is not refused: it asked for a light look AND a
+    // photograph, and `photo` is the mood that answers both — nearly-black fills
+    // laid over the image, with light ink. Resolving that here is exactly what
+    // this layer is for; the alternative was telling agents in prose not to pair
+    // them, which fails silently the first time one forgets.
+    let theme = match (
+        declared.as_deref(),
+        splash_ui_l0::card_root_role(source).as_deref(),
+    ) {
+        (Some("light"), Some("Photo")) => {
+            makepad_widgets::log!("[l0] theme light over a Photo page -> photo (legibility)");
+            Some("photo".to_owned())
+        }
+        _ => declared,
+    };
     let delta = theme
         .as_deref()
         .and_then(|t| PALETTES.iter().find(|(n, _)| *n == t))
@@ -801,6 +821,70 @@ mod exemplar_drift {
 
 #[cfg(test)]
 mod tests {
+    /// A light mood over a PHOTO page is resolved to `photo`.
+    ///
+    /// Not a style preference: `light` inverts the ink, and dark ink over an
+    /// arbitrary photograph is unreadable. Measured on device before this existed —
+    /// "minimal weather tokyo" put the H/L/feels row in dark grey directly on a
+    /// photo of the sky. The card keeps asking for both; the kit answers with the
+    /// mood that reads.
+    #[test]
+    fn a_light_mood_over_a_photo_page_becomes_photo() {
+        let photo_card = "theme light\n\
+                          source scene sys.photo(query: \"kyoto\")\n\
+                          view root Photo(src: scene) { Rule() }\n";
+        let kit = super::kit_for(photo_card);
+        assert!(
+            kit.contains("#05070c8c"),
+            "a light+Photo card must be assembled with the photo palette's scrim"
+        );
+        assert!(
+            !kit.contains("#f2f2f7"),
+            "the light page colour must not survive the substitution"
+        );
+
+        // The same mood on a plain surface stays light — the rule is about photos,
+        // not about disliking light.
+        let plain = "theme light\nview root Surface { Rule() }\n";
+        assert!(
+            super::kit_for(plain).contains("#f2f2f7"),
+            "light on a Surface page must stay light"
+        );
+
+        // And a photo page that declared no mood still takes the default.
+        let bare = "source scene sys.photo(query: \"x\")\n\
+                    view root Photo(src: scene) { Rule() }\n";
+        assert!(
+            super::kit_for(bare).contains("#0a0e14"),
+            "a photo page that declared nothing must take dark, not photo"
+        );
+    }
+
+    /// `light` is the only mood that inverts the ink, which is what the photo
+    /// substitution above relies on.
+    ///
+    /// If a new mood overrides `l0_text` to something dark it needs the same
+    /// treatment, and this is where that gets noticed — the alternative is a card
+    /// rendering unreadable text over a photograph while every automated check
+    /// still passes.
+    #[test]
+    fn light_is_the_only_mood_that_inverts_the_ink() {
+        for (name, delta) in super::PALETTES {
+            if *name == "light" {
+                assert!(
+                    delta.contains("let l0_text"),
+                    "light must override the ink; the photo substitution needs it"
+                );
+                continue;
+            }
+            assert!(
+                !delta.contains("let l0_text"),
+                "mood {name:?} overrides l0_text — if that ink is DARK it also needs \
+                 the light+Photo substitution in `kit_for`"
+            );
+        }
+    }
+
     /// Every mood the L0 catalog admits has a palette in this kit.
     ///
     /// The card language and the kit are in different repositories, so nothing
