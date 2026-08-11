@@ -15,24 +15,42 @@ source place sys.geocode(name: state.city)
 source now   sys.weather(lat: place.lat, lon: place.lon,
                          fields: [temp, feels, cond, precip, wind])
 source air   sys.airquality(lat: place.lat, lon: place.lon)
-# The two halves of the answer. Both are fetched whichever way the verdict goes:
-# a source is a declaration, so which one is DISPLAYED is the tree's business and
-# the fetches cost the same either way.
-source parks   sys.places(lat: place.lat, lon: place.lon, category: "park",
-                          count: 3, fields: [id, name, distance])
-source views   sys.places(lat: place.lat, lon: place.lon, category: "viewpoint",
-                          count: 2, fields: [id, name, distance])
-source museums sys.places(lat: place.lat, lon: place.lon, category: "museum",
-                          count: 3, fields: [id, name, distance])
-source cafes   sys.places(lat: place.lat, lon: place.lon, category: "cafe",
-                          count: 2, fields: [id, name, distance])
+
+# ── the picks ────────────────────────────────────────────────────────────────
+# THE ONE THING THE MODEL KNOWS THAT THE HOST DOES NOT.
+#
+# `sys.places(category: "museum")` is a 4 km unranked radius around the city's
+# centroid — it answers "what is tagged museum nearby", which is a different
+# question from "what is worth a day". Asked about Beijing it returned a police
+# museum and a hospital's history hall, and never the Forbidden City, which is
+# not tagged `museum` at all. A proximity query cannot rank, and OSM cannot say
+# what matters.
+#
+# A model can. So it names the SUBJECTS and the host resolves every fact about
+# them. This is not §4 being bent: a card already carries `state city { initial:
+# "Kyoto" }` and `state q { initial: "lofi hip hop radio" }`, and these are the
+# same thing — what to ASK, never what was answered. The ORDER is the
+# recommendation, and an ordering is the card's judgement in exactly the sense
+# `when now.precip >= 40` already is.
+#
+# And it fails safely. Invent a place and the search answers nothing, so the row
+# is ABSENT — a hole a reader can see. That is the whole argument: a hallucinated
+# number renders as a plausible number, and a hallucinated subject renders as
+# nothing at all.
+source out1 sys.search(query: "Fushimi Inari Shrine Kyoto", count: 1, fields: [name, label])
+source out2 sys.search(query: "Arashiyama Bamboo Grove Kyoto", count: 1, fields: [name, label])
+source out3 sys.search(query: "Kiyomizu-dera Kyoto", count: 1, fields: [name, label])
+source in1  sys.search(query: "Kyoto National Museum", count: 1, fields: [name, label])
+source in2  sys.search(query: "Nishiki Market Kyoto", count: 1, fields: [name, label])
+source in3  sys.search(query: "Kyoto Railway Museum", count: 1, fields: [name, label])
+
 # The page is a photograph of the place, as in the parent weather card — which is
 # also why this card declares `theme photo` when a request asks for that look.
 source scene sys.photo(query: place.name)
 source env.locale sys.locale()
 
 # ── state ────────────────────────────────────────────────────────────────────
-state city  { shape: text, initial: "" }   # "" ⇒ the device's own location
+state city  { shape: text, initial: "Kyoto" }   # "" ⇒ the device's own location
 state units { shape: enum[c, f], initial: env.locale.temp_unit }
 
 event toggle_units { units: cycle(.c, .f) }
@@ -49,7 +67,19 @@ copy why_cold { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
 copy why_fine { class: vocabulary, en: "mild, dry and clear", zh: "温和、干燥、空气好" }
 copy aqi_lbl  { class: vocabulary, en: "AIR", zh: "空气" }
 copy rain_lbl { class: vocabulary, en: "RAIN", zh: "降水" }
-copy near     { class: vocabulary, en: "away", zh: "距离" }
+
+# ── a pick ───────────────────────────────────────────────────────────────────
+# One row, written once. Six sources of the same shape are six chances to drift
+# apart, and the component is what stops them.
+#
+# `label` is the host's secondary line — city, region, country — so a reader can
+# tell which Kiyomizu-dera answered. The card does not write it; the search does.
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+         TextRow(text: hit.name)
+         TextCaption(text: hit.label)
+       }
+}
 
 # ── view ─────────────────────────────────────────────────────────────────────
 view root Photo(src: scene, pad: .page) {
@@ -106,46 +136,20 @@ view fine   Col(gap: 10) { TextTitle(text: copy.go_out)
                            outdoors }
 
 # ── the two answers ──────────────────────────────────────────────────────────
+# The `for` is a SIBLING of the pending line, never behind a `.ready` guard. A
+# card whose only reference to a source sits inside `when src.$state == .ready`
+# gates the render on a state the render produces — the activity card deadlocked
+# on exactly that and drew "Finding places nearby…" forever.
 view outdoors Panel {
-       when parks.$state == .pending { TextBody(text: copy.loading) }
-       for p, i in parks key p.id {
-         Row(align: .center, gap: 10) {
-           Col(gap: 2, width: .fill) {
-             TextRow(text: p.name)
-             TextCaption(text: p.distance, suffix: copy.near)
-           }
-         }
-         Rule()
-       }
-       for v, i in views key v.id {
-         Row(align: .center, gap: 10) {
-           Col(gap: 2, width: .fill) {
-             TextRow(text: v.name)
-             TextCaption(text: v.distance, suffix: copy.near)
-           }
-         }
-         Rule()
-       }
+       when out1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in out1 key h.label { Pick(hit: h) Rule() }
+       for h, i in out2 key h.label { Pick(hit: h) Rule() }
+       for h, i in out3 key h.label { Pick(hit: h) Rule() }
      }
 
 view indoors Panel {
-       when museums.$state == .pending { TextBody(text: copy.loading) }
-       for m, i in museums key m.id {
-         Row(align: .center, gap: 10) {
-           Col(gap: 2, width: .fill) {
-             TextRow(text: m.name)
-             TextCaption(text: m.distance, suffix: copy.near)
-           }
-         }
-         Rule()
-       }
-       for c, i in cafes key c.id {
-         Row(align: .center, gap: 10) {
-           Col(gap: 2, width: .fill) {
-             TextRow(text: c.name)
-             TextCaption(text: c.distance, suffix: copy.near)
-           }
-         }
-         Rule()
-       }
+       when in1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in in1 key h.label { Pick(hit: h) Rule() }
+       for h, i in in2 key h.label { Pick(hit: h) Rule() }
+       for h, i in in3 key h.label { Pick(hit: h) Rule() }
      }
