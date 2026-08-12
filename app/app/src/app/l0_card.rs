@@ -1222,86 +1222,34 @@ fn state_of_answer(text: &str) -> &'static str {
 fn observe_source_states(
     cx: &mut makepad_widgets::Cx,
     ledger: &str,
-    root: &splash_ui_l0::UiNode,
+    _root: &splash_ui_l0::UiNode,
     data: &serde_json::Value,
     store: &splash_ui_l0::InstanceStore,
 ) {
-    // Worst state per HELPER, then attributed to the sources that name it.
-    let mut by_helper: BTreeMap<String, &'static str> = BTreeMap::new();
-    let mut stack = vec![root];
-    while let Some(node) = stack.pop() {
-        for (_, binding) in &node.bindings {
-            if by_helper.get(&binding.helper) == Some(&"pending") {
-                continue;
-            }
-            // A binding that names the SOURCE rather than a field of it — `Map(from:
-            // origin_place)` — has an empty `field`, and no call answers "the source
-            // itself". Every binding on a planning screen is one of those, which is
-            // why the first version of this observed nothing at all: three bindings
-            // found, zero calls built, every source reported `.pending` forever.
-            //
-            // Any field the catalog says the helper answers will do, because the
-            // lifecycle is a property of the FETCH and every field of one source
-            // rides the same request.
-            let Some(call) = probe_call(binding) else {
-                continue;
-            };
-            let Some(text) = eval_text(cx, &call) else {
-                continue;
-            };
-            let seen = state_of_answer(&text);
-            let rank = |s: &str| match s {
-                "pending" => 0,
-                "failed" => 1,
-                _ => 2,
-            };
-            match by_helper.get(&binding.helper) {
-                Some(prev) if rank(prev) <= rank(seen) => {}
-                _ => {
-                    by_helper.insert(binding.helper.clone(), seen);
-                }
-            }
-        }
-        stack.extend(node.children.iter());
-    }
-
-    // AND THE SOURCES THE CARD GATES ON, which the walk above can never reach.
+    // PER SOURCE, never per helper. This used to walk the realized tree for
+    // bindings, take the worst state per HELPER, and stamp it onto every source
+    // naming that helper — and the nav card is why that cannot stand: five
+    // `sys.route` trips, one of which (`trip`, origin: "") is unanswerable BY
+    // DESIGN on a from-here journey. Its eternal `.pending` was stamped onto
+    // `trip_here`, which had a real origin, a real destination and a 200 on the
+    // wire — so "Finding a route…" showed forever and Go never appeared, with
+    // zero failed fetches to point at.
     //
-    // Harvesting bindings out of the realized tree makes `$state` a property of
-    // what RENDERED. A card that gates its rows on the state it is waiting for is
-    // then a closed loop — no data, so pending; pending, so the rows do not
-    // realize; nothing realized, so nothing binds the source; nothing bound, so
-    // no status is written. Measured on the 6T: the activity card for Beijing
-    // drew "Finding places nearby…" and nothing else, with `L0 $state:` empty on
-    // every realize, indefinitely.
-    //
-    // It is the shipped exemplar's shape, so every generated activity card
-    // inherited it, and the apps that escape do so by accident: `weather-activity`
-    // puts its `for` beside the pending guard instead of behind a ready one, and
-    // `quake`'s gated feed shares a helper with an ungated lead.
-    //
-    // Only the GATED ones, so this costs nothing for a card that merely displays a
-    // source — that one's bindings are in the tree and the walk above has already
-    // answered it. Same fetch policy as `resolve_guards`: the card's own `when`s
-    // say what has to be answered before it can decide what to draw.
-    for probe in splash_ui_l0::guarded_state_bindings(ledger, data, store) {
-        if by_helper.contains_key(&probe.binding.helper) {
-            continue;
-        }
+    // `source_state_bindings` resolves each declared source's own call with the
+    // same argument resolution the lowering uses, so every source answers for
+    // itself. A source whose call cannot be built (a component-scoped path, an
+    // unanswerable argument) simply reports nothing, and the display's default
+    // for an absent status is `.pending` — the honest reading for a question
+    // that has not been asked.
+    let mut states: BTreeMap<String, String> = BTreeMap::new();
+    for probe in splash_ui_l0::source_state_bindings(ledger, data, store) {
         let Some(call) = probe_call(&probe.binding) else {
             continue;
         };
         let Some(text) = eval_text(cx, &call) else {
             continue;
         };
-        by_helper.insert(probe.binding.helper.clone(), state_of_answer(&text));
-    }
-
-    let mut states: BTreeMap<String, String> = BTreeMap::new();
-    for request in splash_ui_l0::source_plan(ledger).requests {
-        if let Some(state) = by_helper.get(&request.helper) {
-            states.insert(request.name, (*state).to_owned());
-        }
+        states.insert(probe.source.clone(), state_of_answer(&text).to_owned());
     }
     makepad_widgets::log!(
         "L0 $state: {}",
