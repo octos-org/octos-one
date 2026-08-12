@@ -76,7 +76,7 @@ and that looks exactly like data still arriving.
 | `sys.topics` | `fields` | `name`, `top_title`, `top_points`, `top_id` |
 | `sys.video` | `query`, `count`, `fields` | `id`, `title`, `channel`, `length`, `views`, `age`, `thumb`, `embed` |
 | `sys.watchlist` | `ticker`, `fields` | `ticker`, `name`, `last`, `change`, `pct`, `open`, `high`, `low`, `prev`, `volume`, `mktcap`, `pe`, `currency`, `exchange`, `has` |
-| `sys.weather` | `lat`, `lon`, `days`, `fields`, `aggregate` | `temp`, `feels`, `hi`, `lo`, `cond`, `humidity`, `wind`, `pressure`, `uv`, `visibility`, `precip`, `dayname`, `days`<br>`aggregate:` `min_lo`, `max_hi` |
+| `sys.weather` | `lat`, `lon`, `days`, `fields`, `aggregate`, `day` | `temp`, `feels`, `hi`, `lo`, `cond`, `humidity`, `wind`, `pressure`, `uv`, `visibility`, `precip`, `dayname`, `days`<br>`aggregate:` `min_lo`, `max_hi` |
 
 ## Shared token sets
 

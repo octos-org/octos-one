@@ -97,6 +97,26 @@ renders as nothing at all.
 
 ---
 
+## A future day — when the request says "tomorrow"
+
+Seen in the wild before this section existed: a card whose eyebrow said
+TOMORROW over `current.temperature_2m` — the label claimed a day the sources
+could not read, and no screen could tell it from the real thing.
+
+The rule: **a time word in copy must match a `day:` the sources declare.**
+
+- "tomorrow" / "明天" → every `sys.weather` source carries `day: 1`, and the
+  card reads `hi`/`lo`, never `temp`/`feels`/`wind` — there is no "current"
+  tomorrow, and the lowering refuses those fields under a future day (they
+  render as absence, not as today's reading).
+- The verdict tree for a future day branches on `next.precip` then `next.hi`
+  (rain, then warmth). **Omit the air branch and the AQI tile**: air quality
+  has no future reading in this catalog, and yesterday's habit of showing
+  today's AQI under tomorrow's heading is exactly the lie this section bans.
+- The icon shifts with the day on its own — `WeatherIcon(cond: next.cond)`
+  describes the named day's sky when the source carries `day: 1`.
+- No `day:` (or `day: 0`) → today, and only then may copy say TODAY.
+
 ## The verdict — a decision TREE, not a conjunction
 
 The parent branched with `if temp >= 18 && aqi < 100 && precip < 40 { … } else
