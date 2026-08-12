@@ -458,6 +458,13 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
         UiNotification::LoopUpdated(_) => {}
         UiNotification::LoopFired(_) => {}
         UiNotification::LoopCompleted(_) => {}
+        // MonitorRuntime (octos main, 2026-08): zero-token event watchers that
+        // wake the master. Kernel-side machinery; nothing for this store to
+        // project yet. Explicit arms, not `_`, so the NEXT protocol addition
+        // fails the build here too — that is this match's whole job.
+        UiNotification::MonitorUpdated(_) => {}
+        UiNotification::MonitorFired(_) => {}
+        UiNotification::MonitorExpired(_) => {}
         // Router/queue telemetry and context maintenance are status-line
         // material; only failover (above) is user-visible today.
         UiNotification::RouterStatus(_) => {}

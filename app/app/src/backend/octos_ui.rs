@@ -578,6 +578,11 @@ impl OctosUiAgent {
             | UiNotification::LoopUpdated(_)
             | UiNotification::LoopFired(_)
             | UiNotification::LoopCompleted(_)
+            // MonitorRuntime (octos main, 2026-08) — kernel-side watchers;
+            // no chat-surface projection here.
+            | UiNotification::MonitorUpdated(_)
+            | UiNotification::MonitorFired(_)
+            | UiNotification::MonitorExpired(_)
             | UiNotification::ContextCompactionCompleted(_)
             | UiNotification::ContextCompactionStarted(_)
             | UiNotification::ContextNormalizationReported(_)
