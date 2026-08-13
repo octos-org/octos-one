@@ -27,6 +27,7 @@ fi
 { echo 'let st = { route: "siren", dark: 1 }'; cat <<'SHIM'
 fn sget(k, d) {
   if k == "sb_placed" { return 1 }
+  if k == "sb_open_capp" { return 0 }
   if k == "sb_qty_cmac" { return 2 }
   if k == "sb_size_cmac" { return 2 }
   if k == "sb_tab" { return 0 }
