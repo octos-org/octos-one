@@ -247,6 +247,15 @@ is REFUSED and the reasons are shown instead of your card.\n\n\
 /// clear). The AMA renders NOTHING — its output is routing metadata.
 const AMA_SYSTEM_PROMPT: &str = "You are the AMA (Activity Management Agent) of an agent OS — a ROUTER and, when needed, an APP COMPOSER. You never generate UI: do NOT emit `runsplash` or any card. Your context includes the APP AGENT MEMORY manual — you do NOT follow its card-generation rules (those are for app agents), but its `framework.md` routing list and its `## Composing a NEW app (AMA composer)` section ARE yours.\n\nROUTING (the default): read the user message, pick the app whose domain it belongs to, and reply EXACTLY ONE short line: `<app-id> — <brief reason>`. The app ids and domains are the routing list in framework.md (weather, stock, news, activity, weather-activity, nav, plus any `apps/<id>/app.md` present in memory). A BARE place name → `weather`; a BARE ticker/company → `stock`; top/best/gainers/movers about the market → `stock`; headlines → `news`; nearby places / things to do → `activity`; COMPARING COUNTRIES on an economic or development measure over time — 'china gdp growth vs india', 'india vs vietnam gdp per capita', 'life expectancy japan korea', 'population of nigeria and brazil', '中国和印度的 GDP' → `chart` (a COUNTRY-level statistic over YEARS, from the World Bank; a company's share price is still `stock` and a city's weather is still `weather`); WHERE-SHOULD-I-GO across the user's SAVED cities — 'where should I go', 'compare my cities', 'which of my cities is nicest', '去哪儿好' → `city-picks` (this one is about the SET the user saved, so it needs no place name; a request naming ONE place is still `weather`, and 'what is nearby' is still `activity`); ASKING WHAT TO DO is `weather-activity`, and it does NOT need the word weather — 'what can I do in Beijing', 'what should I do today', 'anything to do this afternoon', '在北京能做什么', '今天适合干什么' → `weather-activity` (the conditions decide the answer, which is the whole point of the app; the router previously read 'no weather hinge' from the absence of the word and sent these to `activity`, which answers a different question). Asking for a LIST of places is still `activity`: 'what's nearby', 'museums in Beijing', 'parks near me', 'coffee around here'. Advice → `weather-activity`; a list → `activity`. DIRECTIONS / navigation / a route to a place — any go-there request with a travel verb ('directions to SFO', 'navigate home', 'route to the airport', 'how do I get to X', 'map to X', 'show me a map of X', '导航去北京', '怎么去外滩', '去机场怎么走') → `nav` (NOT `weather`: a bare place name stays `weather`, and 'what's nearby / things to do' stays `activity` — `nav` is specifically GOING somewhere). When routing to `nav`, ALSO parse the trip and APPEND `; from=<origin>; to=<destination>` to your decision line — split 'from A to B' (leave `from` empty when no origin is named), and QUALIFY an ambiguous place with its city/region from WORLD KNOWLEDGE so the geocoder resolves it (e.g. 'nvidia headquarters' → 'nvidia santa clara', 'apple park' → 'apple park cupertino', 'googleplex' → 'googleplex mountain view'; leave a clear street address as-is). Example line: `nav — directions; from=Saratoga High School; to=NVIDIA Santa Clara`. ANY video / music / live-stream / watching request (e.g. 'play despacito', 'lofi music', 'watch news live', '放点音乐') → `youtube`; UNIT CONVERSION — 'km to miles', 'how many miles is 42 km', 'kg to lbs', '20°C in fahrenheit', '多少英里' → `convert`; EARTHQUAKES / seismic — 'earthquakes', 'recent quakes', 'any earthquakes today?', '地震' → `quake` (UNITS ONLY: a CURRENCY request — 'usd to eur', '汇率' — needs a live rate this profile has no capability for, so reply `none` rather than routing to a card that would have to invent one); a single general app / tool / utility / game / dashboard that no other domain covers → `web`. A weather request stays `weather` EVEN IF it also names a visual style (`dark`/`light`/`minimal`/`glass`/`vibrant`/`photo`/`深色`/`简约`/`毛玻璃`) — those are STYLE modifiers for the weather card, NOT a `web` app (so `glass weather tokyo`, `dark weather`, `minimal weather shanghai` are ALL `weather`). Never call a clear single-domain request ambiguous. No tools are needed to route.\n\nMECHANICS: you output ONE decision for ONE app, and the system renders ONE card from that ONE app. There is NO 'route each separately' and NO 'two cards' — those actions do not exist. Therefore a request that asks for two domains TOGETHER (combined card, dashboard, X and Y in one view) can ONLY be served by a COMPOSED app: route to the existing composed app that covers the pair, else COMPOSE it now.\n\nCOMPOSING (when NO app in the routing list — composed ones included — covers a MULTI-domain request): follow the composer section in framework.md. Your working directory IS the app-cards `apps/` directory, so use your file tools with RELATIVE paths: write_file `<a>-<b>/app.md` (a requirements spec that MERGES the parent apps' named BLOCKS and binds data ONLY via existing sys.* helpers) and `<a>-<b>/lint.json`, then reply `compose <a>-<b> — <brief reason>`. This authoring write is sanctioned — it is the ONE exception to the manual's never-edit-memory rule. Create a NEW `<id>/` for the composed app; never modify an EXISTING app's files. If your file tools fail, reply `none` and say why.\n\nReply `none` ONLY if no domain's data bears on the message. Be terse; output only the one decision line (after any composing writes).";
 
+/// Findings ferried in by the poll thread, drained on the UI thread.
+static DEV_FINDINGS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// The dev master's charter. Deliverable protocol, not editorial guidance —
+/// the whole point of the run is that nobody on the host side authors.
+const DEV_MASTER_PROMPT: &str = "You are the on-device DEV MASTER for a self-evolving app experiment. \
+You iterate a Splash-DSL catalog screen against MECHANICAL findings only. \
+Round protocol: (1) In your FIRST reply, list which of these tools you actually have available: goal_create, peer_handoff, peer_gather, monitor tools — one line, then proceed. If goal tools exist, create a goal for this work and record findings to it; if peer tools exist, you MAY hand the card-writing off to one peer and gather it. (2) EVERY reply must contain the complete revised screen between the exact markers BEGIN_CARD and END_CARD, alone on their own lines. No prose inside the markers. (3) After each reply you will receive a findings message: translate errors, mount diagnostics (built/nodes), ink fraction, and tap-sweep results. Fix what the findings name. (4) When the findings show no errors and the feature works, say DONE before the markers and emit the final card once more. Never invent widgets: only what the embedded contract lists as verified. State slots are global; prefix with sb_.";
+
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
 /// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
@@ -5511,6 +5520,19 @@ pub struct App {
     /// AMA log, never to the visible CHAT_DATA).
     #[rust]
     ama_prompt: Option<PromptId>,
+    /// DEV-GOAL HARNESS (self-evolving app dev). A hidden master session on the
+    /// phone's own kernel; its stream is collected here and never rendered. The
+    /// host bridge is three world-writable files under /data/local/tmp — goal
+    /// in, card out, findings in — so the model on the DEVICE does the
+    /// developing and the host only ferries bytes.
+    #[rust]
+    dev_session: Option<SessionId>,
+    #[rust]
+    dev_prompt: Option<PromptId>,
+    #[rust]
+    dev_text: String,
+    #[rust]
+    dev_round: u32,
     /// A cancelled AMA routing prompt whose late deltas must be DROPPED, not
     /// streamed into the foreground card. Cancel clears `ama_prompt`
     /// synchronously, but the server interrupt is async — a delta already in
@@ -6543,6 +6565,54 @@ impl App {
             };
             self.ama_session = Some(agent.create_session(cx, ama_config));
             log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
+
+            // DEV-GOAL HARNESS: only when the launch intent asks for it.
+            // `--es makepad.DEV_GOAL_FILE <path>` names a host-authored mission
+            // file (readable: /data/local/tmp, 0644). The card comes back via
+            // /data/local/tmp/dev_card.splash (pre-created 0666 by the host —
+            // this app cannot CREATE there, only write into what exists), and
+            // findings arrive via /data/local/tmp/dev_findings.txt.
+            if let Ok(goal_path) = std::env::var("MAKEPAD_DEV_GOAL_FILE") {
+                match std::fs::read_to_string(&goal_path) {
+                    Ok(goal) => {
+                        let dev_cfg = SessionConfig {
+                            system_prompt: Some(DEV_MASTER_PROMPT.to_string()),
+                            ..Default::default()
+                        };
+                        let dev = agent.create_session(cx, dev_cfg);
+                        let pid = agent.send_prompt(cx, dev, &goal);
+                        self.dev_session = Some(dev);
+                        self.dev_prompt = Some(pid);
+                        self.dev_round = 1;
+                        log::info!("[devgoal] round 1 started ({} goal bytes)", goal.len());
+                        // Findings ferry: mtime-watch the findings file; on
+                        // change push its text and wake the UI thread.
+                        std::thread::spawn(|| {
+                            let path = "/data/local/tmp/dev_findings.txt";
+                            let mut last: Option<std::time::SystemTime> = None;
+                            loop {
+                                std::thread::sleep(std::time::Duration::from_secs(3));
+                                let Ok(meta) = std::fs::metadata(path) else { continue };
+                                let Ok(mt) = meta.modified() else { continue };
+                                if last == Some(mt) {
+                                    continue;
+                                }
+                                last = Some(mt);
+                                if let Ok(text) = std::fs::read_to_string(path) {
+                                    if text.trim().is_empty() {
+                                        continue;
+                                    }
+                                    if let Ok(mut q) = DEV_FINDINGS.lock() {
+                                        q.push(text);
+                                    }
+                                    makepad_widgets::SignalToUI::set_ui_signal();
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => log::warn!("[devgoal] goal file unreadable: {e}"),
+                }
+            }
         }
         // §5.12: hand the durable store to the VM before anything renders, or
         // the first card drawn after a launch shows an empty list and fills in
@@ -9323,6 +9393,22 @@ impl AppMain for App {
         // connection dot/label from APP_STATE so Live/Reconnecting/Offline
         // tracks reality instead of the boot snapshot.
         if let Event::Signal = event {
+            // Dev-goal findings: one at a time, only between turns.
+            if self.dev_prompt.is_none() {
+                if let Some(dev) = self.dev_session {
+                    let next = DEV_FINDINGS.lock().ok().and_then(|mut q| {
+                        if q.is_empty() { None } else { Some(q.remove(0)) }
+                    });
+                    if let Some(findings) = next {
+                        if let Some(agent) = self.agent.as_mut() {
+                            let pid = agent.send_prompt(cx, dev, &findings);
+                            self.dev_prompt = Some(pid);
+                            self.dev_round += 1;
+                            log::info!("[devgoal] round {} started (findings {} bytes)", self.dev_round, findings.len());
+                        }
+                    }
+                }
+            }
             self.update_connection_indicator(cx);
         self.update_context_indicator(cx);
             // Streaming state flips on transport events — keep the octopus
@@ -9369,6 +9455,12 @@ impl AppMain for App {
                         CHAT_DATA.write().unwrap().authoritative_text = text;
                     }
                     AgentEvent::TextDelta { prompt_id, text } => {
+                        // Dev-goal stream: collected for the file bridge, never
+                        // rendered — same discipline as the AMA's routing text.
+                        if Some(prompt_id) == self.dev_prompt {
+                            self.dev_text.push_str(&text);
+                            continue;
+                        }
                         // A cancelled AMA turn's late deltas are stale routing
                         // metadata — drop them (they would otherwise fall past
                         // the AMA/foreground guards and stream as card text).
@@ -9452,6 +9544,33 @@ impl AppMain for App {
                         }
                     }
                     AgentEvent::TurnComplete { prompt_id, .. } => {
+                        if Some(prompt_id) == self.dev_prompt {
+                            let text = std::mem::take(&mut self.dev_text);
+                            self.dev_prompt = None;
+                            let card = text
+                                .split("BEGIN_CARD")
+                                .nth(1)
+                                .and_then(|t| t.split("END_CARD").next())
+                                .map(str::trim)
+                                .unwrap_or("");
+                            let done = text.contains("DONE");
+                            if card.is_empty() {
+                                log::warn!("[devgoal] round {} ended with NO card between markers", self.dev_round);
+                            } else {
+                                match std::fs::write("/data/local/tmp/dev_card.splash", card) {
+                                    Ok(()) => log::info!(
+                                        "[devgoal] round {} card written ({} bytes) done={}",
+                                        self.dev_round, card.len(), done
+                                    ),
+                                    Err(e) => log::warn!("[devgoal] card write failed: {e}"),
+                                }
+                            }
+                            // Narration outside the markers is the model's own
+                            // report — surface the head of it for the log.
+                            let head: String = text.chars().take(300).collect();
+                            log::info!("[devgoal] narration: {}", head.replace('\n', " | "));
+                            continue;
+                        }
                         // A cancelled AMA turn finally completed — swallow it
                         // (its decision is void; the intent was already released
                         // by Cancel). Clear the marker so its slot is reusable.

@@ -1,0 +1,306 @@
+// Siren Coffee — a Starbucks-like ordering card in the semantic vocabulary.
+// Three tabs (Home / Menu / Order), per-drink customization with Tall/Grande/
+// Venti sizing, extra shots, oat milk and whip, a rewards balance with a
+// progress ring toward the next reward, and an order that earns stars.
+//
+// Everything derived: the home tab's star balance, the progress bar, the
+// per-line prices, the total, and the stars this order will earn all recompute
+// from the same slots the taps write. No colours, no dp — the theme owns those.
+
+fn N(k, d) { return sget(k, d) }
+
+fn menu() {
+  // id, name, blurb, base cents (Tall), category index
+  return [
+    ["latte",  "Caffe Latte",        "our signature espresso, steamed milk",     545, 0],
+    ["capp",   "Cappuccino",         "espresso under a deep layer of foam",      525, 0],
+    ["cmac",   "Caramel Macchiato",  "vanilla, steamed milk, caramel drizzle",   575, 0],
+    ["cold",   "Cold Brew",          "slow-steeped, super smooth",               445, 1],
+    ["shak",   "Iced Shaken Espresso","espresso shaken with ice",                525, 1],
+    ["chai",   "Chai Tea Latte",     "black tea, cinnamon, clove",               545, 2],
+    ["matc",   "Matcha Tea Latte",   "smooth and creamy matcha",                 575, 2],
+  ]
+}
+
+fn cat_name(i) {
+  if i == 0 { return "Hot Coffees" }
+  if i == 1 { return "Cold Coffees" }
+  return "Teas"
+}
+
+fn money(cents) {
+  let c = cents % 100
+  let d = (cents - c) / 100
+  if c < 10 { return "$" + d + ".0" + c }
+  return "$" + d + "." + c
+}
+
+fn size_name(i) {
+  if i == 0 { return "Tall" }
+  if i == 1 { return "Grande" }
+  return "Venti"
+}
+
+fn size_add(i) {
+  if i == 0 { return 0 }
+  if i == 1 { return 50 }
+  return 90
+}
+
+// One drink's unit price from its slots.
+fn unit_price(it) {
+  let id = it[0]
+  let p = it[3] + size_add(N("sb_size_" + id, 1))
+  p = p + N("sb_shot_" + id, 0) * 80
+  if N("sb_oat_" + id, 0) == 1 { p = p + 70 }
+  if N("sb_whip_" + id, 0) == 1 { p = p + 50 }
+  return p
+}
+
+fn cart_count() {
+  let n = 0
+  for it in menu() { n = n + N("sb_qty_" + it[0], intent_qty(it[0])) }
+  return n
+}
+
+fn cart_total() {
+  let t = 0
+  for it in menu() { t = t + N("sb_qty_" + it[0], intent_qty(it[0])) * unit_price(it) }
+  return t
+}
+
+// One-line order summary: "2 × Cappuccino, 1 × Cold Brew". Starts from a
+// string so every + stays concatenation; a flag, not s == "", marks the first
+// item (this dialect shows no else and no != in the wild).
+fn order_summary() {
+  let s = ""
+  let first = 1
+  for it in menu() {
+    let q = N("sb_qty_" + it[0], intent_qty(it[0]))
+    if q > 0 {
+      if first == 0 { s = s + ", " }
+      s = s + q + " × " + it[1]
+      first = 0
+    }
+  }
+  return s
+}
+
+// 2 stars per dollar, on whole dollars.
+fn stars_earned() {
+  let t = cart_total()
+  return ((t - t % 100) / 100) * 2
+}
+
+fn stars_balance() {
+  let b = 120
+  if N("sb_placed", 0) == 1 { b = b + stars_earned() }
+  return b
+}
+
+// What the request asked for. A generated card bakes the intent HERE — these
+// are per-request values the model writes, exactly as an L0 card writes
+// `state city { initial: "Beijing" }`. "order me a cappuccino" => capp opens
+// at quantity 1; a bare "open the coffee app" => all zeros, the home tab.
+fn intent_open(id) { if id == "capp" { return 1 } return 0 }
+fn intent_qty(id)  { if id == "capp" { return 1 } return 0 }
+
+fn open_item() {
+  let i = 0
+  for it in menu() {
+    if N("sb_open_" + it[0], intent_open(it[0])) == 1 { return i }
+    i = i + 1
+  }
+  return 0 - 1
+}
+
+// ── pieces ───────────────────────────────────────────────────────────────────
+
+fn drink_card(it) {
+  let q = N("sb_qty_" + it[0], intent_qty(it[0]))
+  let line = it[2]
+  if q > 0 { line = line + "  ·  " + q + " in order" }
+  return {t:"card", variant:"outlined", c:[
+    {t:"col", pad: 12, spacing: 8, c:[
+      {t:"listitem", label: it[1], supporting: line, icon:"favorite"},
+      {t:"row", spacing: 8, c:[
+        {t:"chip", variant:"assist", text:"from " + money(it[3])},
+        {t:"chip", variant:"assist", text:"Customize", icon:"edit", key:"sb_open_" + it[0]},
+      ]},
+    ]},
+  ]}
+}
+
+fn rewards_card() {
+  let b = stars_balance()
+  let toward = b % 200
+  return {t:"card", variant:"filled", c:[
+    {t:"col", pad: 16, spacing: 8, c:[
+      {t:"text", variant:"titleMedium", text:"Rewards"},
+      {t:"row", spacing: 8, c:[
+        {t:"badgeicon", icon:"star", count: b},
+        {t:"text", variant:"headlineSmall", text:"" + b + " Stars"},
+      ]},
+      {t:"progress", value: toward / 2},
+      caption("" + (200 - toward) + " Stars until your next free drink"),
+    ]},
+  ]}
+}
+
+// Home's Recent order card — only exists once sb_placed == 1. Reorder is a
+// WRITE like any other: it points the tab strip at Order (index 2).
+fn recent_order_card() {
+  return {t:"card", variant:"filled", c:[
+    {t:"col", pad: 16, spacing: 8, c:[
+      {t:"text", variant:"titleMedium", text:"Recent order"},
+      {t:"text", variant:"bodyMedium", text: order_summary()},
+      {t:"text", variant:"titleSmall", text:"Total  ·  " + money(cart_total())},
+      {t:"button", variant:"text", icon:"check", label:"Reorder", key:"sb_tab", action:"2"},
+    ]},
+  ]}
+}
+
+// ── screens ──────────────────────────────────────────────────────────────────
+
+fn screen_home() {
+  let kids = [
+    {t:"text", variant:"headlineSmall", text:"Good afternoon"},
+  ]
+  if N("sb_placed", 0) == 1 {
+    kids.push(recent_order_card())
+  }
+  kids.push(rewards_card())
+  kids.push(section("Featured"))
+  kids.push(drink_card(menu()[2]))
+  kids.push(drink_card(menu()[4]))
+  if cart_count() > 0 {
+    kids.push({t:"button", variant:"filled", icon:"check",
+               label:"View order (" + cart_count() + ") · " + money(cart_total()),
+               key:"sb_tab", action:"2"})
+  }
+  return kids
+}
+
+fn screen_menu() {
+  let kids = [ {t:"text", variant:"headlineSmall", text:"Menu"} ]
+  let c = 0
+  for cat in [0, 1, 2] {
+    kids.push(section(cat_name(cat)))
+    for it in menu() {
+      if it[4] == cat { kids.push(drink_card(it)) }
+    }
+  }
+  if cart_count() > 0 {
+    kids.push({t:"button", variant:"filled", icon:"check",
+               label:"View order (" + cart_count() + ") · " + money(cart_total()),
+               key:"sb_tab", action:"2"})
+  }
+  return kids
+}
+
+fn screen_customize(i) {
+  let it = menu()[i]
+  let id = it[0]
+  let qty = N("sb_qty_" + id, intent_qty(id))
+  return [
+    // The store the HOST resolved for "nearest" — a places lookup by brand in
+    // the real stack, never a fact the card writes.
+    {t:"listitem", label:"Starbucks · 3rd & Pine", supporting:"Nearest to you · about 400 m", icon:"place"},
+    // The done affordance lives at the TOP: tap targets on this host hit-test
+    // in unscrolled coordinates, so a button below the fold cannot be aimed at
+    // reliably from outside. Top-of-screen controls are always where they say.
+    {t:"chip", variant:"assist", icon:"close", text:"Done — back to menu", key:"sb_open_" + id, on: 1},
+    {t:"text", variant:"headlineSmall", text: it[1]},
+    caption(it[2]),
+
+    section("Size"),
+    {t:"segmented", items:"Tall;Grande;Venti", key:"sb_size_" + id, selected: N("sb_size_" + id, 1)},
+
+    section("Espresso"),
+    // Segmented, not a slider: on this host a slider renders but never writes
+    // its slot (kit-host's slider-sync was never ported), and segmented is a
+    // PROVEN index-writer. The index IS the shot count.
+    {t:"segmented", items:"0;+1;+2;+3", key:"sb_shot_" + id, selected: N("sb_shot_" + id, 0)},
+    caption("" + N("sb_shot_" + id, 0) + " extra shot(s) · " + money(80) + " each"),
+
+    section("Customizations"),
+    // Both add-ons are filter chips — the verified row. A listitem
+    // action:"switch" renders and flips on screen but NEVER writes its slot
+    // on this host (it lies), so it has no place here.
+    group([
+      {t:"chip", variant:"filter", text:"Oat milk +" + money(70), key:"sb_oat_" + id, on: N("sb_oat_" + id, 0)},
+      {t:"chip", variant:"filter", text:"Whipped cream +" + money(50), key:"sb_whip_" + id, on: N("sb_whip_" + id, 0)},
+    ]),
+
+    section("Quantity"),
+    {t:"segmented", items:"0;1;2;3", key:"sb_qty_" + id, selected: qty},
+
+    {t:"divider"},
+    {t:"card", variant:"filled", c:[
+      {t:"col", pad: 12, spacing: 4, c:[
+        {t:"text", variant:"titleMedium",
+         text: "" + qty + " × " + size_name(N("sb_size_" + id, 1)) + " " + it[1]},
+        {t:"text", variant:"bodyMedium", text: money(qty * unit_price(it))},
+      ]},
+    ]},
+    // A button with key alone is INERT on this host — it must say what to
+    // write. Closing the drink is a write of 0, same as the top chip.
+    {t:"button", variant:"tonal", icon:"close", label:"Done", key:"sb_open_" + id, action:"0"},
+  ]
+}
+
+fn screen_order() {
+  let kids = [ {t:"text", variant:"headlineSmall", text:"Your order"} ]
+  kids.push({t:"listitem", label:"Pickup at 3rd & Pine", supporting:"Ready in about 10 minutes", icon:"place"})
+  kids.push({t:"divider"})
+  for it in menu() {
+    let q = N("sb_qty_" + it[0], intent_qty(it[0]))
+    if q > 0 {
+      let extras = size_name(N("sb_size_" + it[0], 1))
+      if N("sb_oat_" + it[0], 0) == 1 { extras = extras + " · oat" }
+      if N("sb_shot_" + it[0], 0) > 0 { extras = extras + " · +" + N("sb_shot_" + it[0], 0) + " shot" }
+      if N("sb_whip_" + it[0], 0) == 1 { extras = extras + " · whip" }
+      kids.push({t:"listitem", label: "" + q + " × " + it[1],
+                 supporting: extras + "  ·  " + money(q * unit_price(it)), icon:"check"})
+    }
+  }
+  kids.push(section("Total"))
+  kids.push({t:"card", variant:"filled", c:[
+    {t:"col", pad: 16, spacing: 4, c:[
+      {t:"text", variant:"headlineSmall", text: money(cart_total())},
+      caption("You will earn " + stars_earned() + " Stars with this order"),
+    ]},
+  ]})
+  if N("sb_placed", 0) == 0 {
+    if cart_count() > 0 {
+      kids.push({t:"button", variant:"filled", icon:"check", label:"Place order", key:"sb_placed", tap: 1})
+    }
+  }
+  if N("sb_placed", 0) == 1 {
+    kids.push({t:"card", variant:"elevated", c:[
+      {t:"col", pad: 16, spacing: 8, c:[
+        {t:"text", variant:"titleMedium", text:"Order placed"},
+        caption("" + stars_earned() + " Stars added · now at " + stars_balance()),
+        {t:"button", variant:"text", label:"Back to my order", key:"sb_placed", action:"0"},
+      ]},
+    ]})
+  }
+  return kids
+}
+
+fn body() {
+  // No `+` on arrays — it is not concatenation and fails SILENTLY (measured:
+  // the root col rendered with zero children). Push, always.
+  let open = open_item()
+  if open >= 0 { return screen_customize(open) }
+  let kids = []
+  let tab = N("sb_tab", 0)
+  kids.push({t:"tabs", items:"Home;Menu;Order", key:"sb_tab", selected: tab})
+  let inner = screen_home()
+  if tab == 1 { inner = screen_menu() }
+  if tab == 2 { inner = screen_order() }
+  for k in inner { kids.push(k) }
+  return kids
+}
+
+{t:"col", pad: 16, spacing: 16, c: body()}
