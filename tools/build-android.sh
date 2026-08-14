@@ -72,6 +72,12 @@ echo "==> kernel binary: $(du -h "$KERNEL_BIN" | cut -f1) $KERNEL_BIN"
 # app-writable dies with `avc: denied { execute_no_trans }`). The app looks for
 # exactly this name — see `find_embedded_kernel` in app/app/src/main.rs.
 export MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=$KERNEL_BIN"
+# Callers may bundle additional exec-able helpers (e.g. libffmpeg.so) by
+# setting EXTRA_NATIVE_LIBS="name=path;name=path" — appended, not replacing
+# the kernel entry above. Same W^X rationale: only nativeLibraryDir can exec.
+if [[ -n "${EXTRA_NATIVE_LIBS:-}" ]]; then
+  export MAKEPAD_ANDROID_EXTRA_LIBS="$MAKEPAD_ANDROID_EXTRA_LIBS;$EXTRA_NATIVE_LIBS"
+fi
 # The PGO profdata rustflag in makepad's config is a path relative to the repo
 # root, so it has to be made absolute from app/'s cwd.
 export RUSTFLAGS="${RUSTFLAGS:--Cprofile-use=$ROOT/aichat/libs/box3d/box3d.profdata}"

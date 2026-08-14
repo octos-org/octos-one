@@ -7,6 +7,8 @@ pub use makepad_widgets;
 
 mod app;
 mod backend;
+#[cfg(target_os = "android")]
+mod monitor;
 
 use makepad_ai::*;
 use makepad_widgets::makepad_draw::svg::{
@@ -5533,6 +5535,15 @@ pub struct App {
     dev_text: String,
     #[rust]
     dev_round: u32,
+    /// The mission file, kept so every round can be a FRESH session with full
+    /// context — two runs in a row wedged on the second turn of a reused dev
+    /// session, so rounds are stateless now.
+    #[rust]
+    dev_goal_path: String,
+    /// Watchdog: when the in-flight round started. A turn past its budget is
+    /// abandoned (slot cleared, session dropped) rather than waited on.
+    #[rust]
+    dev_turn_started: Option<std::time::Instant>,
     /// A cancelled AMA routing prompt whose late deltas must be DROPPED, not
     /// streamed into the foreground card. Cancel clears `ama_prompt`
     /// synchronously, but the server interrupt is async — a delta already in
@@ -6566,6 +6577,25 @@ impl App {
             self.ama_session = Some(agent.create_session(cx, ama_config));
             log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
 
+            // DEBUG MONITOR: a localhost web page on 127.0.0.1:8686, reached
+            // from a host over `adb forward tcp:8686 tcp:8686`. Independent of
+            // the makepad UI thread by design — it keeps answering when the UI
+            // is the thing that wedged. Artifacts (generated images) land in an
+            // app-writable dir; the nativeLibraryDir joins the file allowlist
+            // so the page can serve the bundled kernel too.
+            #[cfg(target_os = "android")]
+            {
+                // Internal files dir: always app-writable (external
+                // Android/data/<pkg> isn't created from native code on API 30+).
+                // The browser reads artifacts back through the /file endpoint,
+                // served by this same app, so internal storage is sufficient.
+                let out = std::path::PathBuf::from(
+                    "/data/data/dev.makepad.octos_app/files/monitor",
+                );
+                crate::monitor::start(out, Self::native_lib_dir());
+                crate::monitor::log("app: startup, monitor up");
+            }
+
             // DEV-GOAL HARNESS: only when the launch intent asks for it.
             // `--es makepad.DEV_GOAL_FILE <path>` names a host-authored mission
             // file (readable: /data/local/tmp, 0644). The card comes back via
@@ -6583,6 +6613,8 @@ impl App {
                         let pid = agent.send_prompt(cx, dev, &goal);
                         self.dev_session = Some(dev);
                         self.dev_prompt = Some(pid);
+                        self.dev_goal_path = goal_path.clone();
+                        self.dev_turn_started = Some(std::time::Instant::now());
                         self.dev_round = 1;
                         log::info!("[devgoal] round 1 started ({} goal bytes)", goal.len());
                         // Findings ferry: mtime-watch the findings file; on
@@ -6590,8 +6622,15 @@ impl App {
                         std::thread::spawn(|| {
                             let path = "/data/local/tmp/dev_findings.txt";
                             let mut last: Option<std::time::SystemTime> = None;
+                            let mut tick = 0u32;
                             loop {
                                 std::thread::sleep(std::time::Duration::from_secs(3));
+                                // Heartbeat every 30 s so the UI thread's
+                                // watchdog runs even when no findings arrive.
+                                tick = tick.wrapping_add(1);
+                                if tick % 10 == 0 {
+                                    makepad_widgets::SignalToUI::set_ui_signal();
+                                }
                                 let Ok(meta) = std::fs::metadata(path) else { continue };
                                 let Ok(mt) = meta.modified() else { continue };
                                 if last == Some(mt) {
@@ -9393,19 +9432,58 @@ impl AppMain for App {
         // connection dot/label from APP_STATE so Live/Reconnecting/Offline
         // tracks reality instead of the boot snapshot.
         if let Event::Signal = event {
-            // Dev-goal findings: one at a time, only between turns.
-            if self.dev_prompt.is_none() {
-                if let Some(dev) = self.dev_session {
-                    let next = DEV_FINDINGS.lock().ok().and_then(|mut q| {
-                        if q.is_empty() { None } else { Some(q.remove(0)) }
-                    });
-                    if let Some(findings) = next {
-                        if let Some(agent) = self.agent.as_mut() {
-                            let pid = agent.send_prompt(cx, dev, &findings);
-                            self.dev_prompt = Some(pid);
-                            self.dev_round += 1;
-                            log::info!("[devgoal] round {} started (findings {} bytes)", self.dev_round, findings.len());
-                        }
+            // Dev-goal watchdog: a hung turn is ABANDONED, never waited on.
+            // Two runs wedged identically on a reused session's second turn —
+            // no deltas, no error, forever — so a round that overstays its
+            // budget forfeits, and the next findings start a fresh session.
+            if self.dev_prompt.is_some() {
+                if let Some(t0) = self.dev_turn_started {
+                    // Heartbeat visibility: one line per signal while a round
+                    // is in flight, so a silent wedge names its layer.
+                    log::info!("[devgoal] hb round {} elapsed {}s text {}B", self.dev_round, t0.elapsed().as_secs(), self.dev_text.len());
+                    #[cfg(target_os = "android")]
+                    {
+                        crate::monitor::kv("dev_round", self.dev_round);
+                        crate::monitor::kv("elapsed_s", t0.elapsed().as_secs());
+                        crate::monitor::kv("stream_bytes", self.dev_text.len());
+                        crate::monitor::kv("phase", if self.dev_text.is_empty() { "waiting" } else { "streaming" });
+                    }
+                    if t0.elapsed().as_secs() > 480 {
+                        log::warn!("[devgoal] round {} timed out after 480s; abandoning turn", self.dev_round);
+                        self.dev_prompt = None;
+                        self.dev_text.clear();
+                        self.dev_turn_started = None;
+                    }
+                }
+            }
+            // Findings: one at a time, only between turns — each round a FRESH
+            // session carrying full context (mission + last card + findings),
+            // so no session state can wedge the loop.
+            if self.dev_prompt.is_none() && self.dev_session.is_some() {
+                let next = DEV_FINDINGS.lock().ok().and_then(|mut q| {
+                    if q.is_empty() { None } else { Some(q.remove(0)) }
+                });
+                if let Some(findings) = next {
+                    let goal = std::fs::read_to_string(&self.dev_goal_path).unwrap_or_default();
+                    let card = std::fs::read_to_string("/data/local/tmp/dev_card.splash")
+                        .unwrap_or_default();
+                    let prompt = format!(
+                        "{goal}\n\n=== YOUR CURRENT CARD (your previous round's output) ===\n{card}\n\n=== FINDINGS ON THAT CARD ===\n{findings}\n\nRevise per the findings. Full card between BEGIN_CARD/END_CARD."
+                    );
+                    if let Some(agent) = self.agent.as_mut() {
+                        let cfg = SessionConfig {
+                            system_prompt: Some(DEV_MASTER_PROMPT.to_string()),
+                            ..Default::default()
+                        };
+                        let dev = agent.create_session(cx, cfg);
+                        let pid = agent.send_prompt(cx, dev, &prompt);
+                        self.dev_session = Some(dev);
+                        self.dev_prompt = Some(pid);
+                        self.dev_turn_started = Some(std::time::Instant::now());
+                        self.dev_round += 1;
+                        log::info!("[devgoal] round {} started (fresh session, {} prompt bytes)", self.dev_round, prompt.len());
+                        #[cfg(target_os = "android")]
+                        crate::monitor::log(&format!("[devgoal] round {} started ({} prompt bytes)", self.dev_round, prompt.len()));
                     }
                 }
             }
@@ -9547,6 +9625,7 @@ impl AppMain for App {
                         if Some(prompt_id) == self.dev_prompt {
                             let text = std::mem::take(&mut self.dev_text);
                             self.dev_prompt = None;
+                            self.dev_turn_started = None;
                             let card = text
                                 .split("BEGIN_CARD")
                                 .nth(1)
@@ -9556,6 +9635,8 @@ impl AppMain for App {
                             let done = text.contains("DONE");
                             if card.is_empty() {
                                 log::warn!("[devgoal] round {} ended with NO card between markers", self.dev_round);
+                                #[cfg(target_os = "android")]
+                                crate::monitor::log(&format!("[devgoal] round {} ended with NO card between markers", self.dev_round));
                             } else {
                                 match std::fs::write("/data/local/tmp/dev_card.splash", card) {
                                     Ok(()) => log::info!(
@@ -9564,11 +9645,19 @@ impl AppMain for App {
                                     ),
                                     Err(e) => log::warn!("[devgoal] card write failed: {e}"),
                                 }
+                                #[cfg(target_os = "android")]
+                                {
+                                    crate::monitor::kv("phase", if done { "DONE" } else { "card written" });
+                                    crate::monitor::kv("last_card_bytes", card.len());
+                                    crate::monitor::log(&format!("[devgoal] round {} card written ({} bytes) done={}", self.dev_round, card.len(), done));
+                                }
                             }
                             // Narration outside the markers is the model's own
                             // report — surface the head of it for the log.
                             let head: String = text.chars().take(300).collect();
                             log::info!("[devgoal] narration: {}", head.replace('\n', " | "));
+                            #[cfg(target_os = "android")]
+                            crate::monitor::log(&format!("[devgoal] narration: {}", head.replace('\n', " | ").chars().take(200).collect::<String>()));
                             continue;
                         }
                         // A cancelled AMA turn finally completed — swallow it
@@ -9978,6 +10067,20 @@ impl AppMain for App {
                         }
                     }
                     AgentEvent::PromptError { prompt_id, error } => {
+                        // Dev-goal turn failed: CLEAR the slot so the findings
+                        // ferry can retry — a wedged dev_prompt is how round 2
+                        // of the first run died silently, 40 minutes, no line.
+                        if Some(prompt_id) == self.dev_prompt {
+                            self.dev_prompt = None;
+                            self.dev_text.clear();
+                            log::warn!("[devgoal] round {} turn FAILED: {error}", self.dev_round);
+                            #[cfg(target_os = "android")]
+                            {
+                                crate::monitor::kv("phase", "FAILED");
+                                crate::monitor::log(&format!("[devgoal] round {} turn FAILED: {error}", self.dev_round));
+                            }
+                            continue;
+                        }
                         if Some(prompt_id) == self.ama_prompt {
                             log::warn!("AMA turn error: {error} — falling back to weather");
                             self.ama_prompt = None;
