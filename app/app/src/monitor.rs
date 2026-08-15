@@ -34,6 +34,7 @@ static STARTED: OnceLock<std::time::Instant> = OnceLock::new();
 static ROOTS: OnceLock<Vec<std::path::PathBuf>> = OnceLock::new();
 static OUT_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
 static LIB_DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+static GEN_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 const LOG_CAP: usize = 2000;
 const SHELL_OUT_CAP: usize = 256 * 1024;
@@ -74,14 +75,19 @@ pub fn start(out_dir: std::path::PathBuf, extra_root: Option<std::path::PathBuf>
     let _ = OUT_DIR.set(out_dir);
     let _ = LIB_DIR.set(extra_root);
     std::thread::spawn(|| {
-        let listener = match TcpListener::bind("127.0.0.1:8686") {
+        // 0.0.0.0 binds every interface incl. wlan0, so the page is reachable
+        // over the LAN at http://<phone-wifi-ip>:8686 — not just loopback+adb.
+        // SECURITY: this exposes /shell (app-context command exec), /file, and
+        // /imagegen to anyone on the same network. Only acceptable on a trusted
+        // LAN. Revert to "127.0.0.1:8686" for loopback-only + adb forward.
+        let listener = match TcpListener::bind("0.0.0.0:8686") {
             Ok(l) => l,
             Err(e) => {
                 log(&format!("monitor: bind failed: {e}"));
                 return;
             }
         };
-        log("monitor: listening on 127.0.0.1:8686");
+        log("monitor: listening on 0.0.0.0:8686 (LAN-reachable)");
         for stream in listener.incoming() {
             if let Ok(s) = stream {
                 std::thread::spawn(move || {
@@ -132,6 +138,9 @@ fn handle(stream: TcpStream) -> std::io::Result<()> {
         ("POST", "/shell") => shell(stream, &body),
         ("POST", "/ffmpeg") => ffmpeg(stream, &body),
         ("POST", "/imagegen") => imagegen(stream, &body),
+        ("POST", "/score") => score(stream, &body),
+        ("POST", "/concept") => concept(stream, &body),
+        ("POST", "/snapshot") => snapshot(stream),
         ("GET", "/file") => file(stream, query),
         ("GET", "/gallery.json") => gallery(stream),
         _ => respond(stream, 404, "text/plain", b"not found"),
@@ -383,28 +392,16 @@ fn read_api_key() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-fn imagegen(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
-    let body = String::from_utf8_lossy(body);
-    let Some(prompt) = body_field(&body, "prompt") else {
-        return respond(stream, 400, "application/json", b"{\"ok\":false,\"out\":\"missing prompt\"}");
-    };
-    let size = body_field(&body, "size").unwrap_or_else(|| "1024x1024".into());
-    let quality = body_field(&body, "quality").unwrap_or_else(|| "low".into());
-    let Some(key) = read_api_key() else {
-        return respond(
-            stream,
-            200,
-            "application/json",
-            b"{\"ok\":false,\"out\":\"no API key: push /data/local/tmp/oai_key (0644) or set OPENAI_API_KEY\"}",
-        );
-    };
+/// Core image generation, shared by /imagegen and the /concept loop: POST to
+/// gpt-image-2, decode, write a unique gen_*.png, return (path, bytes, secs).
+fn generate_image(prompt: &str, size: &str, quality: &str) -> Result<(std::path::PathBuf, usize, u64), String> {
+    let key = read_api_key().ok_or_else(|| "no API key (push /data/local/tmp/oai_key)".to_string())?;
     log(&format!("imagegen: {} ({size}, {quality})", prompt.chars().take(60).collect::<String>()));
-    kv("imagegen", "running");
     let started = std::time::Instant::now();
     let req = serde_json::json!({
         "model": "gpt-image-2", "prompt": prompt, "size": size, "quality": quality, "n": 1
     });
-    let result = std::thread::spawn(move || -> Result<Vec<u8>, String> {
+    let png = std::thread::spawn(move || -> Result<Vec<u8>, String> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -425,29 +422,35 @@ fn imagegen(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
                 return Err(format!("HTTP {status}: {}", text.chars().take(300).collect::<String>()));
             }
             let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-            let b64 = v["data"][0]["b64_json"]
-                .as_str()
-                .ok_or("no b64_json in response")?;
+            let b64 = v["data"][0]["b64_json"].as_str().ok_or("no b64_json in response")?;
             b64_decode(b64).ok_or_else(|| "bad base64".to_string())
         })
     })
     .join()
-    .unwrap_or_else(|_| Err("worker panicked".into()));
-    match result {
-        Ok(png) => {
-            let secs = started.elapsed().as_secs();
-            let name = format!("gen_{}.png", now_stamp());
-            let path = OUT_DIR.get().unwrap().join(&name);
-            if let Err(e) = std::fs::write(&path, &png) {
-                let msg = format!("{{\"ok\":false,\"out\":\"write: {}\"}}", json_escape(&e.to_string()));
-                return respond(stream, 500, "application/json", msg.as_bytes());
-            }
-            kv("imagegen", format!("done {name} in {secs}s"));
-            log(&format!("imagegen: {} bytes -> {} in {secs}s", png.len(), path.display()));
+    .unwrap_or_else(|_| Err("worker panicked".into()))?;
+    let secs = started.elapsed().as_secs();
+    let seq = GEN_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = format!("gen_{}_{}.png", now_stamp(), seq);
+    let path = OUT_DIR.get().unwrap().join(&name);
+    std::fs::write(&path, &png).map_err(|e| format!("write: {e}"))?;
+    log(&format!("imagegen: {} bytes -> {} in {secs}s", png.len(), path.display()));
+    Ok((path, png.len(), secs))
+}
+
+fn imagegen(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
+    let body = String::from_utf8_lossy(body);
+    let Some(prompt) = body_field(&body, "prompt") else {
+        return respond(stream, 400, "application/json", b"{\"ok\":false,\"out\":\"missing prompt\"}");
+    };
+    let size = body_field(&body, "size").unwrap_or_else(|| "1024x1024".into());
+    let quality = body_field(&body, "quality").unwrap_or_else(|| "low".into());
+    kv("imagegen", "running");
+    match generate_image(&prompt, &size, &quality) {
+        Ok((path, bytes, secs)) => {
+            kv("imagegen", format!("done in {secs}s"));
             let msg = format!(
-                "{{\"ok\":true,\"path\":\"{}\",\"bytes\":{},\"secs\":{secs}}}",
-                json_escape(&path.display().to_string()),
-                png.len()
+                "{{\"ok\":true,\"path\":\"{}\",\"bytes\":{bytes},\"secs\":{secs}}}",
+                json_escape(&path.display().to_string())
             );
             respond(stream, 200, "application/json", msg.as_bytes())
         }
@@ -457,6 +460,383 @@ fn imagegen(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
             let msg = format!("{{\"ok\":false,\"out\":\"{}\"}}", json_escape(&e));
             respond(stream, 200, "application/json", msg.as_bytes())
         }
+    }
+}
+
+/// Standard-alphabet base64 encode (for embedding an image in a vision request).
+fn b64_encode(data: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity((data.len() + 2) / 3 * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        out.push(T[(n >> 18 & 63) as usize] as char);
+        out.push(T[(n >> 12 & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6 & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+/// The phone judges its OWN graphic: send the image to a vision model with a
+/// rubric and parse `SCORE: <n>` plus a one-line improvement suggestion. This
+/// is what puts the 9/10 gate on the device instead of a human.
+fn vision_score(path: &std::path::Path, rubric: &str) -> Result<(u32, String, String), String> {
+    let key = read_api_key().ok_or_else(|| "no API key".to_string())?;
+    let bytes = std::fs::read(path).map_err(|e| format!("read image: {e}"))?;
+    let data_uri = format!("data:image/png;base64,{}", b64_encode(&bytes));
+    let instruction = format!(
+        "You are a strict art director scoring concept key-art for a premium movie box-office app. Rubric: {rubric}. Be critical; reserve 9 and 10 for genuinely production-ready art. Reply on ONE line EXACTLY as: SCORE: <integer 0-10> | <one-sentence critique> | IMPROVE: <one short phrase to add to the image prompt to raise the score>"
+    );
+    let req = serde_json::json!({
+        "model": "gpt-4o",
+        "max_tokens": 220,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": instruction},
+            {"type": "image_url", "image_url": {"url": data_uri}}
+        ]}]
+    });
+    let content = std::thread::spawn(move || -> Result<String, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        rt.block_on(async move {
+            let client = reqwest::Client::new();
+            let resp = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .bearer_auth(key)
+                .json(&req)
+                .timeout(std::time::Duration::from_secs(120))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("HTTP {status}: {}", text.chars().take(200).collect::<String>()));
+            }
+            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            v["choices"][0]["message"]["content"]
+                .as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "no content in vision response".to_string())
+        })
+    })
+    .join()
+    .unwrap_or_else(|_| Err("scorer panicked".into()))?;
+    let score = content
+        .split("SCORE:")
+        .nth(1)
+        .and_then(|s| s.trim_start().split(|c: char| !c.is_ascii_digit()).find(|t| !t.is_empty()))
+        .and_then(|d| d.parse::<u32>().ok())
+        .ok_or_else(|| format!("no score parsed from: {}", content.chars().take(120).collect::<String>()))?;
+    let critique = content.split('|').nth(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    let improve = content.split("IMPROVE:").nth(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    Ok((score.min(10), critique, improve))
+}
+
+/// Score the ACTUAL rendered app screen (not concept art) as a mobile-UX
+/// reviewer. Same gpt-4o vision call as `vision_score`, different rubric.
+fn ux_score(path: &std::path::Path) -> Result<(u32, String, String), String> {
+    let key = read_api_key().ok_or_else(|| "no API key".to_string())?;
+    let bytes = std::fs::read(path).map_err(|e| format!("read image: {e}"))?;
+    let data_uri = format!("data:image/png;base64,{}", b64_encode(&bytes));
+    let instruction = "You are a ruthless senior mobile UI/UX designer reviewing a SCREENSHOT of a running movie box-office app on a phone. Score its VISUAL DESIGN + UX from 0-10 (reserve 9-10 for App-Store-featured quality; most screens are 4-6). Judge visual hierarchy, spacing/rhythm, contrast/legibility, use of imagery, typography, polish. Reply on ONE line EXACTLY as: SCORE: <integer 0-10> | <one-sentence critique> | IMPROVE: <one concrete, buildable change to the card to raise the score>";
+    let req = serde_json::json!({
+        "model": "gpt-4o",
+        "max_tokens": 220,
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": instruction},
+            {"type": "image_url", "image_url": {"url": data_uri}}
+        ]}]
+    });
+    let content = std::thread::spawn(move || -> Result<String, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        rt.block_on(async move {
+            let client = reqwest::Client::new();
+            let resp = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .bearer_auth(key)
+                .json(&req)
+                .timeout(std::time::Duration::from_secs(120))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("HTTP {status}: {}", text.chars().take(200).collect::<String>()));
+            }
+            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            v["choices"][0]["message"]["content"]
+                .as_str()
+                .map(|s| s.to_string())
+                .ok_or_else(|| "no content in ux response".to_string())
+        })
+    })
+    .join()
+    .unwrap_or_else(|_| Err("ux scorer panicked".into()))?;
+    let score = content
+        .split("SCORE:")
+        .nth(1)
+        .and_then(|s| s.trim_start().split(|c: char| !c.is_ascii_digit()).find(|t| !t.is_empty()))
+        .and_then(|d| d.parse::<u32>().ok())
+        .ok_or_else(|| format!("no score parsed from: {}", content.chars().take(120).collect::<String>()))?;
+    let critique = content.split('|').nth(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    let improve = content.split("IMPROVE:").nth(1).map(|s| s.trim().to_string()).unwrap_or_default();
+    Ok((score.min(10), critique, improve))
+}
+
+/// Arm a framebuffer capture BEFORE the display's redraw. Call this on the UI
+/// thread immediately before `cx.redraw_all()` so the guaranteed full draw
+/// dumps the PNG — reliable even when the UI then idles on cached images (the
+/// case that made a post-hoc re-capture return 0 bytes). `spawn_ux_critic`
+/// disarms it after the frame settles.
+pub fn arm_capture(round: u32) {
+    if let Some(out) = OUT_DIR.get() {
+        let _ = std::fs::create_dir_all(out);
+        let path = out.join(format!("ux_round_{round}.png"));
+        let _ = std::fs::remove_file(&path);
+        std::env::set_var("MAKEPAD_WRITE_FRAMEBUFFER_PNG", &path);
+    }
+}
+
+/// The VISUAL half of the dev loop's self-critic: after a generated card
+/// renders clean, capture the REAL framebuffer, have a vision model score the
+/// UX, and (if below bar) push an instructive finding into the same
+/// `DEV_FINDINGS` queue the correctness critic uses — so the agent regenerates
+/// to raise the score. Runs on its own thread because scoring is a network call
+/// and the capture must wait for a draw. This is the phone judging its own
+/// pixels, not the host.
+pub fn spawn_ux_critic(round: u32) {
+    std::thread::spawn(move || {
+        let Some(out) = OUT_DIR.get() else { return };
+        let path = out.join(format!("ux_round_{round}.png"));
+        log(&format!("[ux-critic] round {round}: letting the frame settle (backdrop + posters), then scoring…"));
+        // The capture was ARMED on the UI thread by `arm_capture` BEFORE the
+        // display's redraw_all, so that guaranteed full draw already wrote the
+        // PNG (works even when the UI then goes idle on cached images). Any
+        // image-load redraws overwrite it with the settled frame. Give those a
+        // few seconds, then disarm and read whatever the last draw left.
+        std::thread::sleep(std::time::Duration::from_millis(5000));
+        std::env::remove_var("MAKEPAD_WRITE_FRAMEBUFFER_PNG");
+        let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        log(&format!("[ux-critic] round {round}: captured {bytes} bytes — scoring the UX…"));
+        if bytes == 0 {
+            log(&format!("[ux-critic] round {round}: no frame captured (UI idle) — skipping score"));
+            return;
+        }
+        match ux_score(&path) {
+            Ok((score, critique, improve)) => {
+                kv("ux_score", &format!("{score}/10 (round {round})"));
+                log(&format!("[ux-critic] round {round}: {score}/10 — {critique}"));
+                if score < 8 && round < 8 {
+                    let finding = format!(
+                        "VISUAL CRITIC — a vision model scored your ACTUAL rendered screen {score}/10. Critique: {critique} Highest-impact fix: {improve} Re-output the FULL improved card between BEGIN_CARD and END_CARD; KEEP the real movie data and poster URLs, only improve the design (layout, spacing, hierarchy, contrast, imagery)."
+                    );
+                    if let Ok(mut q) = crate::DEV_FINDINGS.lock() {
+                        q.push(finding);
+                    }
+                    makepad_widgets::SignalToUI::set_ui_signal();
+                } else {
+                    log(&format!("[ux-critic] round {round}: PASS at {score}/10 — loop may stop"));
+                }
+            }
+            Err(e) => log(&format!("[ux-critic] round {round}: score failed — {e}")),
+        }
+    });
+}
+
+/// The phone designs its OWN concept-art prompt (optionally improving on a
+/// prior critiqued attempt). Used by /concept when given a brief instead of a
+/// fixed prompt — the device authors the visual concept, not the caller.
+fn design_prompt(brief: &str, prev: Option<(&str, &str)>) -> Result<String, String> {
+    let key = read_api_key().ok_or_else(|| "no API key".to_string())?;
+    let mut ask = format!(
+        "You are an award-winning concept artist and creative director. Design ONE vivid, specific image-generation prompt for the hero key-art of this product: {brief}. It must be premium, cinematic, production-ready, with a single clear focal point, strong contrast, and clean empty space at the top for a title; specify absolutely no text or letters. Reply with ONLY the prompt text as one paragraph — no preamble, no quotes."
+    );
+    if let Some((last, critique)) = prev {
+        ask.push_str(&format!(
+            " Your previous prompt was: {last}. An art director scored it below bar: {critique}. Design a BETTER, meaningfully different concept that fixes that — a bolder single focal point and cleaner composition."
+        ));
+    }
+    let req = serde_json::json!({
+        "model": "gpt-4o", "max_tokens": 400,
+        "messages": [{"role": "user", "content": ask}]
+    });
+    let content = std::thread::spawn(move || -> Result<String, String> {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| e.to_string())?;
+        rt.block_on(async move {
+            let client = reqwest::Client::new();
+            let resp = client
+                .post("https://api.openai.com/v1/chat/completions")
+                .bearer_auth(key)
+                .json(&req)
+                .timeout(std::time::Duration::from_secs(90))
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(|e| e.to_string())?;
+            if !status.is_success() {
+                return Err(format!("HTTP {status}: {}", text.chars().take(200).collect::<String>()));
+            }
+            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+            v["choices"][0]["message"]["content"]
+                .as_str()
+                .map(|s| s.trim().to_string())
+                .ok_or_else(|| "no content in design response".to_string())
+        })
+    })
+    .join()
+    .unwrap_or_else(|_| Err("designer panicked".into()))?;
+    Ok(content)
+}
+
+fn score(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
+    let body = String::from_utf8_lossy(body);
+    let Some(path) = body_field(&body, "path") else {
+        return respond(stream, 400, "application/json", b"{\"ok\":false,\"out\":\"missing path\"}");
+    };
+    let rubric = body_field(&body, "rubric").unwrap_or_else(|| {
+        "composition, relevance to a movie box-office app, hi-def polish, usable as an app hero with clean space, no text artifacts".into()
+    });
+    log(&format!("score: {}", path.chars().take(60).collect::<String>()));
+    match vision_score(std::path::Path::new(&path), &rubric) {
+        Ok((s, crit, imp)) => {
+            log(&format!("score: {s}/10 — {crit}"));
+            let msg = format!(
+                "{{\"ok\":true,\"score\":{s},\"critique\":\"{}\",\"improve\":\"{}\"}}",
+                json_escape(&crit), json_escape(&imp)
+            );
+            respond(stream, 200, "application/json", msg.as_bytes())
+        }
+        Err(e) => {
+            let msg = format!("{{\"ok\":false,\"out\":\"{}\"}}", json_escape(&e));
+            respond(stream, 200, "application/json", msg.as_bytes())
+        }
+    }
+}
+
+/// Autonomous concept loop, entirely on-device: generate -> the phone scores
+/// itself -> if below threshold, fold the model's OWN improvement suggestion
+/// back into the prompt and retry. Runs on its own connection thread, so the
+/// monitor page keeps streaming the score of each attempt live while it works.
+fn concept(stream: TcpStream, body: &[u8]) -> std::io::Result<()> {
+    let body = String::from_utf8_lossy(body);
+    // Two modes: a fixed "prompt" (fold the critique in), or a high-level
+    // "brief" — in which case the PHONE designs its own concept-art prompt each
+    // round and redesigns it from its own critique. brief mode is full autonomy.
+    let brief = body_field(&body, "brief");
+    let fixed = body_field(&body, "prompt");
+    if brief.is_none() && fixed.is_none() {
+        return respond(stream, 400, "application/json", b"{\"ok\":false,\"out\":\"need prompt or brief\"}");
+    }
+    let threshold: u32 = body_field(&body, "threshold").and_then(|s| s.parse().ok()).unwrap_or(9);
+    let size = body_field(&body, "size").unwrap_or_else(|| "1536x1024".into());
+    let quality = body_field(&body, "quality").unwrap_or_else(|| "high".into());
+    let max_tries: u32 = body_field(&body, "max_tries").and_then(|s| s.parse().ok()).unwrap_or(6);
+    let rubric = body_field(&body, "rubric").unwrap_or_else(|| {
+        "composition, relevance to a premium movie box-office app, hi-def cinematic polish, usable as an app hero with clean sky for a title, no text or letters".into()
+    });
+    log(&format!(
+        "[concept] start ({} mode): target {threshold}/10, up to {max_tries} tries",
+        if brief.is_some() { "phone-designed" } else { "fixed" }
+    ));
+    kv("concept", "running");
+    let mut best: Option<(u32, std::path::PathBuf)> = None;
+    let mut history: Vec<String> = Vec::new();
+    let mut last: Option<(String, String)> = None; // (prompt, critique) for redesign
+    let mut folded = fixed.clone().unwrap_or_default();
+    for i in 1..=max_tries {
+        let prompt = if let Some(b) = &brief {
+            match design_prompt(b, last.as_ref().map(|(p, c)| (p.as_str(), c.as_str()))) {
+                Ok(p) => {
+                    log(&format!("[concept] try {i}: phone designed its own concept — {}", p.chars().take(100).collect::<String>()));
+                    p
+                }
+                Err(e) => { log(&format!("[concept] try {i} design FAILED: {e}")); history.push(format!("try {i}: design failed")); continue; }
+            }
+        } else {
+            folded.clone()
+        };
+        log(&format!("[concept] try {i}/{max_tries}: generating…"));
+        let (path, _bytes, gsecs) = match generate_image(&prompt, &size, &quality) {
+            Ok(r) => r,
+            Err(e) => { log(&format!("[concept] try {i} gen FAILED: {e}")); history.push(format!("try {i}: gen failed")); continue; }
+        };
+        let (s, crit, imp) = match vision_score(&path, &rubric) {
+            Ok(r) => r,
+            Err(e) => { log(&format!("[concept] try {i} score FAILED: {e}")); history.push(format!("try {i}: score failed")); continue; }
+        };
+        log(&format!("[concept] try {i}: SCORE {s}/10 ({gsecs}s) — {crit}"));
+        kv("concept", format!("try {i}: {s}/10"));
+        history.push(format!("try {i}: {s}/10 ({crit})"));
+        if best.as_ref().map(|(bs, _)| s > *bs).unwrap_or(true) {
+            best = Some((s, path.clone()));
+        }
+        if s >= threshold {
+            log(&format!("[concept] PASSED at {s}/10 on try {i}"));
+            kv("concept", format!("PASSED {s}/10 (try {i})"));
+            let msg = format!(
+                "{{\"ok\":true,\"passed\":true,\"score\":{s},\"try\":{i},\"path\":\"{}\",\"history\":\"{}\"}}",
+                json_escape(&path.display().to_string()), json_escape(&history.join(" ; "))
+            );
+            return respond(stream, 200, "application/json", msg.as_bytes());
+        }
+        last = Some((prompt.clone(), crit.clone()));
+        if brief.is_none() && !imp.is_empty() {
+            folded = format!("{}. {imp}", fixed.clone().unwrap_or_default());
+        }
+    }
+    let (bs, bp) = best.unwrap_or((0, std::path::PathBuf::new()));
+    log(&format!("[concept] stopped: best {bs}/10 (target {threshold} not reached)"));
+    kv("concept", format!("best {bs}/10 (no pass)"));
+    let msg = format!(
+        "{{\"ok\":true,\"passed\":false,\"score\":{bs},\"path\":\"{}\",\"history\":\"{}\"}}",
+        json_escape(&bp.display().to_string()), json_escape(&history.join(" ; "))
+    );
+    respond(stream, 200, "application/json", msg.as_bytes())
+}
+
+/// octos photographs its OWN screen: set the framebuffer-dump env var, wait for
+/// the draw thread to write a PNG on its next frame, unset it, return the path.
+/// This is the on-device "eyes" — no adb, no second app; the same process that
+/// authors and scores can now see what it rendered.
+fn snapshot(stream: TcpStream) -> std::io::Result<()> {
+    let out = OUT_DIR.get().unwrap();
+    let _ = std::fs::create_dir_all(out);
+    let path = out.join(format!("snap_{}.png", now_stamp()));
+    let _ = std::fs::remove_file(&path);
+    // The draw thread reads this env var each frame (see the capture hook in
+    // aichat's draw_pass_to_fullscreen) and dumps the framebuffer to it.
+    std::env::set_var("MAKEPAD_WRITE_FRAMEBUFFER_PNG", &path);
+    log("snapshot: requested self-capture");
+    let started = std::time::Instant::now();
+    while !path.exists() && started.elapsed().as_secs() < 10 {
+        std::thread::sleep(std::time::Duration::from_millis(120));
+    }
+    std::env::remove_var("MAKEPAD_WRITE_FRAMEBUFFER_PNG");
+    if path.exists() {
+        let bytes = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        log(&format!("snapshot: captured {} bytes", bytes));
+        let msg = format!(
+            "{{\"ok\":true,\"path\":\"{}\",\"bytes\":{bytes}}}",
+            json_escape(&path.display().to_string())
+        );
+        respond(stream, 200, "application/json", msg.as_bytes())
+    } else {
+        log("snapshot: no frame drawn within 10s");
+        respond(stream, 200, "application/json", b"{\"ok\":false,\"out\":\"no frame drawn (UI idle?)\"}")
     }
 }
 

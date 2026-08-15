@@ -258,6 +258,12 @@ const DEV_MASTER_PROMPT: &str = "You are the on-device DEV MASTER for a self-evo
 You iterate a Splash-DSL catalog screen against MECHANICAL findings only. \
 Round protocol: (1) In your FIRST reply, list which of these tools you actually have available: goal_create, peer_handoff, peer_gather, monitor tools — one line, then proceed. If goal tools exist, create a goal for this work and record findings to it; if peer tools exist, you MAY hand the card-writing off to one peer and gather it. (2) EVERY reply must contain the complete revised screen between the exact markers BEGIN_CARD and END_CARD, alone on their own lines. No prose inside the markers. (3) After each reply you will receive a findings message: translate errors, mount diagnostics (built/nodes), ink fraction, and tap-sweep results. Fix what the findings name. (4) When the findings show no errors and the feature works, say DONE before the markers and emit the final card once more. Never invent widgets: only what the embedded contract lists as verified. State slots are global; prefix with sb_.";
 
+/// The mission BAKED INTO THE APK so the dev loop can self-start with zero host:
+/// no `adb push` of a goal file, no `--es makepad.DEV_GOAL_FILE`. On a normal
+/// launch with no external goal, the loop runs THIS — the phone alone.
+#[cfg(target_os = "android")]
+const BUNDLED_MISSION: &str = include_str!("dev_goal_movie.txt");
+
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
 /// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
@@ -6599,12 +6605,28 @@ impl App {
             // DEV-GOAL HARNESS: only when the launch intent asks for it.
             // `--es makepad.DEV_GOAL_FILE <path>` names a host-authored mission
             // file (readable: /data/local/tmp, 0644). The card comes back via
-            // /data/local/tmp/dev_card.splash (pre-created 0666 by the host —
+            // /data/data/dev.makepad.octos_app/files/dev_card.splash (pre-created 0666 by the host —
             // this app cannot CREATE there, only write into what exists), and
             // findings arrive via /data/local/tmp/dev_findings.txt.
-            if let Ok(goal_path) = std::env::var("MAKEPAD_DEV_GOAL_FILE") {
-                match std::fs::read_to_string(&goal_path) {
-                    Ok(goal) => {
+            // A mission from the host (`--es makepad.DEV_GOAL_FILE`), OR — when
+            // none is given — the mission BAKED INTO THE APK, so the loop
+            // self-starts on a normal launch with NO adb and NO host. Both land
+            // it at an app-writable path the per-round regeneration re-reads.
+            #[cfg(target_os = "android")]
+            let mission: Option<(String, String)> = match std::env::var("MAKEPAD_DEV_GOAL_FILE") {
+                Ok(p) => std::fs::read_to_string(&p).ok().map(|g| (g, p)),
+                Err(_) => {
+                    let p = "/data/data/dev.makepad.octos_app/files/dev_goal.txt".to_owned();
+                    let _ = std::fs::write(&p, BUNDLED_MISSION);
+                    Some((BUNDLED_MISSION.to_owned(), p))
+                }
+            };
+            #[cfg(not(target_os = "android"))]
+            let mission: Option<(String, String)> = std::env::var("MAKEPAD_DEV_GOAL_FILE")
+                .ok()
+                .and_then(|p| std::fs::read_to_string(&p).ok().map(|g| (g, p)));
+            if let Some((goal, goal_path)) = mission {
+                    {
                         let dev_cfg = SessionConfig {
                             system_prompt: Some(DEV_MASTER_PROMPT.to_string()),
                             ..Default::default()
@@ -6649,8 +6671,6 @@ impl App {
                             }
                         });
                     }
-                    Err(e) => log::warn!("[devgoal] goal file unreadable: {e}"),
-                }
             }
         }
         // §5.12: hand the durable store to the VM before anything renders, or
@@ -9465,7 +9485,7 @@ impl AppMain for App {
                 });
                 if let Some(findings) = next {
                     let goal = std::fs::read_to_string(&self.dev_goal_path).unwrap_or_default();
-                    let card = std::fs::read_to_string("/data/local/tmp/dev_card.splash")
+                    let card = std::fs::read_to_string("/data/data/dev.makepad.octos_app/files/dev_card.splash")
                         .unwrap_or_default();
                     let prompt = format!(
                         "{goal}\n\n=== YOUR CURRENT CARD (your previous round's output) ===\n{card}\n\n=== FINDINGS ON THAT CARD ===\n{findings}\n\nRevise per the findings. Full card between BEGIN_CARD/END_CARD."
@@ -9638,7 +9658,7 @@ impl AppMain for App {
                                 #[cfg(target_os = "android")]
                                 crate::monitor::log(&format!("[devgoal] round {} ended with NO card between markers", self.dev_round));
                             } else {
-                                match std::fs::write("/data/local/tmp/dev_card.splash", card) {
+                                match std::fs::write("/data/data/dev.makepad.octos_app/files/dev_card.splash", card) {
                                     Ok(()) => log::info!(
                                         "[devgoal] round {} card written ({} bytes) done={}",
                                         self.dev_round, card.len(), done
@@ -9650,6 +9670,65 @@ impl AppMain for App {
                                     crate::monitor::kv("phase", if done { "DONE" } else { "card written" });
                                     crate::monitor::kv("last_card_bytes", card.len());
                                     crate::monitor::log(&format!("[devgoal] round {} card written ({} bytes) done={}", self.dev_round, card.len(), done));
+                                }
+                                // IN-PROCESS SELF-CRITIC: render the authored card with the
+                                // REAL device VM + state (the same l0_card::render octos uses
+                                // for seeded cards). Err ⇒ it won't render; a near-empty tree
+                                // ⇒ an empty list or a guard that never fires (the device-
+                                // faithful bug a laptop shim misses). Findings feed straight
+                                // back to the dev-master, so the loop closes on the phone with
+                                // no human diffing output. Capped at round 8 to avoid a
+                                // non-converging spin.
+                                #[cfg(target_os = "android")]
+                                if self.dev_round < 8 {
+                                    let store = splash_ui_l0::InstanceStore::default();
+                                    let data = serde_json::json!({});
+                                    let critic = match crate::app::l0_card::render(cx, card, &data, &store) {
+                                        Err(e) => Some(format!(
+                                            "SELF-CHECK (rendered on the real device): your card FAILED to render — {e}. Fix the error and re-output the FULL card between BEGIN_CARD and END_CARD."
+                                        )),
+                                        Ok(dsl) if dsl.len() < 240 => Some(format!(
+                                            "SELF-CHECK (rendered on the real device): your card rendered but produced almost no content ({} chars) — likely an empty list or a guard that never fires. Re-output the FULL corrected card.",
+                                            dsl.len()
+                                        )),
+                                        Ok(_) => None,
+                                    };
+                                    match critic {
+                                        Some(f) => {
+                                            crate::monitor::kv("phase", "self-critic: REVISE");
+                                            crate::monitor::log(&format!("[devgoal] SELF-CRITIC round {}: {}", self.dev_round, f.chars().take(110).collect::<String>()));
+                                            if let Ok(mut q) = DEV_FINDINGS.lock() {
+                                                q.push(f);
+                                            }
+                                            makepad_widgets::SignalToUI::set_ui_signal();
+                                        }
+                                        None => {
+                                            // Correctness passed. DISPLAY the card on the real
+                                            // screen (the same path SEED_L0 uses) so there are
+                                            // pixels to photograph, THEN hand off to the visual
+                                            // critic to capture + UX-score + feed a design finding.
+                                            // The phone judges its own pixels.
+                                            let src = card.to_string();
+                                            let item = if let Ok(mut chat) = CHAT_DATA.write() {
+                                                chat.messages.push(ChatMessage {
+                                                    role: ChatRole::Assistant,
+                                                    text: format!("```runl0\n{src}\n```"),
+                                                });
+                                                chat.messages.len() - 1
+                                            } else {
+                                                0
+                                            };
+                                            crate::app::l0_card::begin(src, serde_json::json!({}), item);
+                                            // Arm the capture BEFORE the draw so this guaranteed
+                                            // full redraw writes the frame (reliable even if the
+                                            // UI then idles on cached images).
+                                            crate::monitor::arm_capture(self.dev_round as u32);
+                                            cx.redraw_all();
+                                            crate::monitor::kv("phase", "displayed on screen; UX-scoring");
+                                            crate::monitor::log(&format!("[devgoal] round {}: renders clean, DISPLAYED on the phone — capturing & UX-scoring the real screen", self.dev_round));
+                                            crate::monitor::spawn_ux_critic(self.dev_round as u32);
+                                        }
+                                    }
                                 }
                             }
                             // Narration outside the markers is the model's own

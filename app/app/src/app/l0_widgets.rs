@@ -482,6 +482,17 @@ fn flow(kind: NodeKind) -> Option<&'static str> {
 /// wrapped "Top Movers" one character per line on device, and forcing it on a
 /// chip made the first chip eat the row.
 fn sizing_of(kind: NodeKind, a: &Attrs, out: &mut String) {
+    // A row poster — a non-filling image that has a source — is portrait 2:3.
+    // The realized node carries a wide (≈16:9) box that squashed the poster;
+    // emit the poster-shaped tile instead. A full-width backdrop (fillw) and a
+    // sourceless placeholder fall through to normal sizing untouched.
+    if kind == NodeKind::Image
+        && a.fillw != Some(1)
+        && a.src.as_deref().is_some_and(|s| !s.is_empty())
+    {
+        out.push_str(" width: 118 height: 177");
+        return;
+    }
     sizing(a, out);
     // A CONTAINER with no stated height gets `Fit`, not nothing.
     //
@@ -868,6 +879,14 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         if let Some(s) = a.size {
             out.push_str(&text_style_for(s, a.weight, a.text.as_deref()));
         }
+        // A Label already wraps (its layout is `Flow::right_wrap`) — it just
+        // needs a BOUNDED width to wrap against, or it sizes to content and
+        // CLIPS a long title/synopsis at the card edge. Fill the parent when
+        // the node stated no width of its own (`sizing_of` already wrote one
+        // otherwise, so this never double-writes `width:`).
+        if a.w.is_none() && a.fillw.is_none() && a.fitw.is_none() {
+            let _ = write!(out, " width: Fill");
+        }
     }
     if node.kind == NodeKind::Image {
         // An EMPTY src is not a src. This emitted `http_resource("")`, so a
@@ -877,7 +896,14 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         // colour and scrim underneath, which is what a card that is still
         // loading should look like.
         if let Some(src) = a.src.as_deref().filter(|s| !s.is_empty()) {
-            let _ = write!(out, " src: http_resource({src:?})");
+            // A row thumbnail (NOT a full-width backdrop) is almost always a
+            // movie/show POSTER — portrait 2:3, not 16:9. Emitted with no size
+            // and no fit, the widget defaulted to a wide box + `Stretch`, which
+            // squashed the poster. Give a poster-shaped tile (only when the node
+            // set no size of its own, so we never double-write `width:`) and
+            // `CropToFill` so neither a poster (sized 2:3 in `sizing_of`) nor a
+            // backdrop is distorted.
+            let _ = write!(out, " fit: ImageFit.CropToFill src: http_resource({src:?})");
         }
     }
     // A visualisation's parameters. The attribute names are this backend's, not
