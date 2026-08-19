@@ -102,6 +102,80 @@ const L0_APPS: &[(&str, &str, &str)] = &[
      include_str!("../../../a2app-l0/apps/city-picks/exemplar.card")),
 ];
 
+/// NO-ROUTER MODE: one self-routing generation prompt carrying EVERY baked
+/// L0 app's requirements + exemplar. The model does the AMA's picking and the
+/// app agent's writing in the SAME turn — no routing round-trip. The prompt is
+/// big (~25k tokens) but BYTE-STABLE across queries (only the trailing user
+/// request changes), so the server's prefix cache absorbs it after the first
+/// query of a server uptime; decode cost is unchanged.
+///
+/// Not covered here: the `web` runhtml app (not L0) and the AMA composer —
+/// a request nothing below covers gets one plain-text sentence, no card.
+fn l0_prompt_all(intent: &str) -> String {
+    let theme_hint = match detect_theme(intent) {
+        Some(theme) => format!(
+            "\n\nThe request asks for the **{theme}** look. Declare `theme {theme}` \
+at the top level of the card — that is the ONLY way to ask for it, and it is not a \
+colour."
+        ),
+        None => String::new(),
+    };
+    let mut sections = String::new();
+    for (domain, spec, exemplar) in L0_APPS {
+        let level_name = match l0_level_for(domain) {
+            Some(splash_ui_l0::Level::L1) => "L1",
+            _ => "L0",
+        };
+        sections.push_str(&format!(
+            "\n===== APP `{domain}` — write {level_name} =====\n\
+[REQUIREMENTS]\n{spec}\n[A CARD THAT MEETS THEM]\n{exemplar}\n"
+        ));
+    }
+    format!(
+        "You ARE the app agent and you OWN the whole flow: PICK the ONE app that \
+answers the user request, then write THAT app's card — one answer, no separate \
+router. Everything you need is INLINED BELOW — do NOT claim anything is missing, do \
+NOT read or fetch files, and do NOT ask questions.\n\n\
+PICKING (exactly ONE of the APP sections below): a BARE place name → weather; a \
+BARE ticker/company, or top/best/gainers/movers about the market → stock; headlines \
+→ news; nearby places / a LIST of things to do → activity; ASKING WHAT TO DO or \
+advice ('what can I do in Beijing', 'what should I do today', '今天适合干什么') → \
+weather-activity (the conditions decide the answer — it does NOT need the word \
+weather); COMPARING COUNTRIES on an economic or development measure over years → \
+chart; where-should-I-go across the user's SAVED cities → city-picks; DIRECTIONS / \
+any go-there request with a travel verb ('directions to SFO', 'navigate home', \
+'怎么去外滩') → nav; ANY video / music / live-stream / watching request → youtube; \
+unit conversion → convert (a CURRENCY rate is a capability this profile lacks — no \
+card, say so in one sentence); earthquakes → quake. A weather request stays weather \
+EVEN IF it names a visual style (dark/light/minimal/glass/vibrant/photo/深色/简约/\
+毛玻璃) — those are STYLE modifiers, not a different app. For nav, parse the trip \
+YOURSELF: split 'from A to B' (no origin named → the device's position), QUALIFY an \
+ambiguous place with its city/region from world knowledge ('apple park' → 'apple \
+park cupertino'; a clear street address stays as-is), and put the origin/destination \
+into the card's OWN STATE as the initial queries so it opens on that route, not an \
+empty search box. If NO app below answers the request, reply with ONE short \
+plain-text sentence saying what is missing — no card.\n\n\
+Write the LEVEL the chosen app's section header names. L0: no arithmetic, no string \
+building, no `if`, no `let`, no functions — everything you would reach for those \
+with has a declared form. L1 (ONLY where the header says L1): additionally ONE \
+arithmetic expression over values the card already declared — an expression made \
+only of literals is REFUSED, there is no grouping and no unary minus.\n\n\
+NEVER write a fact. Not a temperature, a price, a headline, a venue or a distance. \
+Every one comes from a declared `source`. NEVER write a colour, a font size or a \
+pixel dimension. You say what a thing IS; a theme decides what it looks \
+like.{theme_hint}\n\n\
+Emit EXACTLY ONE ```runl0 fenced block as your ENTIRE answer — the complete card \
+for the ONE app you picked, no prose before or after, never truncated. A card that \
+names anything outside the catalog is REFUSED and the reasons are shown instead of \
+your card.\n\n\
+===== FRAMEWORK =====\n{L0_FRAMEWORK}\n\
+===== LANGUAGE =====\n{L0_LANGUAGE}\n\
+===== CATALOG =====\n{L0_CATALOG}\n\
+{sections}\
+===== END REFERENCE =====\n\nUser request: {intent}"
+    )
+}
+
 /// The prompt for an app that has an L0 spec, or `None` for one that does not.
 ///
 /// `None` falls through to the Splash-DSL path, so an app without an L0 spec
@@ -264,7 +338,7 @@ Round protocol: (1) In your FIRST reply, list which of these tools you actually 
 #[cfg(target_os = "android")]
 const BUNDLED_MISSION: &str = include_str!("dev_goal_movie.txt");
 
-const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire card generation. Your COMPLETE memory (the app framework procedure, the widget helpers, and the app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nYou have ALREADY been told which app to build (see the routing line below) — follow THAT app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars). It may be weather, stock, news, activity, a composed app (e.g. weather-activity), or any other app whose spec is in your memory — build whichever one you were routed to, using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
+const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire flow: PICK the right app for the user request YOURSELF, then generate that app's card — ONE turn, no separate router. Your COMPLETE memory (the app framework procedure, the widget helpers, and ALL app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nPICKING (the app ids are framework.md's routing list plus any `apps/<id>/app.md` in memory): a BARE place name → weather; a BARE ticker/company, or top/best/gainers/movers about the market → stock; headlines → news; nearby places / a LIST of things to do → activity; ASKING WHAT TO DO or advice ('what can I do in Beijing', 'what should I do today', '今天适合干什么') → weather-activity (the conditions decide the answer — it does NOT need the word weather); COMPARING COUNTRIES on an economic or development measure over years ('china gdp vs india') → chart; where-should-I-go across the user's SAVED cities → city-picks; DIRECTIONS / any go-there request with a travel verb ('directions to SFO', 'navigate home', '怎么去外滩') → nav; ANY video / music / live-stream / watching request → youtube; unit conversion ('km to miles', '20°C in fahrenheit') → convert (a CURRENCY rate is a capability this profile lacks — no card, say so); earthquakes → quake; a single general app / tool / utility / game / dashboard no other domain covers → web. A weather request stays weather EVEN IF it names a visual style (dark/light/minimal/glass/vibrant/photo/深色/简约/毛玻璃) — those are STYLE modifiers for the weather card. For nav, parse the trip YOURSELF: split 'from A to B' (no origin named → the device's position), QUALIFY an ambiguous place with its city/region from world knowledge ('apple park' → 'apple park cupertino'; leave a clear street address as-is), and put the origin/destination into the card's OWN STATE as the initial queries so it opens on that route, not an empty search box. If NO app's data bears on the request, reply with ONE short plain-text sentence saying what's missing — no card.\n\nGENERATING: follow the chosen app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars), using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
 /// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
 /// so a "dark/glass/minimal/photo weather" request
@@ -6165,6 +6239,12 @@ impl App {
             // (subagent token counts, stop_reason) to logcat via the
             // stderr→log::info bridge, to pin the serve-relay truncation.
             ("RUST_LOG".to_owned(), "info".to_owned()),
+            // Byte-stable system prompts across sessions: the per-session
+            // workspace-path hint is the ONLY volatile byte in the card
+            // agents' prompts and it kills server-side KV-cache prefix reuse
+            // (wire-measured: 35% shared prefix with it, ~99% without). Card
+            // agents never do file work, so the phone drops the hint.
+            ("OCTOS_OMIT_WORKSPACE_HINT".to_owned(), "1".to_owned()),
         ];
         // Route octos's LLM HTTPS through a proxy when the device itself has no
         // internet route — e.g. an `adb reverse` tunnel to the dev host, which
@@ -6575,13 +6655,19 @@ impl App {
             // `appui.sessions_in_cwd: false` in the kernel config
             // (ensure_kernel_config_knobs) or transcripts relocate into the
             // card tree.
-            let ama_config = SessionConfig {
-                cwd: Self::app_cards_memory_dir(),
-                system_prompt: Some(AMA_SYSTEM_PROMPT.to_string()),
-                ..Default::default()
-            };
-            self.ama_session = Some(agent.create_session(cx, ama_config));
-            log::info!("AMA + 6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently");
+            // NO-ROUTER MODE: the AMA session is not created. Every submit
+            // dispatches ONE self-routing generation turn straight to the
+            // foreground agent (see the `ama_session.is_none()` branch in
+            // `submit_prompt` + the PICKING rules folded into
+            // APP_SPLASH_ROUTER). This removes an entire LLM round-trip
+            // (~2-3s measured on-device) and one boot session. Cost: the
+            // AMA's dynamic app-COMPOSER path (`compose <a>-<b>`) is
+            // dormant until it grows a home in the merged turn — the
+            // AMA machinery (route_to_app, parse_ama_decision,
+            // AMA_SYSTEM_PROMPT) stays for a future opt-in revival.
+            let _ = AMA_SYSTEM_PROMPT; // keep the const referenced
+            self.ama_session = None;
+            log::info!("6 domain app agents (weather/stock/news/web/youtube/nav) created concurrently; AMA routing OFF (self-routing single turn)");
 
             // DEBUG MONITOR: a localhost web page on 127.0.0.1:8686, reached
             // from a host over `adb forward tcp:8686 tcp:8686`. Independent of
@@ -6986,7 +7072,9 @@ impl App {
                 );
                 (Some(agent.send_prompt(cx, ama, &ama_msg)), None)
             } else {
-                let sent = format!("{APP_SPLASH_ROUTER}\n\nUser request: {text}");
+                // NO-ROUTER MODE: one self-routing turn — the model picks the
+                // app AND writes its L0 card from the all-apps inline prompt.
+                let sent = l0_prompt_all(&text);
                 (None, Some(agent.send_prompt(cx, session_id, &sent)))
             }
         } else {
@@ -6999,6 +7087,16 @@ impl App {
             self.pending_intent = Some(text.clone());
         } else if let Some(pid) = direct_pid {
             self.set_fg_prompt(Some(pid));
+            // No-router mode: this branch is now the card path, so the
+            // bookkeeping route_to_app used to do lands here — remember the
+            // request for repair turns, and reset the repair budgets.
+            if splash {
+                if let Some(a) = self.fg_mut() {
+                    a.last_request = Some(text.clone());
+                    a.repair_attempted = false;
+                    a.l0_repair_attempts = 0;
+                }
+            }
         }
         self.sync_app_tabs(cx);
         self.ui.view(cx, ids!(cancel_button)).set_visible(cx, true);
