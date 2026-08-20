@@ -132,6 +132,9 @@ fn text_style_for(size: f32, weight: Option<i32>, text: Option<&str>) -> String 
 
 fn text_style(size: f32, weight: Option<i32>) -> String {
     let face = match weight.unwrap_or(400) {
+        // The hairline face the photo mood's hero asks for (weight_hero = 100).
+        // Already bundled: makepad_widgets ships Roboto-Thin in every APK.
+        w if w <= 250 => "Roboto-Thin",
         w if w >= 600 => "Roboto-Bold",
         w if w >= 500 => "Roboto-Medium",
         _ => "Roboto-Regular",
@@ -859,6 +862,12 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
 
     if let Some(bg) = a.bg {
         let _ = write!(out, " draw_bg.color: {}", hex(bg));
+    }
+    // A second stop makes the fill a vertical gradient: the view shader mixes
+    // color -> color_2 down `pos.y` (dithered) whenever color_2 is set, so a
+    // scrim can be light where the photograph is and dark under the content.
+    if let Some(bg2) = a.bg2 {
+        let _ = write!(out, " draw_bg.color_2: {}", hex(bg2));
     }
     if let Some(r) = a.radius {
         let _ = write!(out, " draw_bg.border_radius: {r}");

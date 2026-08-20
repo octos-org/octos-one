@@ -111,6 +111,13 @@ pub(super) fn kit_src() -> String {
     kit_for("")
 }
 
+/// The kit as the device would assemble it FOR THIS CARD — mood included.
+/// Test-only sibling of `kit_src`, for tests that exercise a themed card.
+#[cfg(test)]
+pub(super) fn kit_with_theme(source: &str) -> String {
+    kit_for(source)
+}
+
 /// Realize, lower to role calls, evaluate, and render as widgets.
 ///
 /// This is §1.1 end to end. What it replaces — `makepad::lower` — went straight
@@ -912,7 +919,7 @@ mod tests {
                           view root Photo(src: scene) { Rule() }\n";
         let kit = super::kit_for(photo_card);
         assert!(
-            kit.contains("#05070c8c"),
+            kit.contains("#05070cf2"),
             "a light+Photo card must be assembled with the photo palette's scrim"
         );
         assert!(
