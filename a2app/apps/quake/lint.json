@@ -1,0 +1,84 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: quake-app`",
+      "pattern": "// name: quake-app",
+      "min": 1
+    },
+    {
+      "desc": "bind every displayed value via sys.quakes (masthead count + LATEST block + 6 feed rows)",
+      "pattern": "sys.quakes(",
+      "min": 18
+    },
+    {
+      "desc": "mosaic + pin chain sys.quakesnum lat/lon",
+      "pattern": "sys.quakesnum(",
+      "min": 12
+    },
+    {
+      "desc": "the four sys.maptile quadrants of the single zoomable mosaic",
+      "pattern": "sys.maptile(",
+      "min": 4
+    },
+    {
+      "desc": "the mosaic centering margin via sys.mappin x + y offsets against the 744 mosaic",
+      "pattern": "sys.mappin(",
+      "min": 2
+    },
+    {
+      "desc": "the mosaic margin subtracts the mappin offsets from the pane half-size",
+      "pattern": "186 - sys.mappin(",
+      "min": 2
+    },
+    {
+      "desc": "full-size 372x372 tiles (and 744-wide rows) for the true-centered mosaic",
+      "pattern": "height: 372",
+      "min": 4
+    },
+    {
+      "desc": "map tiles load via http_resource",
+      "pattern": "http_resource(",
+      "min": 4
+    },
+    {
+      "desc": "six 64-tall feed rows (indexes 1..6)",
+      "pattern": "height: 64",
+      "min": 6
+    },
+    {
+      "desc": "hairline separators between feed rows",
+      "pattern": "#ffffff14",
+      "min": 4
+    },
+    {
+      "desc": "the three stepper buttons all target the zoom key",
+      "pattern": "key: \"zoom\"",
+      "min": 3
+    },
+    {
+      "desc": "the − button steps down within bounds",
+      "pattern": "agent.notify(\"dec\"",
+      "min": 1
+    },
+    {
+      "desc": "the + button steps up within bounds",
+      "pattern": "agent.notify(\"inc\"",
+      "min": 1
+    },
+    {
+      "desc": "inc/dec clamp to the supported ladder",
+      "pattern": "min: \"5\", max: \"14\", default: \"8\"",
+      "min": 2
+    },
+    {
+      "desc": "every pane sys call + indicator uses the defaulted zoom slot",
+      "pattern": "{{state.zoom|8}}",
+      "min": 7
+    },
+    {
+      "desc": "the required OSM/CARTO tile attribution below the map pane",
+      "pattern": "© OpenStreetMap contributors © CARTO",
+      "min": 1
+    }
+  ]
+}

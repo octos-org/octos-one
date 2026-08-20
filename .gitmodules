@@ -9,3 +9,9 @@
 	path = makepad
 	url = https://github.com/octos-org/makepad.git
 	branch = octos-one-buildtool
+[submodule "splash"]
+	path = splash
+	url = https://github.com/ymote/Splash.git
+[submodule "splash-makepad"]
+	path = splash-makepad
+	url = https://github.com/ymote/Splash-Makepad.git

@@ -40,6 +40,9 @@ pub mod theme {
     /// Accents. `UP`/`DOWN` are market direction; `ACCENT` is the news warm orange.
     pub const ACCENT: &str = "#ff9f0a";
     pub const UP: &str = "#32d74b";
+    // Direction colours come as a pair; DOWN has no emitter yet because the
+    // builders fetch direction live (`sys.stockrange(..,"up")`).
+    #[allow(dead_code)]
     pub const DOWN: &str = "#ff453a";
 
     pub const PAGE_PAD: &str = "Inset{left: 20 top: 54 right: 20 bottom: 24}";

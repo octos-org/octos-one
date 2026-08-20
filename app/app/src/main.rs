@@ -3,8 +3,6 @@ pub use makepad_code_editor;
 // `mod.widgets.DiagramView`. Without this `pub use`, the DSL can't resolve
 // the template below.
 pub use makepad_diagram_kit;
-pub use makepad_widgets;
-
 mod app;
 mod backend;
 #[cfg(target_os = "android")]
@@ -807,18 +805,37 @@ fn youtube_reference_card() -> String {
     html
 }
 
+/// The embedded kernel's HOME on Android: `<app files dir>/octos-home`.
+/// Derived from the HOME env var (set at startup from `cx.get_data_dir()`),
+/// NOT a hard-coded package path: the same sources build several package ids
+/// (`dev.makepad.octos_app`, `dev.makepad.octos_one`, …), and a hard-coded
+/// path that names a DIFFERENT installed package points at that app's
+/// private dir, which per-app SELinux isolation makes inaccessible —
+/// `create_dir_all` fails and `Command::spawn`'s chdir then dies with
+/// EACCES ("Permission denied"), so the embedded kernel never starts even
+/// though the binary is fine. The literal below is only a fallback for an
+/// unset/empty HOME (i.e. startup never ran — already broken).
+#[cfg(target_os = "android")]
+fn kernel_home() -> std::path::PathBuf {
+    if let Ok(h) = std::env::var("HOME") {
+        if !h.is_empty() {
+            return std::path::PathBuf::from(h).join("octos-home");
+        }
+    }
+    std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home")
+}
+
 /// Root of the deployed app-cards tree on device. The current octos main this
 /// branch builds against no longer assembles/injects app-cards as agent memory,
 /// so the app reads the routed app's spec + shared widget docs from here and
 /// INLINES them into the generation prompt (`app_card_docs` + `splash_gen_prompt`)
 /// — the same self-contained pattern the youtube/weather-style paths already use.
-#[cfg(target_os = "android")]
-const APP_CARDS_ROOT: &str = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards";
-
 fn app_cards_root_dir() -> Option<std::path::PathBuf> {
     #[cfg(target_os = "android")]
     {
-        Some(std::path::PathBuf::from(APP_CARDS_ROOT))
+        Some(
+            kernel_home().join(".octos/profiles/_main/data/memory/app-cards"),
+        )
     }
     #[cfg(not(target_os = "android"))]
     {
@@ -840,6 +857,7 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
         "interaction" => include_str!("../../../a2app/widgets/interaction.md"),
         "sys-helpers" => include_str!("../../../a2app/widgets/sys-helpers.md"),
         "weather-icon" => include_str!("../../../a2app/widgets/weather-icon.md"),
+        "map-pane" => include_str!("../../../a2app/widgets/map-pane.md"),
         _ => return None,
     })
 }
@@ -848,7 +866,7 @@ fn baked_widget_md(name: &str) -> Option<&'static str> {
 /// fallback for [`app_card_docs`] (see [`baked_widget_md`]). Covers every domain
 /// the AMA routes to; runtime-composed apps (`<a>-<b>`) live only on-device, so
 /// they have no baked copy and rely on the deployed tree.
-use crate::app::plan::{domain_uses_plan, PLAN_DOMAINS};
+use crate::app::plan::domain_uses_plan;
 
 fn baked_app_md(domain: &str) -> Option<&'static str> {
     Some(match domain {
@@ -873,12 +891,17 @@ fn baked_app_md(domain: &str) -> Option<&'static str> {
                 include_str!("../../../a2app/apps/news/app.md")
             }
         }
+        "quake" => include_str!("../../../a2app/apps/quake/app.md"),
         "activity" => include_str!("../../../a2app/apps/activity/app.md"),
         // The L0 spec, for the reason youtube's is below: this app is in
         // `L0_APPS` now, so the DSL branch under it is unreachable and a second
         // spec here could only drift out of agreement with the one that runs.
         "weather-activity" => include_str!("../../../a2app-l0/apps/weather-activity/app.md"),
         "nav" => include_str!("../../../a2app/apps/nav/app.md"),
+        "clock" => include_str!("../../../a2app/apps/clock/app.md"),
+        "timer" => include_str!("../../../a2app/apps/timer/app.md"),
+        "calc" => include_str!("../../../a2app/apps/calc/app.md"),
+        "convert" => include_str!("../../../a2app/apps/convert/app.md"),
         "web" => include_str!("../../../a2app/apps/web/app.md"),
         // The L0 spec, not `a2app/apps/youtube/app.md`. The old one is the HTML
         // contract that asks the agent for video ids; handing it out here would
@@ -906,6 +929,7 @@ fn app_card_docs(domain: &str) -> String {
         "interaction",
         "sys-helpers",
         "weather-icon",
+        "map-pane",
     ] {
         let body = root
             .as_ref()
@@ -1031,6 +1055,9 @@ other app type.\n\nUser request: {intent}"
     }
 }
 
+// Kept: legacy Splash prompt builder, superseded by `splash_gen_prompt`
+// (still referenced from the `SPLASH_MANUAL` docs above).
+#[allow(dead_code)]
 fn app_splash_prompt(request: &str) -> String {
     format!(
         "You are a UI-generation agent. Respond with EXACTLY ONE ```runsplash \
@@ -1482,8 +1509,17 @@ fn substitute_state_keys(text: &str, state: &CardState) -> String {
         out.push_str(&rest[..pos]);
         let after = &rest[pos + "{{state.".len()..];
         if let Some(end) = after.find("}}") {
-            let key = after[..end].trim();
-            out.push_str(state.get(key).map(String::as_str).unwrap_or("0"));
+            // `{{state.key|default}}` — the default substitutes while the key
+            // is unset, so a slot can sit in a NUMERIC argument position
+            // (e.g. `sys.maptile(lat, lon, {{state.zoom|8}}, "tl")`) without
+            // the bare-unset "0" clamping it to nonsense. Plain `{{state.key}}`
+            // keeps the legacy "0" fallback.
+            let raw = after[..end].trim();
+            let (key, default) = match raw.split_once('|') {
+                Some((k, d)) => (k.trim(), d.trim()),
+                None => (raw, "0"),
+            };
+            out.push_str(state.get(key).map(String::as_str).unwrap_or(default));
             rest = &after[end + 2..];
         } else {
             out.push_str(&rest[pos..]);
@@ -2101,6 +2137,9 @@ fn save_completed_stream_cards(
 }
 
 /// Load saved cards as `(name, dsl)`, newest-modified first, capped at `max`.
+/// Kept: saved-cards prompt section has no caller after the
+/// `splash_gen_prompt` rework; the loader stays for the W08 card library.
+#[allow(dead_code)]
 fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
     let Some(dir) = a2app_cards_dir() else {
         return Vec::new();
@@ -2125,7 +2164,7 @@ fn load_a2app_cards(max: usize) -> Vec<(String, String)> {
             }
         }
     }
-    entries.sort_by(|a, b| b.0.cmp(&a.0));
+    entries.sort_by_key(|e| std::cmp::Reverse(e.0));
     entries.into_iter().take(max).map(|(_, n, d)| (n, d)).collect()
 }
 
@@ -2579,6 +2618,9 @@ fn extract_html_card_name(body: &str) -> Option<String> {
 /// Short A2App directive for follow-up requests in a session that already has
 /// the Splash manual in its history (see `App::splash_primed`). Avoids
 /// re-sending the ~85KB manual every turn.
+/// Kept: no caller after the `splash_gen_prompt` rework (same as
+/// `app_splash_prompt` above).
+#[allow(dead_code)]
 fn app_splash_followup(request: &str) -> String {
     format!(
         "Respond with EXACTLY ONE ```runsplash fenced block (Makepad Splash \
@@ -4488,6 +4530,9 @@ pub static CHAT_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// a2app memory tree) from a world-readable staging dir (`/data/local/tmp`,
 /// which `adb push` can write) into the app-private octos-home — the only way
 /// to provision a non-rooted, non-debuggable device. Returns files copied.
+/// Wired for the Android build only (the `MAKEPAD_PROVISION_DIR` call site is
+/// `#[cfg(target_os = "android")]`).
+#[allow(dead_code)]
 fn deploy_provision(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<usize> {
     let mut n = 0;
     std::fs::create_dir_all(dst)?;
@@ -6199,7 +6244,7 @@ impl App {
     /// decision in `handle_startup`).
     #[cfg(target_os = "android")]
     fn has_embedded_kernel() -> bool {
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         Self::native_lib_dir()
             .map(|lib_dir| Self::find_embedded_kernel(&lib_dir, &home).is_some())
             .unwrap_or(false)
@@ -6208,7 +6253,7 @@ impl App {
     #[cfg(target_os = "android")]
     fn stdio_spawn() -> Option<StdioSpawn> {
         let lib_dir = Self::native_lib_dir()?;
-        let home = std::path::PathBuf::from("/data/user/0/dev.makepad.octos_app/files/octos-home");
+        let home = kernel_home();
         let Some(program) = Self::find_embedded_kernel(&lib_dir, &home) else {
             log::warn!(
                 "stdio: bundled octos not found under {}; using WebSocket transport",
@@ -6548,11 +6593,11 @@ impl App {
     fn app_cards_memory_dir() -> Option<String> {
         #[cfg(target_os = "android")]
         {
-            let p = "/data/user/0/dev.makepad.octos_app/files/octos-home/.octos/profiles/_main/data/memory/app-cards/apps";
+            let p = kernel_home().join(".octos/profiles/_main/data/memory/app-cards/apps");
             // The dir must EXIST for the kernel's cwd validation to accept the
             // hint (validate_session_workspace_allowed canonicalizes it).
-            let _ = std::fs::create_dir_all(p);
-            Some(p.to_string())
+            let _ = std::fs::create_dir_all(&p);
+            Some(p.to_string_lossy().into_owned())
         }
         #[cfg(not(target_os = "android"))]
         {
@@ -6636,6 +6681,11 @@ impl App {
             let web = agent.create_session(cx, app_cfg());
             let youtube = agent.create_session(cx, app_cfg());
             let nav = agent.create_session(cx, app_cfg());
+            let quake = agent.create_session(cx, app_cfg());
+            let clock = agent.create_session(cx, app_cfg());
+            let timer = agent.create_session(cx, app_cfg());
+            let calc = agent.create_session(cx, app_cfg());
+            let convert = agent.create_session(cx, app_cfg());
             self.apps = vec![
                 AppRecord::with_domain(weather, "Weather", "weather"),
                 AppRecord::with_domain(stock, "Stock", "stock"),
@@ -6643,6 +6693,11 @@ impl App {
                 AppRecord::with_domain(web, "Web", "web"),
                 AppRecord::with_domain(youtube, "YouTube", "youtube"),
                 AppRecord::with_domain(nav, "Nav", "nav"),
+                AppRecord::with_domain(quake, "Quakes", "quake"),
+                AppRecord::with_domain(clock, "Clock", "clock"),
+                AppRecord::with_domain(timer, "Timer", "timer"),
+                AppRecord::with_domain(calc, "Calculator", "calc"),
+                AppRecord::with_domain(convert, "Convert", "convert"),
             ];
             self.foreground = 0;
             self.pending_intent = None;
@@ -7941,6 +7996,10 @@ fn run_blocking_solo_login(
 /// one `ActionTrait` (auto-derived from `Debug + 'static` per
 /// `aichat/platform/src/action.rs:21`) keeps the `Cx::post_action`
 /// boilerplate down.
+// The `Reply` postfix mirrors the login RPC direction (async reply landing
+// on the UI thread); renaming the variants would churn the handlers for no
+// real gain.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Debug)]
 enum LoginAsyncEvent {
     SendCodeReply,
@@ -8115,22 +8174,38 @@ impl MatchEvent for App {
                     }
                     // fall through: ev "city" matches none of the counter ops below.
                 }
+                // Bounded-stepper knobs (all optional): {"step","min","max","default"}.
+                // Accept number or string forms — the script VM serializes both.
+                // `default` seeds the counter when the key is unset (so a card whose
+                // display slot is `{{state.zoom|8}}` steps from 8, not 0) and is what
+                // `reset` restores; `min`/`max` clamp the stepped value.
+                let num = |name: &str| -> Option<i64> {
+                    pj.get(name).and_then(|v| {
+                        v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+                    })
+                };
+                let step = num("step").unwrap_or(1);
+                let dfl = num("default").unwrap_or(0);
+                let clamp = |n: i64| -> i64 {
+                    let n = num("min").map_or(n, |lo| n.max(lo));
+                    num("max").map_or(n, |hi| n.min(hi))
+                };
                 let mut changed = false;
                 if let Some(card_id) = card_id {
                     if let Ok(mut data) = CHAT_DATA.write() {
                         let card = data.a2app_state.entry(card_id).or_default();
                         let cur = |c: &CardState| -> i64 {
-                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(0)
+                            c.get(&key).and_then(|s| s.parse().ok()).unwrap_or(dfl)
                         };
                         changed = true;
                         if ev.contains("inc") || ev.contains("plus") || ev.contains("add") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n + 1).to_string());
+                            card.insert(key.clone(), clamp(n + step).to_string());
                         } else if ev.contains("dec") || ev.contains("minus") || ev.contains("sub") {
                             let n = cur(card);
-                            card.insert(key.clone(), (n - 1).to_string());
+                            card.insert(key.clone(), clamp(n - step).to_string());
                         } else if ev.contains("reset") || ev.contains("clear") {
-                            card.insert(key.clone(), "0".to_owned());
+                            card.insert(key.clone(), dfl.to_string());
                         } else if ev.starts_with("set") {
                             // `set` last: "reset" also contains "set".
                             match value {
@@ -8863,9 +8938,7 @@ impl MatchEvent for App {
         // memory tree onto a device that can't be written via su/run-as.
         #[cfg(target_os = "android")]
         if let Ok(src) = std::env::var("MAKEPAD_PROVISION_DIR") {
-            let home = std::path::PathBuf::from(
-                "/data/user/0/dev.makepad.octos_app/files/octos-home",
-            );
+            let home = kernel_home();
             match deploy_provision(std::path::Path::new(&src), &home) {
                 Ok(n) => log::info!("provision: deployed {n} files from {src}"),
                 Err(e) => log::warn!("provision: deploy from {src} failed: {e}"),
@@ -9145,7 +9218,7 @@ impl AppMain for App {
         // NOTE: `agent.notify(...)` for A2App/Splash button callbacks is
         // registered inside `makepad_widgets::script_mod` so it reaches the
         // isolated Splash VMs too (see aichat/widgets/src/lib.rs).
-        crate::makepad_widgets::script_mod(vm);
+        makepad_widgets::script_mod(vm);
         crate::makepad_code_editor::script_mod(vm);
         crate::makepad_diagram_kit::script_mod(vm);
         // W08 — register the LoginScreen DSL prototype before this file's
@@ -10024,9 +10097,17 @@ impl AppMain for App {
                                     // belong to a different domain (a stock
                                     // card must not be checked by weather
                                     // rules). Orphan prompts (no owner) skip
-                                    // lint rather than guess.
+                                    // lint rather than guess. A card LOWERED
+                                    // from a semantic plan also skips lint: its
+                                    // DSL is runtime-built, not model-written,
+                                    // so a violation there is a plan-builder
+                                    // bug the model can neither cause nor fix —
+                                    // a repair turn only burns tokens and puts
+                                    // the agent's explanation above the card.
                                     if let Some(owner_idx) = prompt_owner {
-                                        if !self.apps[owner_idx].repair_attempted {
+                                        if last_plan.is_none()
+                                            && !self.apps[owner_idx].repair_attempted
+                                        {
                                             if let Some(domain) =
                                                 self.apps[owner_idx].domain.clone()
                                             {
@@ -10295,8 +10376,12 @@ impl AppMain for App {
                         cx.redraw_all();
                     }
                     AgentEvent::ToolRequest { .. } => {}
-                    AgentEvent::TextAuthoritative { .. } => {}
-                    _ => {}
+                    // `TextAuthoritative` is handled by its real arm above
+                    // (the one binding `prompt_id`/`text`); the earlier
+                    // duplicate `{ .. } => {}` arm here was unreachable.
+                    // No `_` arm: all `AgentEvent` variants are covered
+                    // explicitly, so a new upstream variant fails the build
+                    // instead of being silently dropped.
                 }
             }
         }
@@ -11086,6 +11171,7 @@ mod tests {
             "nav",
             "web",
             "youtube",
+            "quake",
         ] {
             let md = baked_app_md(domain)
                 .unwrap_or_else(|| panic!("built-in app '{domain}' has no baked app.md"));
@@ -11104,6 +11190,7 @@ mod tests {
             "interaction",
             "sys-helpers",
             "weather-icon",
+            "map-pane",
         ] {
             assert!(baked_widget_md(w).is_some(), "no baked widget doc for '{w}'");
         }

@@ -476,7 +476,7 @@ impl OctosUiAgent {
                     }]
                 })
                 .unwrap_or_default(),
-            // The durably-stored row. Its `content` is what the kernel actually
+            // The durably-stored row. Its text is what the kernel actually
             // saved, so it is authoritative over our own `MessageDelta`
             // accumulation — a delta lost in transit leaves that accumulation
             // short by one chunk, spliced together mid-token, and an app-card

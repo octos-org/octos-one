@@ -69,8 +69,7 @@ pub struct Args {
 // was already in the fetch — the model was being asked to guess data the runtime
 // held.
 
-/// A condition word → the WeatherIcon shader index and a forecast-row emoji.
-
+// A condition word → the WeatherIcon shader index and a forecast-row emoji.
 
 /// Attractions the model recommends.
 ///
@@ -131,10 +130,10 @@ fn tile_spec(k: &str) -> Option<(&'static str, &'static str, &'static str, &'sta
     })
 }
 
-/// Everything the plan does NOT carry, because the runtime owns it. Changing a
-/// value here restyles every card with no model call — which is the other half of
-/// the point: a look change costs a token edit, not a 45-second regeneration that
-/// may alter unrelated things.
+// Everything the plan does NOT carry, because the runtime owns it. Changing a
+// value here restyles every card with no model call — which is the other half of
+// the point: a look change costs a token edit, not a 45-second regeneration that
+// may alter unrelated things.
 
 /// Lower a plan to Splash DSL, or explain why it cannot be lowered.
 ///

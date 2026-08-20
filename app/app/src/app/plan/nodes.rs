@@ -42,9 +42,15 @@ use super::common::locale_tag;
 /// Wire-format magic. Must match `Node.MAGIC` on the Java side; a mismatch means the
 /// two halves were built from different revisions, and it is better to fail loudly at
 /// the first four bytes than to decode garbage into a view tree.
+// The decoder half lives in splash-native's Java `Node`; nothing in this crate
+// calls the encoder yet, so the wire constants and `encode` are kept dead until
+// the kit path sends trees over the boundary.
+#[allow(dead_code)]
 pub const MAGIC: u32 = 0x5350_4332;
 
+#[allow(dead_code)]
 const T_F64: u8 = 0;
+#[allow(dead_code)]
 const T_STR: u8 = 1;
 
 /// One node: a kind, flat attributes, and children.
@@ -88,6 +94,7 @@ impl Node {
 }
 
 /// Serialize a tree to the wire format.
+#[allow(dead_code)]
 pub fn encode(root: &Node) -> Vec<u8> {
     struct Enc {
         rec: Vec<u8>,
@@ -163,7 +170,7 @@ pub fn encode(root: &Node) -> Vec<u8> {
 /// a hand-written stand-in.
 pub fn try_plain(plan_json: &str) -> Result<String, String> {
     let v: serde_json::Value = serde_json::from_str(plan_json)
-        .map_err(|e| format!("plan is not JSON ({e}); first 80 bytes: {:?}", &plan_json.chars().take(80).collect::<String>()))?;
+        .map_err(|e| format!("plan is not JSON ({e}); first 80 bytes: {:?}", plan_json.chars().take(80).collect::<String>()))?;
     let kind = v
         .get("plan")
         .and_then(|k| k.as_str())

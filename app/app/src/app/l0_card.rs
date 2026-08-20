@@ -42,16 +42,16 @@ pub static L0_READER_PLACED: AtomicBool = AtomicBool::new(false);
 /// look without the card ever naming one. It has to be a PREFIX: a function body
 /// resolves a name at its declaration point, so a palette appended after the kit
 /// would not reach the roles that read it.
-const KIT_BODY: &str = include_str!("../../../../../Splash-Makepad/components/l0/_kit.splash");
+const KIT_BODY: &str = include_str!("../../../../splash-makepad/components/l0/_kit.splash");
 
 /// The base theme: every knob and every colour.
 const PALETTE_BASE: &str =
-    include_str!("../../../../../Splash-Makepad/components/l0/_palette_dark.splash");
+    include_str!("../../../../splash-makepad/components/l0/_palette_dark.splash");
 /// Every SIZE, computed from the knobs — concatenated AFTER the mood's delta so a
 /// mood can move a knob (`let` evaluates at its own line, so deriving in the base
 /// would leave a delta's `radius_factor` with nothing left to change).
 const PALETTE_DERIVE: &str =
-    include_str!("../../../../../Splash-Makepad/components/l0/_derive.splash");
+    include_str!("../../../../splash-makepad/components/l0/_derive.splash");
 
 /// Each mood the L0 catalog admits, and the DELTA that answers it. `dark` is the
 /// base, so its delta is empty. The names are `splash_ui_l0::catalog::THEMES`;
@@ -59,9 +59,9 @@ const PALETTE_DERIVE: &str =
 /// entry here renders in the base and looks correct.
 const PALETTES: &[(&str, &str)] = &[
     ("dark", ""),
-    ("light", include_str!("../../../../../Splash-Makepad/components/l0/_palette_light.splash")),
-    ("glass", include_str!("../../../../../Splash-Makepad/components/l0/_palette_glass.splash")),
-    ("photo", include_str!("../../../../../Splash-Makepad/components/l0/_palette_photo.splash")),
+    ("light", include_str!("../../../../splash-makepad/components/l0/_palette_light.splash")),
+    ("glass", include_str!("../../../../splash-makepad/components/l0/_palette_glass.splash")),
+    ("photo", include_str!("../../../../splash-makepad/components/l0/_palette_photo.splash")),
 ];
 
 /// The kit as this host assembles it for `source`: base, the card's declared
@@ -861,6 +861,7 @@ fn tap_inner(
 /// Nothing renders through it yet. What it establishes is that it CAN: the
 /// evaluator and the widget mapping are the remaining work, and neither is
 /// blocked on a lockfile any more.
+#[allow(unused_imports)]
 pub use splash_node::{Attrs, NodeKind, UiNode};
 
 #[cfg(test)]
@@ -881,7 +882,7 @@ mod exemplar_drift {
     //! finds out.
     const EXEMPLAR: &str = include_str!("../../../../a2app-l0/apps/nav/exemplar.card");
     const FIXTURE: &str =
-        include_str!("../../../../../Splash/crates/splash-ui-l0/tests/fixtures/nav.card");
+        include_str!("../../../../splash/crates/splash-ui-l0/tests/fixtures/nav.card");
 
     #[test]
     fn the_nav_exemplar_is_the_card_the_profile_tests_check() {
@@ -1608,7 +1609,7 @@ mod resolve_tests {
 mod capability_bridge {
     const BACKEND: &str = include_str!("../../../../aichat/widgets/src/splash.rs");
     const LOWERING: &str =
-        include_str!("../../../../../Splash/crates/splash-ui-l0/src/lib.rs");
+        include_str!("../../../../splash/crates/splash-ui-l0/src/lib.rs");
 
     fn between(hay: &str, open: &str, close: char) -> std::collections::BTreeSet<String> {
         let mut out = std::collections::BTreeSet::new();

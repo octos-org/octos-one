@@ -518,6 +518,15 @@ fn apply_protocol(state: &mut AppState, cursor: Option<UiCursor>, n: UiNotificat
         // Compaction start is informational; the top-bar usage chip keys off
         // `ContextCompactionCompleted`'s context_state above.
         UiNotification::ContextCompactionStarted(_) => {}
+        // Manifest skill-action background jobs (UPCR-2026-027) render in
+        // octos-web; no state home in the app shell yet.
+        UiNotification::SkillActionJobUpdated(_) => {}
+        // Peer staging/close drives the remote-device flow, which the app
+        // shell doesn't surface yet.
+        UiNotification::PeerStaged(_) => {}
+        UiNotification::PeerClosed(_) => {}
+        // Canonical v2 projection frame; folded via the v2 path, not here.
+        UiNotification::EnvelopeV2(_) => {}
     }
 }
 

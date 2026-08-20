@@ -19,20 +19,26 @@ scene/weather so the photo matches the actual conditions.
 Image{ src: http_resource(sys.photo("tokyo skyline clear sky")) fit: ImageFit.CropToFill width: Fill height: Fill }
 ```
 
-## sys.satellite(lat, lon)
+## sys.satellite(lat, lon [, zoom])
 
 Returns a real satellite cloud-imagery URL (the 卫星云图). Pass the city's real
-decimal lat/lon.
+decimal lat/lon. Optional `zoom` (3–12, default 8): each +1 halves the frame —
+6 ≈ continental, 8 = the default regional frame, 10 ≈ metro close-up. Use it
+when the request asks to zoom ("zoom in", "close-up", "放大" → 10; "wide",
+"zoom out" → 6); otherwise omit it.
 
 ```
 Image{ src: http_resource(sys.satellite(35.68, 139.65)) fit: ImageFit.CropToFill width: Fill height: 190 }
+Image{ src: http_resource(sys.satellite(35.68, 139.65, 10)) fit: ImageFit.CropToFill width: Fill height: 190 }
 ```
 
-## sys.basemap(lat, lon) + sys.airmap(lat, lon)
+## sys.basemap(lat, lon [, zoom]) + sys.airmap(lat, lon [, zoom])
 
 The air-quality map (空气质量图) is two layers: a base map with an air-quality
 overlay ON TOP. Stack `airmap` OVER `basemap` in a `height: 190 flow: Overlay` View
-(fixed height, NOT Fill — Fill inside an Overlay wrongly resolves to the whole card):
+(fixed height, NOT Fill — Fill inside an Overlay wrongly resolves to the whole card).
+Optional `zoom` (3–17, default 8; region 6, metro 8, city 10, district 12) —
+when zooming, BOTH layers MUST use the SAME zoom or the overlay misaligns:
 
 ```
 View{ width: Fill height: 190 flow: Overlay
@@ -115,6 +121,35 @@ Label{ text: sys.stock("AAPL", "change") + " (" + sys.stock("AAPL", "changepct")
 ```
 Label{ width: Fill text: sys.news(0, "title") }
 Label{ text: sys.news(0, "points") + " points · " + sys.news(0, "author") }
+```
+
+## sys.quakes(index, "field") — LIVE earthquakes (USGS, M2.5+ last 24 h)
+
+`index` 0 = the most recent event, newest first. Use directly as `Label`
+text; ONE fetch serves all rows × fields of a card.
+
+- `place` → "42 km SW of Ashkasham, Afghanistan"
+- `mag` → "4.6" (one decimal) · `depth` → "10 km" · `time` → "2h ago"
+- `lat` / `lon` → "36.5622" (4 decimals — chain into `sys.basemap`)
+- `count` → total events in the feed (ignores `index`)
+
+```
+Label{ text: "M " + sys.quakes(0, "mag") + " — " + sys.quakes(0, "place") }
+Label{ text: sys.quakes(0, "time") + " · depth " + sys.quakes(0, "depth") }
+```
+
+`sys.quakesnum(index, "field")` returns `mag` / `depth` / `lat` / `lon` /
+`count` as NUMBERS (`-9999` while loading; guard with `>= -9998`) — chain the
+epicenter into a TRUE-CENTERED, zoomable map per `widgets/map-pane.md`: the
+`sys.maptile` 2×2 mosaic (zoom 3–17; each quadrant a square Image with
+EXPLICIT sizes, never `Fill`) shifted by a negative margin computed from
+`sys.mappin(lat, lon, zoom, "x"|"y", mosaic_size)` — `sys.mappin` returns the
+anchor's pixel offset within a mosaic of that total size, so
+`186 - sys.mappin(..., 744)` slides the double-size mosaic until the anchor
+sits at the 372 pane's center:
+
+```
+Image{ src: http_resource(sys.maptile(sys.quakesnum(0, "lat"), sys.quakesnum(0, "lon"), 9, "tl")) fit: ImageFit.CropToFill width: 372 height: 372 }
 ```
 
 ## sys.weathernum / sys.aqinum — LIVE numbers for script conditions
@@ -285,3 +320,63 @@ Button{ width: Fill height: Fill draw_bg.color: #00000000 text: ""
 The app catches `notify("open", {ticker})` and generates the DETAIL card for that
 ticker. The row container must have a FIXED height (not `Fit`) so the `Fill` Button
 resolves inside the `Overlay`.
+
+## sys.citytime(lat, lon, "field") — the LIVE wall-clock time at a place
+
+The current time AT THOSE COORDINATES, DST-correct (the UTC offset is ONE
+cached ~300-byte fetch per place; the time itself is the device clock plus
+that offset — reading it every second in `fn tick()` costs nothing).
+
+| field | example |
+|---|---|
+| `"hm"` | `14:05` |
+| `"hms"` | `14:05:09` |
+| `"h12"` | `2:05 PM` |
+| `"day"` / `"day_zh"` | `Mon` / `周一` |
+| `"date"` / `"date_zh"` | `Aug 4` / `8月4日` |
+| `"offset"` | `UTC+9`, `UTC+5:30`, `UTC-7` |
+| `"tz"` | `Asia/Tokyo` |
+
+Returns `—` while the offset fetch loads; the card re-evaluates when it lands.
+Chain the coordinates from `sys.geocodenum` exactly like the weather card —
+NEVER type lat/lon digits, and NEVER compute a city's time yourself (you do
+not know today's DST state anywhere).
+
+`sys.citytimenum(lat, lon, "field")` — the same clock as a NUMBER for script
+conditions: `"hour"` 0-23, `"hour12"` 1-12, `"minute"`, `"second"`,
+`"offsecs"`. -9999 while loading. Day/night row theming:
+
+```
+if sys.citytimenum(LATN, LONN, "hour") >= 19 || sys.citytimenum(LATN, LONN, "hour") < 6 {
+    /* night styling */
+}
+```
+
+## sys.fx("FROM", "TO") — LIVE currency exchange rate (keyless, ~160 currencies)
+
+`sys.fx("USD", "EUR")` -> `"0.8669"` as a display string; `sys.fxnum` -> the
+raw NUMBER for math. ONE cached fetch per currency PAIR (Yahoo intraday FX).
+ISO codes, case-insensitive. `—` / -9999 while loading — gate converted
+amounts on `sys.fxnum(...) >= 0`.
+
+```
+Label{ text: "1 USD = " + sys.fx("USD", "EUR") + " EUR" }
+// in a fn:  ui.result.set_text(sys.fmtnum(app.amt * sys.fxnum("USD", "EUR"), 2))
+```
+
+NEVER write a literal exchange rate into a card — rates move daily and cards
+are persisted and re-served.
+
+## sys.fmtdur(secs) + sys.fmtnum(x, maxdecimals) — display formatters (pure)
+
+The script engine has NO floor/round/% — ALL numeric display formatting goes
+through these two:
+
+- `sys.fmtdur(secs)` -> `"04:35"` under an hour, `"1:04:35"` from an hour up;
+  negatives clamp to `"00:00"`. THE timer/stopwatch formatter.
+- `sys.fmtnum(x, maxdecimals)` -> at most that many decimals, trailing zeros
+  trimmed: `sys.fmtnum(42.0, 6)` -> `"42"`, `sys.fmtnum(0.866934, 4)` ->
+  `"0.8669"`. THE calculator-display / converted-amount formatter.
+
+Both are pure math: no fetch, no re-evaluation, safe anywhere including
+inside `fn tick()`.

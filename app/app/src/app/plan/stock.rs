@@ -251,13 +251,13 @@ fn movers_list(a: &Args, zh: bool) -> String {
     )
 }
 
-fn quote_header(a: &Args, zh: bool) -> String {
+fn quote_header(a: &Args, _zh: bool) -> String {
     let t = &a.ticker;
     let range = if a.range.is_empty() { "1d" } else { &a.range };
     // Direction is FETCHED, not stated. A plan that asserted "up" would paint a red
     // day green, confidently, for as long as the card exists.
     let up = format!("sys.stockrange({t:?}, {range:?}, \"up\")");
-    let sep = if zh { " · " } else { " · " };
+    let sep = " · ";
     format!(
         "\x20   View{{ width: Fill height: Fit flow: Down\n\
          \x20       {sym}\n\

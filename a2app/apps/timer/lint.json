@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "desc": "the first line must be `// name: timer-app`",
+      "pattern": "// name: timer-app",
+      "min": 1
+    },
+    {
+      "desc": "the state object opens the script",
+      "pattern": "let tmr = {",
+      "min": 1
+    },
+    {
+      "desc": "the 1-second heartbeat",
+      "pattern": "fn tick(",
+      "min": 1
+    },
+    {
+      "desc": "start/pause toggle fn",
+      "pattern": "fn toggle(",
+      "min": 1
+    },
+    {
+      "desc": "reset fn",
+      "pattern": "fn reset(",
+      "min": 1
+    },
+    {
+      "desc": "displayed times go through the duration formatter (stopwatch flavor has fewer sites)",
+      "pattern": "sys.fmtdur(",
+      "min": 2
+    },
+    {
+      "desc": "controls mutate named widgets in place (stopwatch flavor has fewer)",
+      "pattern": ".set_text(",
+      "min": 4
+    },
+    {
+      "desc": "expression-form click handlers",
+      "pattern": "on_click: ||",
+      "min": 2
+    }
+  ]
+}

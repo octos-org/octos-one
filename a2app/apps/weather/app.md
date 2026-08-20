@@ -316,6 +316,11 @@ is its own row so the maps read large), each a `width: Fill` RoundedView
   `Image{ src: http_resource(sys.satellite(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
   (sys.satellite(LAT, LON) takes the city's real lat/lon, SAME as the air map below)
   + a caption (font 11, #ffffffcc) — `Satellite` or `卫星云图` per the LANGUAGE rule.
+- ZOOM (optional third arg on all three map helpers, default 8): if the request
+  asks to zoom the maps ("zoom in", "close-up", "放大" → 10; "wide"/"zoom out"
+  → 6), pass it to `sys.satellite(LAT, LON, Z)` AND to BOTH air-map layers
+  `sys.basemap(LAT, LON, Z)` / `sys.airmap(LAT, LON, Z)` — the two air-map
+  layers must share the SAME Z or the overlay misaligns. Otherwise omit it.
 - The SECOND pane is the LIVE 空气质量图 air-quality map — a `height: 190 flow:
   Overlay` View stacking
   `Image{ src: http_resource(sys.basemap(LAT, LON)) fit: ImageFit.CropToFill width: Fill height: 190 }`
