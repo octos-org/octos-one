@@ -137,9 +137,12 @@ def build_batch(store: FeatureStore, name: str, anchors: List[int], W: int, B: i
         m = torch.ones(B, dtype=torch.bool)
         m[0] = False                       # block position 0 is dropped (worker:120)
         lmask.append(m)
+    blk_pos_all = torch.cat(bpos)
     return dict(
         h=h, ctx_pos=pos,
-        ids=torch.cat(ids).to(device), blk_pos=torch.cat(bpos).to(device),
+        ids=torch.cat(ids).to(device), blk_pos=blk_pos_all.to(device),
+        abs_pos_cpu=blk_pos_all,          # absolute positions, kept on the host
+                                          # so the teacher store can index them
         blk_group=torch.cat(grp).to(device), blk_anchor=torch.cat(anc).to(device),
         labels=torch.cat(labels).to(device), loss_mask=torch.cat(lmask).to(device),
         n_blocks=len(anchors), block_size=B,

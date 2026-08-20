@@ -2,8 +2,17 @@
 """Goal 3/5: train the DFlash draft on harvested compositions.
 
 Conditioning is constructed exactly as dflash_worker_v2.py does at serve time
-(CONDITIONING.md §6). Cross-entropy on hard labels against the recorded temp-0
-target tokens, logits through the FROZEN target lm_head.
+(CONDITIONING.md §6). Logits go through the FROZEN target lm_head.
+
+Two objectives:
+  * default -- cross-entropy on hard labels (the recorded temp-0 target tokens);
+  * --teacher-dir + --kl-alpha -- KL distillation onto the TARGET's own soft
+    distribution (top-K logprobs per position from src/distill/extract_logprobs.py).
+    STYLIST.md §7 names this as the one change that could make lenient
+    acceptance viable: hard labels teach the draft *what* to say, but say
+    nothing about how its errors should be distributed, and the measured
+    consequence is that 88.7% of its rejections are >= 6 logits from the
+    target's top-1. KL asks it to be calibrated where it is wrong.
 
 Memory plan (single GH200, must stay under ~30GB so production keeps serving):
   draft params            bf16  3.5 GB
@@ -23,6 +32,8 @@ import torch.nn.functional as F
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dflash_torch import DFlashCfg, DFlashDraft, TargetHeads, MASK_TOKEN_ID
 from dataset import FeatureStore, build_batch, sample_anchors
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "distill"))
 
 
 class MixedAdamW:
@@ -73,21 +84,78 @@ class MixedAdamW:
         for a, b in zip(self.v, sd["v"]): a.copy_(b)
 
 
-def loss_for_batch(model, heads, batch, chunk=4096):
+def kl_term(lg, t_ids, t_lp, kl_temp=1.0):
+    """KL(target || student) per row.
+
+    lg    [n, V] student logits (float32)
+    t_ids [n, K] the target's top-K token ids
+    t_lp  [n, K] the target's logprobs for those ids
+
+    At kl_temp == 1 this is the FULL-vocabulary KL: the K teacher entries carry
+    their true probabilities and all remaining vocabulary is lumped into one
+    residual symbol, matched against the student's own residual mass. That is
+    what penalises mass the student puts where the target has none. At
+    kl_temp != 1 the tail's logits are unknown, so both sides are restricted to
+    the teacher's top-K support and renormalised over it (as T grows this tends
+    to matching logit differences on that support -- i.e. asking the draft to
+    get the target's ORDER right where it is wrong, which is what STYLIST.md §7
+    actually calls for).
+    """
+    tl = t_lp.clamp_min(-60.0)                     # -1e30 pads -> harmless
+    sl = lg.gather(-1, t_ids)
+    if kl_temp == 1.0:
+        lps = sl - torch.logsumexp(lg, dim=-1, keepdim=True)
+        pt = tl.exp()
+        rt = (1.0 - pt.sum(-1)).clamp_min(1e-6)
+        rs = (1.0 - lps.exp().sum(-1)).clamp_min(1e-9)
+        return (pt * (tl - lps)).sum(-1) + rt * (rt.log() - rs.log())
+    lq = F.log_softmax(tl / kl_temp, dim=-1)
+    lpz = F.log_softmax(sl / kl_temp, dim=-1)
+    # Hinton's T^2: softening divides the soft-loss gradients by T^2, so without
+    # this a T=8 run is a T=1 run with the distillation term turned down 64x.
+    return kl_temp * kl_temp * (lq.exp() * (lq - lpz)).sum(-1)
+
+
+def loss_for_batch(model, heads, batch, chunk=4096, teacher=None,
+                   kl_alpha=0.0, kl_temp=1.0):
+    """Cross-entropy, plus optional KL onto the target's soft distribution.
+
+    `teacher` is (top_ids [M,K] int64, top_lp [M,K] float32, valid [M] bool)
+    already restricted to the loss-masked slots and resident on `hid`'s device.
+
+    At kl_temp == 1 the KL is over the FULL vocabulary: the K teacher entries
+    carry their true probabilities and everything outside them is lumped into a
+    single residual bucket, matched against the student's own residual mass.
+    That is what makes the objective penalise mass the student puts where the
+    target has none -- the rank>1000 proposals STYLIST.md §3 measured. At
+    kl_temp != 1 the tail's logits are unknown, so the KL is restricted to the
+    teacher's top-K support and both sides are renormalised over it.
+    """
     hid = model(batch["h"], batch["ctx_pos"], heads.embed_block(batch["ids"]),
                 batch["blk_pos"], batch["blk_group"], batch["blk_anchor"])
     m = batch["loss_mask"]
     hid = hid[m]
     lab = batch["labels"][m]
-    total, ncorrect = 0.0, 0
-    losses = []
+    ce_parts, kl_parts, ncorrect, nkl = [], [], 0, 0
     for i in range(0, hid.shape[0], chunk):
         lg = heads.logits(hid[i:i + chunk]).float()
         l = lab[i:i + chunk]
-        losses.append(F.cross_entropy(lg, l, reduction="sum"))
+        ce_parts.append(F.cross_entropy(lg, l, reduction="sum"))
         ncorrect += int((lg.argmax(-1) == l).sum())
+        if teacher is not None and kl_alpha > 0.0:
+            ok = teacher[2][i:i + chunk]
+            kl = kl_term(lg, teacher[0][i:i + chunk], teacher[1][i:i + chunk],
+                         kl_temp)
+            kl = torch.where(ok, kl, torch.zeros_like(kl))
+            kl_parts.append(kl.sum())
+            nkl += int(ok.sum())
     n = max(1, hid.shape[0])
-    return torch.stack(losses).sum() / n, ncorrect / n, n
+    ce = torch.stack(ce_parts).sum() / n
+    if kl_parts and nkl:
+        kl = torch.stack(kl_parts).sum() / nkl
+        loss = kl_alpha * kl + (1.0 - kl_alpha) * ce
+        return loss, float(ce), float(kl), ncorrect / n, n
+    return ce, float(ce), 0.0, ncorrect / n, n
 
 
 def split_holdout(store, frac, seed):
@@ -135,6 +203,15 @@ def main():
                          "checkpointing) in <1GB when the GPU is busy serving")
     ap.add_argument("--dry-run", type=int, default=0,
                     help="N sequences; smoke test only, no checkpoints")
+    ap.add_argument("--teacher-dir", default=None,
+                    help="dir of per-sequence target top-K logprobs from "
+                         "src/distill/extract_logprobs.py; enables KL distillation")
+    ap.add_argument("--kl-alpha", type=float, default=1.0,
+                    help="loss = kl_alpha*KL + (1-kl_alpha)*CE (needs --teacher-dir)")
+    ap.add_argument("--kl-temp", type=float, default=1.0)
+    ap.add_argument("--chunk", type=int, default=4096,
+                    help="logit rows per lm_head chunk; the KL path needs a second "
+                         "[chunk, vocab] buffer in backward, so drop it if HBM is tight")
     ap.add_argument("--save-every", type=int, default=400)
     ap.add_argument("--log-every", type=int, default=10)
     args = ap.parse_args()
@@ -178,6 +255,13 @@ def main():
         heads = TargetHeads.load(args.target, device=device, embed_on_cpu=True)
 
     store = FeatureStore(args.feat_dir, cache_size=3)
+    teach = None
+    if args.teacher_dir and args.kl_alpha > 0:
+        from teacher import TeacherStore
+        teach = TeacherStore(args.teacher_dir, cache_size=3)
+        print(f"[train] KL distillation: teacher={args.teacher_dir} "
+              f"({len(teach.have)} sequences), alpha={args.kl_alpha}, "
+              f"T={args.kl_temp}")
     if args.splits:
         have = {e["name"] for e in store.seqs}
         hold = set(json.load(open(os.path.join(args.splits, "holdout_all.json")))) & have
@@ -190,6 +274,11 @@ def main():
         train_names = train_names[: args.dry_run]
     json.dump(sorted(hold), open(os.path.join(args.out, "holdout.json"), "w"))
     print(f"[train] {len(train_names)} train seqs, {len(hold)} held out")
+    if teach is not None:
+        miss = [n for n in set(train_names) if n not in teach]
+        print(f"[train] teacher coverage: {len(set(train_names))-len(miss)}/"
+              f"{len(set(train_names))} train seqs "
+              f"({len(miss)} fall back to pure cross-entropy)")
 
     block_sizes = ([int(x) for x in args.block_sizes.split(",")]
                    if args.block_sizes else [args.block_size])
@@ -218,6 +307,7 @@ def main():
             group = order[i:i + args.accum]
             opt.zero_grad()
             tot_loss, tot_acc, nb = 0.0, 0.0, 0
+            tot_ce, tot_kl = 0.0, 0.0
             for name in group:
                 B = rng.choice(block_sizes)
                 anchors = sample_anchors(store, name, args.anchors, B,
@@ -229,9 +319,17 @@ def main():
                 if args.debug_tiny:
                     batch["ids"] = batch["ids"] % cfg.vocab_size
                     batch["labels"] = batch["labels"] % cfg.vocab_size
-                loss, acc, ntok = loss_for_batch(model, heads, batch)
+                tb = None
+                if teach is not None and name in teach:
+                    tb = teach.gather(name,
+                                      batch["abs_pos_cpu"][batch["loss_mask"].cpu()],
+                                      device=device)
+                loss, ce_v, kl_v, acc, ntok = loss_for_batch(
+                    model, heads, batch, chunk=args.chunk, teacher=tb,
+                    kl_alpha=args.kl_alpha, kl_temp=args.kl_temp)
                 (loss / max(1, len(group))).backward()
                 tot_loss += loss.detach().item(); tot_acc += acc; nb += 1
+                tot_ce += ce_v; tot_kl += kl_v
             if nb == 0:
                 continue
             gn = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -247,6 +345,7 @@ def main():
             if step % args.log_every == 0 or step == 1:
                 peak = torch.cuda.max_memory_allocated() / 2**30
                 rec = {"step": step, "epoch": ep, "loss": tot_loss / nb,
+                       "ce": tot_ce / nb, "kl": tot_kl / nb,
                        "loss_avg50": sum(hist) / len(hist),
                        "tok_acc": tot_acc / nb, "grad_norm": float(gn),
                        "lr": lr, "peak_gb": round(peak, 2),
