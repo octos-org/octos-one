@@ -32,10 +32,18 @@ A named company:
 
 | block | args |
 |---|---|
-| `MoversList` | `count` 1–10 (default 10), `title`, `label` |
+| `MoversList` | `count` 1–10 (default 10), `title`, `label`, `symbols` |
 | `QuoteHeader` | `ticker` (required), `range` |
 | `PriceChart` | `ticker` (required), `range` |
 | `StatGrid` | `ticker` (required), `stats` — two or more |
+
+`symbols`: the universe to rank, as tickers. **Omit it for the market as a whole.**
+Give it when the request names a *kind* of company — "top 10 AI movers", "chip
+stocks today" — because there is no market screener for a theme, and a card
+titled "AI Movers" over market-wide gainers is confidently wrong. Which companies
+count as AI is world knowledge and yours; who among them actually moved is not,
+and is computed live from the symbols you give. A company NAME here is rejected —
+tickers only.
 
 `range`: `1d` `5d` `1mo` `6mo` `1y`.
 `stats`: `price` `prev` `high` `low` `open` `currency`.

@@ -482,27 +482,29 @@ impl OctosUiAgent {
             // short by one chunk, spliced together mid-token, and an app-card
             // DSL mangled that way fails to parse for reasons the model never
             // wrote. Bridged so the consumer can prefer it at turn end.
-            // (Stage 5 / octos #1746 removed the v1 MessagePersisted lane; the
-            // commit observer now emits AssistantPersisted on the canonical v2
-            // envelope, delivered unconditionally.)
-            UiNotification::EnvelopeV2(ev) => match &ev.envelope.payload {
+            // octos #1746 removed the `message/persisted` notification; the same
+            // durable row now arrives as a canonical projection envelope, and v2
+            // delivery is UNCONDITIONAL (no capability to request). Only
+            // `AssistantPersisted` is bridged — the deltas, tool lifecycle and
+            // turn terminal already have their own notifications above, so
+            // bridging them here would double every one.
+            UiNotification::EnvelopeV2(ev) => match ev.envelope.payload {
                 PayloadV2::AssistantPersisted { text, .. } if !text.trim().is_empty() => {
-                    // Route by SESSION, not turn: `prompt_sessions` holds
-                    // exactly the prompts still in flight, so the session's
-                    // entry is the turn this row belongs to. (Retained from
-                    // the v1 lane, whose commit observer emitted no turn id.)
-                    let pid = self
-                        .prompt_sessions
+                    // Route by SESSION, not turn. The envelope does carry a
+                    // `turn_id`, but as a bare String against our `TurnId(Uuid)`
+                    // keys; `prompt_sessions` holds exactly the prompts still in
+                    // flight, so the session's entry is the turn this row
+                    // belongs to — the same routing the old lane used.
+                    self.prompt_sessions
                         .iter()
                         .find(|(_, sess)| **sess == ev.session_id)
-                        .map(|(pid, _)| *pid);
-                    pid.map(|prompt_id| {
-                        vec![AgentEvent::TextAuthoritative {
-                            prompt_id,
-                            text: text.clone(),
-                        }]
-                    })
-                    .unwrap_or_default()
+                        .map(|(prompt_id, _)| {
+                            vec![AgentEvent::TextAuthoritative {
+                                prompt_id: *prompt_id,
+                                text,
+                            }]
+                        })
+                        .unwrap_or_default()
                 }
                 _ => Vec::new(),
             },
@@ -576,6 +578,11 @@ impl OctosUiAgent {
             | UiNotification::LoopUpdated(_)
             | UiNotification::LoopFired(_)
             | UiNotification::LoopCompleted(_)
+            // MonitorRuntime (octos main, 2026-08) — kernel-side watchers;
+            // no chat-surface projection here.
+            | UiNotification::MonitorUpdated(_)
+            | UiNotification::MonitorFired(_)
+            | UiNotification::MonitorExpired(_)
             | UiNotification::ContextCompactionCompleted(_)
             | UiNotification::ContextCompactionStarted(_)
             | UiNotification::ContextNormalizationReported(_)
@@ -583,13 +590,12 @@ impl OctosUiAgent {
             // 2026-07 protocol catch-up: no plan pane / voice surface here.
             | UiNotification::PlanUpdated(_)
             | UiNotification::VoiceAudioChunk(_)
-            // Pin-bump catch-up: skill-action jobs render in octos-web; peer
-            // staging/close drives a remote-device flow the app shell doesn't
-            // surface yet.
+            | UiNotification::Envelope(_)
+            // 2026-08 catch-up: background skill jobs and peer staging have no
+            // surface in this app. (EnvelopeV2 is bridged above, not ignored.)
             | UiNotification::SkillActionJobUpdated(_)
             | UiNotification::PeerStaged(_)
-            | UiNotification::PeerClosed(_)
-            | UiNotification::Envelope(_) => Vec::new(),
+            | UiNotification::PeerClosed(_) => Vec::new(),
         }
     }
 }
@@ -687,8 +693,9 @@ impl Agent for OctosUiAgent {
             // Driven by the composer's "Thinking" toggle (`set_thinking`).
             // `High` when on; `None` defers to the gateway/profile default.
             reasoning_effort: self.thinking.then_some(ReasoningEffortLevel::High),
-            // Context-scoped tools are opt-in per turn; ordinary chat turns
-            // send `None` so no context-gated tools are advertised.
+            // Context-scoped tools stay unadvertised: an app agent's whole job
+            // is to emit a card, and every extra tool it could reach for is a
+            // way to answer with something other than one.
             tool_context: None,
             live_video: false,
         }));

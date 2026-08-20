@@ -1,0 +1,168 @@
+# level: L0
+# model: weather-activity
+#
+# "What should I DO in this weather?" — the composed app, as an L0 card.
+#
+# The parent version branched with `if a >= 18 && aqi < 100 && precip < 40 { … }
+# else { … }`. L0 has neither conjunction nor `else`, and that is not a gap to
+# work around: a pile of overlapping guards is how a card renders two verdicts at
+# once. What it has instead is a DECISION TREE of complementary siblings — at
+# every level the two `when`s partition the value, so exactly one leaf is reached
+# and each verdict is written once, as a named view.
+
+# ── sources ──────────────────────────────────────────────────────────────────
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind])
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+
+# ── the picks ────────────────────────────────────────────────────────────────
+# THE ONE THING THE MODEL KNOWS THAT THE HOST DOES NOT.
+#
+# `sys.places(category: "museum")` is a 4 km unranked radius around the city's
+# centroid — it answers "what is tagged museum nearby", which is a different
+# question from "what is worth a day". Asked about Beijing it returned a police
+# museum and a hospital's history hall, and never the Forbidden City, which is
+# not tagged `museum` at all. A proximity query cannot rank, and OSM cannot say
+# what matters.
+#
+# A model can. So it names the SUBJECTS and the host resolves every fact about
+# them. This is not §4 being bent: a card already carries `state city { initial:
+# "Kyoto" }` and `state q { initial: "lofi hip hop radio" }`, and these are the
+# same thing — what to ASK, never what was answered. The ORDER is the
+# recommendation, and an ordering is the card's judgement in exactly the sense
+# `when now.precip >= 40` already is.
+#
+# And it fails safely. Invent a place and the search answers nothing, so the row
+# is ABSENT — a hole a reader can see. That is the whole argument: a hallucinated
+# number renders as a plausible number, and a hallucinated subject renders as
+# nothing at all.
+source out1 sys.search(query: "Fushimi Inari Shrine Kyoto", count: 1, fields: [name, label])
+source out2 sys.search(query: "Arashiyama Bamboo Grove Kyoto", count: 1, fields: [name, label])
+source out3 sys.search(query: "Kiyomizu-dera Kyoto", count: 1, fields: [name, label])
+source in1  sys.search(query: "Kyoto National Museum", count: 1, fields: [name, label])
+source in2  sys.search(query: "Nishiki Market Kyoto", count: 1, fields: [name, label])
+source in3  sys.search(query: "Kyoto Railway Museum", count: 1, fields: [name, label])
+
+# ── the backdrop ─────────────────────────────────────────────────────────────
+# A SCENE, never the place's name. `sys.photo` is a generative image model, so
+# asking it for "Beijing" asks it to INVENT a Beijing — and it invented one that
+# reads as Taipei 101, under a title saying Beijing. A fabricated depiction of a
+# real place, rendering as a plausible photograph, with nothing on screen saying
+# it was made up.
+#
+# So the card writes a MOOD instead. Prose asserts nothing: this is §4's
+# `model-copy` doing what it is for, and the image is honestly a backdrop rather
+# than dishonestly a photograph.
+#
+# `cond:` is what keeps it honest about the DAY. The scene is the card's words;
+# the weather is the host's fact, and it folds the live condition into the prompt
+# so a page reading 92 % rain is not lit like a clear afternoon.
+state mood { shape: text, initial: "old city rooftops at street level, cinematic, muted" }
+source scene sys.photo(query: state.mood, cond: now.cond)
+source env.locale sys.locale()
+
+# ── state ────────────────────────────────────────────────────────────────────
+state city  { shape: text, initial: "Kyoto" }   # "" ⇒ the device's own location
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+
+event toggle_units { units: cycle(.c, .f) }
+
+# ── copy ─────────────────────────────────────────────────────────────────────
+copy eyebrow  { class: vocabulary, en: "TODAY", zh: "今天" }
+copy loading  { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline  { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy go_out   { class: vocabulary, en: "Good day to be outside", zh: "适合外出" }
+copy stay_in  { class: vocabulary, en: "Better indoors today", zh: "今天更适合室内" }
+copy why_wet  { class: vocabulary, en: "rain is likely", zh: "可能有雨" }
+copy why_air  { class: vocabulary, en: "the air is poor", zh: "空气质量差" }
+copy why_cold { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
+copy why_fine { class: vocabulary, en: "mild, dry and clear", zh: "温和、干燥、空气好" }
+copy aqi_lbl  { class: vocabulary, en: "AIR", zh: "空气" }
+copy rain_lbl { class: vocabulary, en: "RAIN", zh: "降水" }
+
+# ── a pick ───────────────────────────────────────────────────────────────────
+# One row, written once. Six sources of the same shape are six chances to drift
+# apart, and the component is what stops them.
+#
+# `label` is the host's secondary line — city, region, country — so a reader can
+# tell which Kiyomizu-dera answered. The card does not write it; the search does.
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+         TextRow(text: hit.name)
+         TextCaption(text: hit.label)
+       }
+}
+
+# ── view ─────────────────────────────────────────────────────────────────────
+view root Photo(src: scene, pad: .page) {
+       when now.$state == .pending { TextBody(text: copy.loading) }
+       when now.$state == .failed  { TextBody(text: copy.offline) }
+       current
+       verdict
+     }
+
+# The parent's CURRENT block, in roles. The temperature is a value with a unit,
+# not a string with a degree sign glued on.
+view current Col(gap: 4) {
+       TextCaption(text: copy.eyebrow)
+       TextTitle(text: place.name, width: .fill)
+       Row(align: .center, gap: 12, on_tap: toggle_units) {
+         WeatherIcon(cond: now.cond, size: .hero)
+         TextHero(value: now.temp, unit: units)
+       }
+       Row(gap: 14) {
+         Tile(label: copy.rain_lbl, value: now.precip, unit: .pct)
+         Tile(label: copy.aqi_lbl, value: air.aqi)
+       }
+     }
+
+# ── the decision ─────────────────────────────────────────────────────────────
+# Read top to bottom: each pair of `when`s splits one number, and the second of
+# the pair is the first's exact complement. Nothing overlaps, so nothing renders
+# twice, and there is no case with no answer.
+#
+# The ORDER is the reasoning: rain rules the day out first, then the air, then
+# the temperature. A tree makes that order visible, which a conjunction did not.
+view verdict Col(gap: 10) {
+       when now.precip >= 40 { wet }
+       when now.precip < 40 {
+         when air.aqi >= 100 { smoggy }
+         when air.aqi < 100 {
+           when now.temp < 12 { cold }
+           when now.temp >= 12 { fine }
+         }
+       }
+     }
+
+view wet    Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_wet)
+                           indoors }
+view smoggy Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_air)
+                           indoors }
+view cold   Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_cold)
+                           indoors }
+view fine   Col(gap: 10) { TextTitle(text: copy.go_out)
+                           TextBody(text: copy.why_fine)
+                           outdoors }
+
+# ── the two answers ──────────────────────────────────────────────────────────
+# The `for` is a SIBLING of the pending line, never behind a `.ready` guard. A
+# card whose only reference to a source sits inside `when src.$state == .ready`
+# gates the render on a state the render produces — the activity card deadlocked
+# on exactly that and drew "Finding places nearby…" forever.
+view outdoors Panel {
+       when out1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in out1 key h.label { Pick(hit: h) Rule() }
+       for h, i in out2 key h.label { Pick(hit: h) Rule() }
+       for h, i in out3 key h.label { Pick(hit: h) Rule() }
+     }
+
+view indoors Panel {
+       when in1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in in1 key h.label { Pick(hit: h) Rule() }
+       for h, i in in2 key h.label { Pick(hit: h) Rule() }
+       for h, i in in3 key h.label { Pick(hit: h) Rule() }
+     }

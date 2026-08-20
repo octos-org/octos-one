@@ -1,0 +1,37 @@
+# level: L1
+# model: city-picks
+
+copy title { class: user-copy, en: "Where to go" }
+copy blurb { class: user-copy, en: "Your saved cities, and how each one feels right now" }
+copy add   { class: user-copy, en: "Add a city" }
+
+source env.locale sys.locale()
+source picks     sys.cities(fields: [name, temp, feels, humidity, wind, cond])
+
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state draft { shape: text, initial: "" }
+
+event toggle_units { units: cycle(.c, .f) }
+event add          { picks: append($value) }
+
+view root Surface(pad: .page) {
+  Col(gap: 8) {
+    TextTitle(text: copy.title)
+    TextCaption(text: copy.blurb, width: .fill)
+    Field(text: draft, placeholder: copy.add, on_commit: add, width: .fill)
+    Panel {
+      for c, i in picks key c.name {
+        Row(align: .center, on_tap: toggle_units, value: c.name) {
+          Col(gap: 2, width: .fill) {
+            TextRow(text: c.name)
+            TextCaption(value: c.humidity, unit: .pct)
+          }
+          WeatherIcon(cond: c.cond, size: .row)
+          TextValue(value: c.temp, unit: units)
+          TextCaption(value: c.feels - c.temp, unit: units, glyph: "≈")
+        }
+        Rule()
+      }
+    }
+  }
+}

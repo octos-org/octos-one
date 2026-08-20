@@ -73,7 +73,24 @@ pub mod weather;
 /// ONE list to revert. `card_splash_body` accepts either fence regardless, so
 /// removing a domain here returns it to the DSL path immediately with no other
 /// change.
-pub const PLAN_DOMAINS: &[&str] = &["weather", "news", "stock"];
+/// `stock` is OUT: it now generates as an L0 card.
+///
+/// This gate is checked before `l0_prompt_for`, so a domain listed here never
+/// reaches the L0 pipeline no matter what `a2app-l0/apps/<id>/` says — which is
+/// why stock had an L0 spec, an exemplar and a passing checker, and the AMA
+/// still produced a plan. Removing it here is the whole switch.
+/// EMPTY: weather and news generate as L0 cards now.
+///
+/// They were held on the plan path because L0 had no live translation for what
+/// they need — `sys.weather`, `sys.airquality`, `sys.geocode`, `sys.news` and
+/// `sys.photo` all fell back to the seeded blob, which a live card does not
+/// have, so an L0 weather card rendered an em dash in every reading. With those
+/// translated (and a source argument that names another source resolved to the
+/// parent's own call) an L0 weather card lowers to 28 live calls.
+///
+/// This list is still the ONE place to revert: putting a domain back returns it
+/// to the plan path with no other change.
+pub const PLAN_DOMAINS: &[&str] = &[];
 
 pub fn domain_uses_plan(domain: &str) -> bool {
     PLAN_DOMAINS.contains(&domain)
@@ -90,9 +107,13 @@ pub fn lower_plan(json: &str) -> Result<String, String> {
         "weather" => weather::lower(json),
         "news" => news::lower(json),
         "stock" => stock::lower(json),
+        // The KINDS this function lowers — not `PLAN_DOMAINS`, which says which
+        // domains are PROMPTED for a plan. The two were the same list until
+        // weather and news moved to L0, and then the message read "expected one
+        // of " with nothing after it: a plan is still lowerable whether or not
+        // its domain is currently asked for one.
         other => Err(format!(
-            "unsupported plan kind {other:?} — expected one of {}",
-            PLAN_DOMAINS.join(", ")
+            "unsupported plan kind {other:?} — expected one of weather, news, stock"
         )),
     }
 }

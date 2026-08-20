@@ -1,0 +1,89 @@
+# level: L1
+# model: convert
+#
+# A unit converter. L1, and only just: it computes ONE value from numbers the
+# card already declared, which is exactly the production L1 adds.
+#
+# The parent card carried eleven script functions, a keypad accumulator and a
+# `fn tick()`. None of that survives, and most of it should not: digit
+# accumulation is `amt = amt * 10 + d`, arithmetic in a TRANSITION, and L0's
+# transitions are `set` / `toggle` / `cycle` / `clear` on purpose. What is left is
+# the actual app — an amount, a pair of units, and the number between them.
+#
+# ONE FORMULA, BOTH DIRECTIONS. `factor` and `offset` describe the conversion
+# rather than the card branching per unit family: km→mi is ×0.621371 +0, and
+# °C→°F is ×1.8 +32. The affine case is why `offset` exists; without it
+# temperature would need its own card.
+
+source env.locale sys.locale()
+
+# ── state ────────────────────────────────────────────────────────────────────
+# The bootstrap surface: an intent fills these five and the card follows.
+# `factor` and `offset` are COEFFICIENTS, not facts — 0.621371 is a definition
+# and does not go stale the way a price does (§4, and §9.3 admits a coefficient
+# in an expression that reads something).
+state amount { shape: number, initial: 1 }
+state factor { shape: number, initial: 0.621371 }
+state offset { shape: number, initial: 0 }
+state dir    { shape: enum[fwd, rev], initial: .fwd }
+
+event set_amount { amount: set($value) }
+event flip       { dir: cycle(.fwd, .rev) }
+
+# ── copy ─────────────────────────────────────────────────────────────────────
+# The unit NAMES are the card's own labels, so they are copy. Which unit is
+# which is `dir`'s business, and the two rows below are complementary.
+copy pair_ab { class: vocabulary, en: "km → mi", zh: "公里 → 英里" }
+copy pair_ba { class: vocabulary, en: "mi → km", zh: "英里 → 公里" }
+copy eyebrow { class: vocabulary, en: "CONVERT", zh: "换算" }
+copy swap    { class: vocabulary, en: "Swap",   zh: "互换" }
+copy unit_to { class: vocabulary, en: "mi",     zh: "英里" }
+copy unit_fr { class: vocabulary, en: "km",     zh: "公里" }
+copy one     { class: vocabulary, en: "1" }
+copy ten     { class: vocabulary, en: "10" }
+copy hundred { class: vocabulary, en: "100" }
+
+# ── view ─────────────────────────────────────────────────────────────────────
+view root Surface(pad: .page) {
+       TextCaption(text: copy.eyebrow)
+       heading
+       entry
+       result
+       presets
+     }
+
+# Which way round the card is reading, said in words rather than in an arrow the
+# reader has to decode. Complementary guards on `dir`: exactly one renders.
+view heading Row(align: .center, gap: 8) {
+       when dir == .fwd { TextTitle(text: copy.pair_ab, width: .fill) }
+       when dir == .rev { TextTitle(text: copy.pair_ba, width: .fill) }
+       Chip(text: copy.swap, on_tap: flip, width: .fit)
+     }
+
+# What is being converted, so the hero number below is not a bare figure. There
+# is no numeric Field role — `Field` binds a TEXT path — so the amount arrives
+# from the request and the chips adjust it. That is the shape these requests
+# actually take: "how many miles is 42 km" names its number.
+view entry Row(align: .center, gap: 6) {
+       when dir == .fwd { TextValue(value: amount) TextRow(text: copy.unit_fr) }
+       when dir == .rev { TextValue(value: amount) TextRow(text: copy.unit_to) }
+     }
+
+# THE APP. One expression each way, and the reverse is the forward one solved for
+# the other side — so a card cannot drift into two conversions that disagree.
+# `format: .ratio` is not decoration. The value is computed in the BACKEND now
+# (an expression lowers to a live call), so nothing rounds it on the way out —
+# 42 km came out as 26.097582 miles, which is correct and unreadable. One decimal
+# is the converter's answer; the card asks for it and the runtime does it.
+view result Col(gap: 2) {
+       when dir == .fwd { TextHero(value: amount * factor + offset, format: .ratio) }
+       when dir == .rev { TextHero(value: (amount - offset) / factor, format: .ratio) }
+     }
+
+# A keypad is not expressible and would not be worth it if it were; the amounts
+# people actually convert are round.
+view presets Row(gap: 8) {
+       Chip(text: copy.one,     on_tap: set_amount, value: 1,   active: amount == 1)
+       Chip(text: copy.ten,     on_tap: set_amount, value: 10,  active: amount == 10)
+       Chip(text: copy.hundred, on_tap: set_amount, value: 100, active: amount == 100)
+     }

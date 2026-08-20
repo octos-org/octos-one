@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "Seed data for the nav card. Almost every value here exists to be IGNORED.",
+    "",
+    "The card's coordinates, route, duration, distance and turn instruction all",
+    "lower to live calls, so the numbers that reach the screen are the host's, not",
+    "these. They are supplied because realization needs a shape to walk, and",
+    "because a lowering that reached for one of them instead of emitting its call",
+    "would then be visible in the screenshot as a place the device is not.",
+    "",
+    "`origin` and `dest` are the exception: they are the user's own words used as",
+    "a QUERY, which is what a request naming two places gives the card."
+  ],
+  "origin": "Saratoga High School",
+  "dest": "Stanford University",
+  "query": "",
+  "screen": "plan",
+  "found": [],
+  "here": { "lat": -9999, "lon": -9999, "accuracy": 0, "ok": 0 },
+  "origin_place": [{ "id": "o1", "name": "SEEDED ORIGIN", "lat": -9999, "lon": -9999 }],
+  "dest_place": [{ "id": "d1", "name": "SEEDED DEST", "lat": -9999, "lon": -9999 }],
+  "trip": { "duration": "SEEDED MIN", "distance": "SEEDED KM" },
+  "step": { "instruction": "SEEDED INSTRUCTION", "remaining": "SEEDED REMAINING" },
+  "env": { "locale": { "lang": "en" } },
+  "copy": {
+    "where": "Where to?",
+    "from": "FROM",
+    "to": "TO",
+    "here_now": "Starting from…",
+    "away": "away",
+    "seeking": "Finding a route…",
+    "start": "Go",
+    "stop": "End",
+    "left": "left"
+  }
+}

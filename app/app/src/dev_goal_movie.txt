@@ -1,0 +1,111 @@
+MISSION: Author the best-looking MOVIE BOX-OFFICE card you can, in octos L0. Each round a vision model scores your ACTUAL rendered screen and gives a critique — raise the score. Output ONLY the full card between BEGIN_CARD and END_CARD.
+
+THE RENDERER NOW HANDLES (don't fight these):
+- `Thumb(src: copy.pN)` renders a real PORTRAIT movie poster (2:3), undistorted — just give it a poster URL.
+- Text WRAPS now — a long `TextTitle` flows to multiple lines instead of clipping. So make titles BIG (`TextTitle`) for hierarchy; they will not clip.
+
+L0 RULES:
+- copy: `copy name { class: vocabulary, en: "text" }` (class MUST be vocabulary).
+- text: `TextHero/TextTitle/TextRow/TextCaption(text: copy.name)`. Hierarchy = TextTitle (title) > TextRow (key stat) > TextCaption (details).
+- containers: `Card`, `Col(gap: N, width: .fill)`, `Row(align: .center, gap: N)`, `Rule`, `Surface`. `pad: .page` on `Surface`/`Photo`, NOT on `Col`.
+- root: `Surface(pad: .page) { Col(gap: N) { ...header... row1 row2 ... } }`. A clean dark Surface beats a busy photo backdrop for text contrast (the critic keeps flagging contrast).
+- per film: `view rowI Card { Row(align:.center, gap:18) { Thumb(src: copy.pI) Col(gap:9, width:.fill) { ...info lines... } } }`.
+
+USE THIS REAL DATA (keep the exact poster URLs; the cast string is IMDb's):
+  1. "Avatar" (2009) · $2.923B · Sam Worthington, Zoe Saldaña · poster https://m.media-amazon.com/images/M/MV5BMDEzMmQwZjctZWU2My00MWNlLWE0NjItMDJlYTRlNGJiZjcyXkEyXkFqcGc@._V1_.jpg
+  2. "Avengers: Endgame" (2019) · $2.799B · Robert Downey Jr., Chris Evans · poster https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_.jpg
+  3. "Avatar: The Way of Water" (2022) · $2.320B · Sam Worthington, Zoe Saldaña · poster https://m.media-amazon.com/images/M/MV5BNWI0Y2NkOWEtMmM2OC00MjQ3LWI1YzItZGQxYzQ3NzI4NWZmXkEyXkFqcGc@._V1_.jpg
+  4. "Titanic" (1997) · $2.257B · Leonardo DiCaprio, Kate Winslet · poster https://m.media-amazon.com/images/M/MV5BYzYyN2FiZmUtYWYzMy00MzViLWJkZTMtOGY1ZjgzNWMwN2YxXkEyXkFqcGc@._V1_.jpg
+  5. "Star Wars: Episode VII - The Force Awakens" (2015) · $2.068B · Daisy Ridley, John Boyega · poster https://m.media-amazon.com/images/M/MV5BOTAzODEzNDAzMl5BMl5BanBnXkFtZTgwMDU1MTgzNzE@._V1_.jpg
+  6. "Avengers: Infinity War" (2018) · $2.052B · Robert Downey Jr., Chris Hemsworth · poster https://m.media-amazon.com/images/M/MV5BMjMxNjY2MDU1OV5BMl5BanBnXkFtZTgwNzY1MTUwNTM@._V1_.jpg
+  7. "Spider-Man: No Way Home" (2021) · $1.922B · Tom Holland, Zendaya · poster https://m.media-amazon.com/images/M/MV5BMmFiZGZjMmEtMTA0Ni00MzA2LTljMTYtZGI2MGJmZWYzZTQ2XkEyXkFqcGc@._V1_.jpg
+  8. "Inside Out 2" (2024) · $1.699B · Amy Poehler, Maya Hawke · poster https://m.media-amazon.com/images/M/MV5BYWY3MDE2Y2UtOTE3Zi00MGUzLTg2MTItZjE1ZWVkMGVlODRmXkEyXkFqcGc@._V1_.jpg
+  9. "Jurassic World" (2015) · $1.671B · Chris Pratt, Bryce Dallas Howard · poster https://m.media-amazon.com/images/M/MV5BNzBhNzlkM2UtZTQyOC00NjUyLTkzMmMtNDQ1YTM5N2NmMGE5XkEyXkFqcGc@._V1_.jpg
+  10. "The Lion King" (2019) · $1.663B · Donald Glover, Beyoncé · poster https://m.media-amazon.com/images/M/MV5BMjIwMjE1Nzc4NV5BMl5BanBnXkFtZTgwNDg4OTA1NzM@._V1_.jpg
+
+BEGIN from this WORKING card (it scores ~6) and push the design higher per each critique — stronger hierarchy, spacing, contrast, richer per-film info:
+
+=== STARTING CARD ===
+copy hdr { class: vocabulary, en: "Box Office · All-Time Top 10" }
+copy sub { class: vocabulary, en: "Ranked by worldwide gross · posters & cast live from IMDb" }
+copy r1 { class: vocabulary, en: "NO. 1  ·  ALL-TIME HIGH" }
+copy t1 { class: vocabulary, en: "Avatar" }
+copy g1 { class: vocabulary, en: "$2.923B worldwide gross" }
+copy d1 { class: vocabulary, en: "2009  ·  Sci-Fi  ·  IMDb 7.9" }
+copy c1 { class: vocabulary, en: "A Marine caught between two worlds on Pandora" }
+copy e1 { class: vocabulary, en: "Starring Sam Worthington,  Zoe Saldaña" }
+copy p1 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BMDEzMmQwZjctZWU2My00MWNlLWE0NjItMDJlYTRlNGJiZjcyXkEyXkFqcGc@._V1_.jpg" }
+copy r2 { class: vocabulary, en: "NO. 2  ·  ALL-TIME HIGH" }
+copy t2 { class: vocabulary, en: "Avengers: Endgame" }
+copy g2 { class: vocabulary, en: "$2.799B worldwide gross" }
+copy d2 { class: vocabulary, en: "2019  ·  Action  ·  IMDb 8.4" }
+copy c2 { class: vocabulary, en: "The Avengers assemble to undo Thanos's snap" }
+copy e2 { class: vocabulary, en: "Starring Robert Downey Jr.,  Chris Evans" }
+copy p2 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_.jpg" }
+copy r3 { class: vocabulary, en: "NO. 3  ·  ALL-TIME HIGH" }
+copy t3 { class: vocabulary, en: "Avatar: The Way of Water" }
+copy g3 { class: vocabulary, en: "$2.320B worldwide gross" }
+copy d3 { class: vocabulary, en: "2022  ·  Sci-Fi  ·  IMDb 7.5" }
+copy c3 { class: vocabulary, en: "The Sully family fights for Pandora's seas" }
+copy e3 { class: vocabulary, en: "Starring Sam Worthington,  Zoe Saldaña" }
+copy p3 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BNWI0Y2NkOWEtMmM2OC00MjQ3LWI1YzItZGQxYzQ3NzI4NWZmXkEyXkFqcGc@._V1_.jpg" }
+copy r4 { class: vocabulary, en: "NO. 4  ·  ALL-TIME HIGH" }
+copy t4 { class: vocabulary, en: "Titanic" }
+copy g4 { class: vocabulary, en: "$2.257B worldwide gross" }
+copy d4 { class: vocabulary, en: "1997  ·  Romance  ·  IMDb 7.9" }
+copy c4 { class: vocabulary, en: "Love blooms aboard the doomed ocean liner" }
+copy e4 { class: vocabulary, en: "Starring Leonardo DiCaprio,  Kate Winslet" }
+copy p4 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BYzYyN2FiZmUtYWYzMy00MzViLWJkZTMtOGY1ZjgzNWMwN2YxXkEyXkFqcGc@._V1_.jpg" }
+copy r5 { class: vocabulary, en: "NO. 5  ·  ALL-TIME HIGH" }
+copy t5 { class: vocabulary, en: "Star Wars: Episode VII - The Force Awakens" }
+copy g5 { class: vocabulary, en: "$2.068B worldwide gross" }
+copy d5 { class: vocabulary, en: "2015  ·  Sci-Fi  ·  IMDb 7.8" }
+copy c5 { class: vocabulary, en: "A new generation takes on the First Order" }
+copy e5 { class: vocabulary, en: "Starring Daisy Ridley,  John Boyega" }
+copy p5 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BOTAzODEzNDAzMl5BMl5BanBnXkFtZTgwMDU1MTgzNzE@._V1_.jpg" }
+copy r6 { class: vocabulary, en: "NO. 6  ·  ALL-TIME HIGH" }
+copy t6 { class: vocabulary, en: "Avengers: Infinity War" }
+copy g6 { class: vocabulary, en: "$2.052B worldwide gross" }
+copy d6 { class: vocabulary, en: "2018  ·  Action  ·  IMDb 8.4" }
+copy c6 { class: vocabulary, en: "The heroes make their last stand against Thanos" }
+copy e6 { class: vocabulary, en: "Starring Robert Downey Jr.,  Chris Hemsworth" }
+copy p6 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BMjMxNjY2MDU1OV5BMl5BanBnXkFtZTgwNzY1MTUwNTM@._V1_.jpg" }
+copy r7 { class: vocabulary, en: "NO. 7  ·  ALL-TIME HIGH" }
+copy t7 { class: vocabulary, en: "Spider-Man: No Way Home" }
+copy g7 { class: vocabulary, en: "$1.922B worldwide gross" }
+copy d7 { class: vocabulary, en: "2021  ·  Action  ·  IMDb 8.2" }
+copy c7 { class: vocabulary, en: "Peter's identity is out; enter Doctor Strange" }
+copy e7 { class: vocabulary, en: "Starring Tom Holland,  Zendaya" }
+copy p7 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BMmFiZGZjMmEtMTA0Ni00MzA2LTljMTYtZGI2MGJmZWYzZTQ2XkEyXkFqcGc@._V1_.jpg" }
+copy r8 { class: vocabulary, en: "NO. 8  ·  ALL-TIME HIGH" }
+copy t8 { class: vocabulary, en: "Inside Out 2" }
+copy g8 { class: vocabulary, en: "$1.699B worldwide gross" }
+copy d8 { class: vocabulary, en: "2024  ·  Animation  ·  IMDb 7.6" }
+copy c8 { class: vocabulary, en: "New emotions crowd teenage Riley's mind" }
+copy e8 { class: vocabulary, en: "Starring Amy Poehler,  Maya Hawke" }
+copy p8 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BYWY3MDE2Y2UtOTE3Zi00MGUzLTg2MTItZjE1ZWVkMGVlODRmXkEyXkFqcGc@._V1_.jpg" }
+copy r9 { class: vocabulary, en: "NO. 9  ·  ALL-TIME HIGH" }
+copy t9 { class: vocabulary, en: "Jurassic World" }
+copy g9 { class: vocabulary, en: "$1.671B worldwide gross" }
+copy d9 { class: vocabulary, en: "2015  ·  Action  ·  IMDb 6.9" }
+copy c9 { class: vocabulary, en: "A new dinosaur park spins fatally out of control" }
+copy e9 { class: vocabulary, en: "Starring Chris Pratt,  Bryce Dallas Howard" }
+copy p9 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BNzBhNzlkM2UtZTQyOC00NjUyLTkzMmMtNDQ1YTM5N2NmMGE5XkEyXkFqcGc@._V1_.jpg" }
+copy r10 { class: vocabulary, en: "NO. 10  ·  ALL-TIME HIGH" }
+copy t10 { class: vocabulary, en: "The Lion King" }
+copy g10 { class: vocabulary, en: "$1.663B worldwide gross" }
+copy d10 { class: vocabulary, en: "2019  ·  Animation  ·  IMDb 6.8" }
+copy c10 { class: vocabulary, en: "A lion cub reclaims his rightful kingdom" }
+copy e10 { class: vocabulary, en: "Starring Donald Glover,  Beyoncé" }
+copy p10 { class: vocabulary, en: "https://m.media-amazon.com/images/M/MV5BMjIwMjE1Nzc4NV5BMl5BanBnXkFtZTgwNDg4OTA1NzM@._V1_.jpg" }
+view row1  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p1)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r1)  TextTitle(text: copy.t1)  TextRow(text: copy.g1)  TextCaption(text: copy.d1)  TextCaption(text: copy.c1)  TextCaption(text: copy.e1) } } }
+view row2  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p2)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r2)  TextTitle(text: copy.t2)  TextRow(text: copy.g2)  TextCaption(text: copy.d2)  TextCaption(text: copy.c2)  TextCaption(text: copy.e2) } } }
+view row3  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p3)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r3)  TextTitle(text: copy.t3)  TextRow(text: copy.g3)  TextCaption(text: copy.d3)  TextCaption(text: copy.c3)  TextCaption(text: copy.e3) } } }
+view row4  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p4)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r4)  TextTitle(text: copy.t4)  TextRow(text: copy.g4)  TextCaption(text: copy.d4)  TextCaption(text: copy.c4)  TextCaption(text: copy.e4) } } }
+view row5  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p5)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r5)  TextTitle(text: copy.t5)  TextRow(text: copy.g5)  TextCaption(text: copy.d5)  TextCaption(text: copy.c5)  TextCaption(text: copy.e5) } } }
+view row6  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p6)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r6)  TextTitle(text: copy.t6)  TextRow(text: copy.g6)  TextCaption(text: copy.d6)  TextCaption(text: copy.c6)  TextCaption(text: copy.e6) } } }
+view row7  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p7)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r7)  TextTitle(text: copy.t7)  TextRow(text: copy.g7)  TextCaption(text: copy.d7)  TextCaption(text: copy.c7)  TextCaption(text: copy.e7) } } }
+view row8  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p8)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r8)  TextTitle(text: copy.t8)  TextRow(text: copy.g8)  TextCaption(text: copy.d8)  TextCaption(text: copy.c8)  TextCaption(text: copy.e8) } } }
+view row9  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p9)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r9)  TextTitle(text: copy.t9)  TextRow(text: copy.g9)  TextCaption(text: copy.d9)  TextCaption(text: copy.c9)  TextCaption(text: copy.e9) } } }
+view row10  Card { Row(align: .center, gap: 18) { Thumb(src: copy.p10)  Col(gap: 9, width: .fill) { TextCaption(text: copy.r10)  TextTitle(text: copy.t10)  TextRow(text: copy.g10)  TextCaption(text: copy.d10)  TextCaption(text: copy.c10)  TextCaption(text: copy.e10) } } }
+view root  Surface(pad: .page) { Col(gap: 28) { TextHero(text: copy.hdr)  TextCaption(text: copy.sub)  row1  row2  row3  row4  row5  row6  row7  row8  row9  row10 } }

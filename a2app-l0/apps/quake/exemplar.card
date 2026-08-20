@@ -1,0 +1,75 @@
+# level: L0
+# model: quake
+#
+# The USGS M2.5+ feed of the last 24 hours, newest first.
+#
+# A feed card, and the shape L0 renders best: it names WHO and WHAT and shows
+# rows. Nothing here is computed and nothing here is a fact — the magnitudes,
+# places and depths all arrive from the one declared source, which is why this
+# card cannot go stale the way a card with a number typed into it does.
+
+# ── sources ──────────────────────────────────────────────────────────────────
+# The lead event and the rest, from ONE feed. `offset: 1` is why the list starts
+# BELOW the lead instead of repeating it.
+source lead   sys.quakes(count: 1, fields: [id, mag, place, depth, ago, lat, lon])
+source feed   sys.quakes(count: 6, offset: 1, fields: [id, mag, place, ago])
+source env.locale sys.locale()
+
+# ── copy ─────────────────────────────────────────────────────────────────────
+copy eyebrow { class: vocabulary, en: "USGS · LAST 24 HOURS", zh: "USGS · 最近 24 小时" }
+copy heading { class: vocabulary, en: "Latest Earthquakes", zh: "最近地震" }
+copy loading { class: vocabulary, en: "Reading the feed…", zh: "正在读取…" }
+copy offline { class: vocabulary, en: "Can't reach USGS", zh: "无法连接 USGS" }
+copy quiet   { class: vocabulary, en: "Nothing above M2.5 in the last day", zh: "最近一天没有 2.5 级以上地震" }
+copy earlier { class: vocabulary, en: "EARLIER", zh: "更早" }
+copy depth   { class: vocabulary, en: "depth", zh: "深度" }
+
+# ── view ─────────────────────────────────────────────────────────────────────
+# §5.9: "not yet" and "went wrong" are different facts and each says so.
+view root Surface(pad: .page) {
+       TextCaption(text: copy.eyebrow)
+       TextTitle(text: copy.heading, width: .fill)
+       when lead.$state == .pending { TextBody(text: copy.loading) }
+       when lead.$state == .failed  { TextBody(text: copy.offline) }
+       latest
+       earlier_list
+     }
+
+# The most recent event, large. The magnitude is the number a reader wants
+# first, so it is the hero; the place tells them whether to care.
+view latest Panel {
+       for q, i in lead key q.id {
+         Col(gap: 4) {
+           TextHero(value: q.mag)
+           TextRow(text: q.place, width: .fill)
+           Row(gap: 10) {
+             TextCaption(text: q.ago)
+             TextCaption(text: q.depth, glyph: "↓")
+           }
+         }
+         # Where it happened. `Map` is trip-shaped and this is a point, so the
+         # satellite view is the role that actually answers "where" — and it
+         # fetches its own imagery, so the card names only the place.
+         Satellite(lat: q.lat, lon: q.lon)
+       }
+     }
+
+view earlier_list Col {
+       TextCaption(text: copy.earlier)
+       # An empty feed is not a failure — a quiet day is an answer, and saying so
+       # is the difference between "nothing happened" and "nothing loaded".
+       when feed.$state == .ready { rows }
+     }
+
+view rows Panel {
+       for q, i in feed key q.id {
+         Row(align: .center, gap: 10) {
+           TextValue(value: q.mag)
+           Col(gap: 2, width: .fill) {
+             TextRow(text: q.place)
+             TextCaption(text: q.ago)
+           }
+         }
+         Rule()
+       }
+     }

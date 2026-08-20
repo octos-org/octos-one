@@ -628,6 +628,19 @@ fn stock(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
                     .and_then(|c| c.as_u64())
                     .unwrap_or(10)
                     .clamp(1, 10) as usize;
+                // The same universe the makepad lowering passes. One plan, two
+                // backends — if only one of them carries `symbols`, an AI query
+                // renders an AI list on makepad and market-wide gainers here.
+                let universe = args
+                    .and_then(|a| a.get("symbols"))
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|t| t.as_str())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    })
+                    .unwrap_or_default();
                 out.push(
                     Node::new("col").n("spacing", 2.0).kids(vec![
                         txt(role::CAPTION, &arg("label", if zh { "今日涨幅榜" } else { "TODAY · TOP GAINERS" })),
@@ -640,12 +653,12 @@ fn stock(sections: &[serde_json::Value], zh: bool) -> Vec<Node> {
                         Node::new("row").n("spacing", 10.0).kids(vec![
                             txt(role::ROW, &format!("{}", r + 1)).n("w", 26.0),
                             Node::new("col").n("spacing", 2.0).n("grow", 1.0).kids(vec![
-                                txt(role::ROW, &format!("sys.movers({r}, \"symbol\")")),
-                                txt(role::CAPTION, &format!("sys.movers({r}, \"name\")")),
+                                txt(role::ROW, &format!("sys.movers({r}, \"symbol\", {universe:?})")),
+                                txt(role::CAPTION, &format!("sys.movers({r}, \"name\", {universe:?})")),
                             ]),
                             Node::new("col").n("spacing", 2.0).kids(vec![
-                                txt(role::ROW, &format!("\"$\" + sys.movers({r}, \"price\")")),
-                                txt(role::CAPTION, &format!("sys.movers({r}, \"changepct\")")),
+                                txt(role::ROW, &format!("\"$\" + sys.movers({r}, \"price\", {universe:?})")),
+                                txt(role::CAPTION, &format!("sys.movers({r}, \"changepct\", {universe:?})")),
                             ]),
                         ]),
                     );

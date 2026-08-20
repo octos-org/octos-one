@@ -41,8 +41,16 @@ That is a complete card. It is about 600 bytes; the card it produces is about 16
 | `AirQualityField` | none |
 | `SunMoon` | none |
 | `Details` | `tiles` — two or more of `aqi` `uv` `humidity` `wind` `pressure` |
+| `Attractions` | `places` — one or more place NAMES to recommend |
 
 ## What you decide, and what you must not
+
+**`Attractions` is for a request like "is it a good time to go to Shanghai" —
+weather alone does not answer it.** Name the places in `places`, and nothing
+else about them. Which sights are worth seeing is the one thing no tool answers,
+so it is yours — but every row is resolved live, so a place that does not exist
+renders as `—` rather than as a recommendation. Never write a description, a
+distance or an opening time: you have not observed them.
 
 **Yours** — which place the request means (resolving "nvidia" to Santa Clara is
 world knowledge and your job), which sections and in what order, which tiles, the

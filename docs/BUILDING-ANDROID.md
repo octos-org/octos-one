@@ -31,10 +31,13 @@ cd octos-one
 # fine but panics at boot (issue #17).
 git submodule update --init aichat makepad
 
-# the octos kernel SOURCE → ./octos  (app/ path-deps octos-core = ../octos/crates/octos-core,
-# which uses workspace inheritance, so the whole octos workspace must be present —
-# not just the liboctos.so binary from step 3)
-git clone https://github.com/octos-org/octos.git octos
+# the octos kernel SOURCE → ./octos is ALSO a pinned submodule (app/ path-deps
+# octos-core = ../octos/crates/octos-core, which uses workspace inheritance, so
+# the whole octos workspace must be present — not just the liboctos.so binary).
+# Take the pin, don't clone main: the pin is what the shipped kernel is built
+# from, and a floating clone is how the APK once came to carry a kernel that no
+# commit in this tree recorded.
+git submodule update --init octos
 ```
 
 (`aichat/` and `makepad/` are git submodules pinned to exact commits in the
@@ -55,17 +58,33 @@ RUSTFLAGS="-Cprofile-use=$PWD/aichat/libs/box3d/box3d.profdata" \
 Then, if you don't already have the NDK, `cargo makepad android install-toolchain`
 (see the ⚠️ above).
 
-## 3. Provide `liboctos.so` (the bundled kernel)
-
-The APK bundles the octos kernel as `liboctos.so`. Build it for Android from
-[`octos-org/octos`](https://github.com/octos-org/octos) (aarch64 target, features
-`api,git,ast`) so you have
-`…/octos/target/aarch64-linux-android/release/octos`, or reuse an existing one.
-
-## 4. Build the APK
+## 3 + 4. Build the kernel and the APK — one command
 
 ```bash
-cd octos-one/app
+tools/build-android.sh          # APK only
+tools/build-android.sh run      # APK, install, launch, stream logcat
+SKIP_KERNEL=1 tools/build-android.sh   # reuse the kernel already built
+```
+
+That script is the supported path and it does both halves: it cross-compiles the
+`octos` submodule for `aarch64-linux-android` and hands the binary to
+`cargo makepad` as `liboctos.so`. It discovers the NDK under
+`makepad/tools/cargo_makepad/` and exports both the rustc linker vars **and** the
+`CC_`/`CXX_`/`AR_`/`RANLIB_aarch64_linux_android` set that cc-rs needs — without
+the latter, cc-rs looks for an unversioned `aarch64-linux-android-clang` the NDK
+no longer ships and a `-sys` crate fails with a bare "no such file or directory".
+
+The two manual steps below are what it automates; reach for them only to debug.
+
+<details><summary>Doing it by hand</summary>
+
+```bash
+# 3. the kernel (needs the NDK env above exported first)
+cd octos && cargo build --release --target aarch64-linux-android \
+  -p octos-cli --bin octos --features api,git,ast
+
+# 4. the APK
+cd ../app
 export MAKEPAD_ANDROID_EXTRA_LIBS="liboctos.so=/ABS/PATH/TO/octos/target/aarch64-linux-android/release/octos"
 # Optional: enable real Google/YouTube sign-in in the youtube card. These are read
 # at BUILD time (via option_env! in main.rs) and injected into the card, so the
@@ -77,6 +96,8 @@ export OCTOS_GOOGLE_CLIENT_ID="<id>.apps.googleusercontent.com"
 export OCTOS_GOOGLE_CLIENT_SECRET="<secret>"
 cargo makepad android build -p octos-app --release
 ```
+
+</details>
 
 - Look for `Bundled extra native lib: liboctos.so` and `APK Build completed`.
 - Output: `app/target/android/makepad-android-apk/octos_app/apk/octos_app.apk`
