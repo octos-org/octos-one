@@ -624,3 +624,335 @@ of stopping.
 `protect_eos` does not prevent this. It only fires where the target's own top-1
 IS a stop token; a trajectory that has already diverged simply never arrives at
 one.
+
+## 2026-08-20 07:35-08:05 — steps 5/6: measurement, judging, STYLIST.md
+
+Production restored to launcher defaults **before** judging
+(`gpu_window.sh close` -> `mem_fraction_static 0.75, mrr=4, kv_tokens 833493`,
+healthy after 100 s), so the judge ran on a full-size server.
+
+### Final arm table (reference = arm B, stylist draft + exact verify)
+| arm | tok/s | valid | identical to B | tokens changed | hit 4096 cap |
+|---|---|---|---|---|---|
+| A card draft, exact | 250.7 | 0.95 | 10% | 28.5% | 0 |
+| B stylist, exact | 256.5 | 0.95 | — | — | 0 |
+| **B2 = B repeated (noise floor)** | 259.0 | 0.95 | **12%** | **23.6%** | 0 |
+| B3 stylist, exact via the lenient code path | 273.0 | 0.95 | 10% | 28.8% | 0 |
+| **C tau=2.0** | **306.7** | **0.95** | 3% | 40.7% | 0 |
+| C k=2 | 223.7 | **0.17** | 0% | 54.5% | 1 |
+| C k=3 | 234.0 | **0.03** | 0% | 77.8% | **18** |
+| C k=10 | 383.8 | **0.00** | 0% | 93.6% | **25** |
+
+### Two results that only exist because their controls were run
+- **B3 kills the "it's just the Python accept path" explanation.** B3 is exact
+  semantics through the lenient code path and is the *fastest* exact arm
+  (273.0). So k=2's 223.7 is the acceptance RULE being slower, not the
+  implementation: lenient accepts push the sequence onto a trajectory the draft
+  was never trained on, and downstream acceptance falls by more than the extra
+  accepts gain. k=10's 383.8 is the same mechanism inverted — it is fast because
+  it has locked into a repetition loop both models predict at accept rate 1.00.
+- **B2-vs-A kills the naive judging result.** Two arms differing only by
+  nondeterminism are judged **18-4 for A**, because the judge picks the longer
+  card of a pair **82-86%** of the time. So C tau=2.0's 24-4 loss is mostly a
+  length artefact; C k=2's **36-0** loss is not, because the two arms have
+  identical mean length (1569 vs 1567 tokens).
+
+### Verdict written to STYLIST.md: do not ship, at any operating point
+tau=2.0 is the only lenient setting that stays well-formed and it is genuinely
++12% faster than the matched exact arm — but it never wins on quality (0 wins on
+the length-matched subset) and it strips interaction out of cards (-1.51 events,
+-1.20 widget kinds, vs -0.65 / -0.20 for the noise floor). Every setting with
+more reach destroys them.
+
+The mechanism is the §3 table and it was measurable before any arm ran:
+**88.7% of this draft's rejections have a logit gap >= 6.0 and 79% sit at rank
+> 10.** Lenient acceptance does not import the draft's taste, it imports the
+draft's errors. What would change the answer is a draft that is *calibrated
+where it is wrong* — over half of rejections at rank 2-3, median gap under 1.0 —
+which is a distillation objective (KL on the target's soft distribution), not a
+config change.
+
+### Final box state
+- `qwen-ab` **up on :30878 at stock launcher defaults**, no env overrides,
+  `mem_fraction_static=0.75, mrr=4, kv_tokens 833493`, `/health` OK.
+- No other containers. `launch_qwen_ab.sh` never edited. **Zero production
+  outage this session** (the 2026-08-19 lesson held: shrink, coexist, restore).
+- New artifacts: `STYLIST.md`, `src/stylist/*`,
+  `src/stylist/scores.jsonl` (1096 judged cards),
+  `/home/ubuntu/qwen38-h200/draft-training/{ckpt_stylist,splits_stylist,stylist/}`,
+  `models/Qwen3.8-27B-DFlash-stylist/`, `stylist_e8.json`,
+  `stylist_divergence.json`.
+
+---
+
+## 2026-08-20 14:20 — distillation follow-up session start (STYLIST.md §7)
+
+The one follow-up STYLIST.md names as able to change the verdict: retrain the
+draft with **KL distillation on the target's soft distribution** instead of
+hard-label cross-entropy, re-measure the §3 rejection-margin table, and only if
+the margins become near-tie-dominated, rerun the tau=2.0 arm plus blind judging.
+
+### The blocker, and the way round it
+KL needs the target's distribution at every completion position. `/mnt/dflash-feats`
+cannot supply it: it stores the target's **aux** hidden states (residual-stream
+inputs of layers 1/16/31/46/61 of 64), which is what the draft conditions on —
+not the final hidden state, so the target's logits cannot be recomputed offline.
+
+Rather than re-run the 91GB extraction with an extra tap, use sglang's native
+input-logprob API on the same teacher-forced sequences: one prefill per sequence
+returns `input_top_logprobs`, the target's top-K distribution at every position.
+
+**Alignment verified empirically** on a hand-tokenized sentence before trusting
+it: `input_top_logprobs[j]` is the distribution over the token at absolute
+position `logprob_start_len + j`, and `j == 0` is always null. `top_logprobs_num`
+accepts 64 (the docs' usual limit of 20 is not enforced here).
+
+**This needs no production window at all** — it is pure inference, so it runs
+against the live production server exactly as `score_cards.py` did for judging.
+Measured 1.9 s/request at concurrency 3, ETA ~40 min for 1319 sequences, ~1.2GB.
+
+### Decisions
+- **K1**: teacher = top-64 logprobs per position (`src/distill/extract_logprobs.py`
+  -> `/mnt/dflash-teach`). Spot check on 3 sequences: top-1 equals the recorded
+  temp-0 token at **99.9%** of completion positions (the residual is the known
+  temp-0 nondeterminism), and the top-64 holds a **median 0.9999** of the total
+  mass, minimum 0.969. So a 64-wide teacher is not a meaningful truncation.
+- **K2**: the KL is over the **full vocabulary** at T=1: the 64 teacher entries
+  carry their true probabilities and everything else is lumped into one residual
+  bucket matched against the student's own residual mass. That is what makes the
+  objective punish mass the student puts where the target has none — the
+  rank>1000 proposals §3 measured. (At T>1 the tail's logits are unknown, so
+  that variant is restricted to the top-64 support and renormalised.)
+- **K3**: §3 can be re-measured **offline**, no research server and no production
+  window. Under exact verify the committed trajectory *is* the recorded temp-0
+  generation — nothing the draft proposes survives — so replaying the recorded
+  sequence reproduces the serving trajectory token for token, and the teacher
+  data above is the target's distribution along it. `src/distill/margins.py`
+  asks the same question the server probe asked. It will be **validated against
+  the recorded §3 table** by running it on the stylist draft first; only if it
+  reproduces those numbers are its verdicts on new drafts trusted.
+- **K4**: the controlled comparison is against **`ckpt_long`** (the shipped card
+  draft): same init (0e6412a), same splits, same 8 epochs, and hyperparameters
+  copied verbatim from its saved args (anchors 32, span 1536, accum 2, lr 1e-4,
+  warmup 60, block sizes {8,16,32,48}, W=4096, fp8-KV). **Only the loss changes.**
+
+## 2026-08-20 14:55 — teacher extracted, offline §3 validated
+
+### Teacher data
+`/mnt/dflash-teach`: **1319 sequences, 1,661,323 positions, 0 errors, 0 token
+mismatches, 1814 s, 836 MB** against the live production server. `qwen-ab`
+healthy throughout; no window, no outage.
+
+### The finding that predicts the whole experiment (`teacher_stats.py`, 500 seqs)
+| the target's distribution at completion positions | |
+|---|---|
+| mean top-1 probability | **0.9640** (median 1.0000) |
+| positions with top-1 > 0.99 | **85.4%** |
+| mean entropy | **0.1081 nats** (median 0.0002) |
+| positions with entropy < 0.01 nats | **79.7%** |
+| mean top1-top2 logit gap | **10.63** (median 11.75, p5 1.13) |
+| mean tokens above 1% probability | **1.39** |
+| top-64 mass | mean 0.99972 |
+| top-1 prob by mode | pick 0.996 / compose 0.981 / **general 0.835** |
+
+`KL(p_T||p_S) = CE(p_T, p_S) - H(p_T)`. With `H(p_T) ~ 0.1 nats` — and ~0.008 on
+the pick cards this vertical is actually about — **KL distillation at T=1 is very
+nearly the same objective as hard-label cross-entropy on this data**. The soft
+signal that exists lives in the general slice and in the ~10% of card positions
+where the target is genuinely uncertain.
+
+### Decision D8: give the hypothesis its best shot, not just the literal one
+Two runs, both replicating `ckpt_long`'s hyperparameters exactly (verified: step-1
+CE is bit-identical, 6.583929538726807):
+- **D1 `ckpt_kl_t1`**: T=1, alpha=1.0 — the literal §7 proposal, full-vocabulary
+  KL with the tail lumped.
+- **D2 `ckpt_kl_t8`**: T=8, alpha=0.7 (+0.3 CE) — at a median top1-top2 gap of
+  11.75 logits, only a large temperature carries the target's *rank ordering*
+  into the loss. As T grows, top-K KL tends to matching logit differences, i.e.
+  "get the target's order right where you are wrong" — which is what §7 actually
+  asks for, as opposed to what a T=1 KL can deliver here.
+
+`src/distill/test_kl.py` (CPU) checks the loss against brute force: the lumped
+tail is exact when the teacher's tail is empty and a lower bound otherwise
+(data-processing inequality), KL(p||p)=0 at T=1 and T=4, and off-support mass is
+punished hardest (copycat 0.000 < near-miss 6.375 < off-support 37.693).
+
+### The offline §3 measurement is validated against the server probe
+`margins.py` run on the **stylist draft** — the same draft §3 was measured with:
+
+| | §3, server probe (1983 rejections) | offline (26,436 rejections) |
+|---|---|---|
+| rank 2 | 14.5% | **15.2%** |
+| cum rank 3 | 20.2% | **21.9%** |
+| cum rank 10 | 35.6% | **37.5%** |
+| gap < 1.0 | 3.8% | **3.6%** |
+| gap < 2.0 | 6.5% | **6.7%** |
+| gap >= 6.0 | 88.7% | **85.9%** |
+
+Same table, 13x the statistics, no research server and no production window. The
+one thing it cannot resolve is rank beyond the teacher's top-64; those land in a
+`rank>64` bin (43.4%) instead of §3's `101-1000` + `>1000` (40.8%).
+
+`teacher top1 == recorded token` is **99.18%**, which independently re-validates
+the teacher-forcing premise the whole feature pipeline rests on.
+
+### CE baselines (offline, 157 held-out sequences, ~26.8k rejections each)
+| | card draft (`ckpt_long`) | stylist draft |
+|---|---|---|
+| accept / verify | 5.83 | 5.88 |
+| rank 2 | 15.4% | 15.2% |
+| cum rank 3 | 22.0% | 21.9% |
+| gap < 2.0 | 6.8% | 6.7% |
+| gap >= 6.0 | 85.9% | 85.9% |
+| mean gap | 13.42 | 13.38 |
+| mean target prob of the rejected draft token | 0.0202 | 0.0200 |
+
+## 2026-08-20 15:05-15:45 — D1 (KL T=1) trained and measured
+
+**4648 steps, 1193 s, peak 29.09 GB**, alongside the shrunk-but-live production
+container (`gpu_window.sh open 0.42` with `ABMRR=1 ABMAMBA=5`, 46.9GB used /
+49.8GB free, healthy after 80 s). No outage.
+
+The control is exact: step-1 CE is **6.583929538726807** in both this run and
+`ckpt_long`'s log, so the two runs differ in the loss and nothing else.
+
+And the loss columns show the predicted degeneracy directly: at step 1
+`ce 6.5839` vs `kl 6.5814`, a gap of **0.0025 nats** — which is H(p_T) on that
+batch, not a coincidence.
+
+### D1 is the same drafter
+| gate | card draft (CE) | D1 (KL T=1) |
+|---|---|---|
+| cards >= 40 | 41.28 | **41.33** |
+| unseen combos >= 25 | 39.91 | **39.98** |
+| general >= 8 | 27.50 | **26.56** |
+| seam windows (cards) | 38.83 | 38.89 |
+
+### D1 barely moves the margins
+| | card draft (CE) | D1 (KL T=1) |
+|---|---|---|
+| rank 2 | 15.4% | **16.3%** |
+| cum rank 3 | 22.0% | **22.8%** |
+| cum rank 10 | 37.2% | **38.0%** |
+| gap < 1.0 | 3.7% | **4.4%** |
+| gap < 2.0 | 6.8% | **8.0%** |
+| gap >= 6.0 | 85.9% | **84.4%** |
+| mean target prob of the rejected draft token | 0.0202 | **0.0239** |
+| accept / verify | 5.83 | 5.82 |
+
+Directionally right, magnitude negligible. §7's bar was "over half of rejections
+at rank 2-3 and a median logit gap under 1.0"; this is 22.8% and a mean gap of
+13.2. Nothing here would change the lenient-verify verdict.
+
+### Method note caught mid-run: D2 was wrong and was restarted
+Softening by T divides the soft-loss gradients by T^2, so a T=8 run without
+Hinton's T^2 rescaling is a T=1 run with the distillation term turned down 64x —
+the first D2 launch had `ce 2.48` against `kl 0.111` and was therefore just a CE
+run wearing a costume. Killed at step ~1200, `kl_term` now multiplies the T!=1
+branch by T^2, `test_kl.py` updated and re-passed, D2 relaunched. It now starts
+at `ce 6.5839` / `kl 13.62`, i.e. the soft term genuinely leads.
+
+### Reading note for the tables above
+`margins.py`'s `accept/verify` (~5.8) is not `eval_accept.py`'s (~3.9): the
+margin replay runs each chain up to 64 verify steps and so spends most of its
+steps deep inside a card, where acceptance is higher, while `eval_accept` stops
+once 48 tokens are covered. Only compare each number within its own table.
+
+## 2026-08-20 15:50-16:20 — D2 (KL T=8) trained and measured: worse, not better
+
+**4648 steps, 1163 s, peak 27.70 GB**, again alongside live production, step-1 CE
+again 6.583929538726807.
+
+| | card CE | D1 KL T=1 | **D2 KL T=8** |
+|---|---|---|---|
+| rank 2 | 15.4% | 16.3% | 15.9% |
+| cum rank 3 | 22.0% | 22.8% | **21.8%** |
+| cum rank 10 | 37.2% | 38.0% | **33.7%** |
+| **rank > 64** | 43.4% | 42.5% | **53.5%** |
+| gap < 2.0 | 6.8% | 8.0% | **6.0%** |
+| gap >= 6.0 | 85.9% | 84.4% | **86.6%** |
+| mean target prob of the rejected token | 0.0202 | 0.0239 | **0.0186** |
+| cards acc@48 | 41.28 | 41.33 | **40.02** |
+| unseen combos acc@48 | 39.91 | 39.98 | **38.23** |
+| general acc@48 | 27.50 | 26.56 | **24.09** |
+| seam windows (cards) | 38.83 | 38.89 | **36.33** |
+
+The arm built to give the hypothesis its best shot moves every number the wrong
+way *and* costs acceptance. The mechanism is visible in the `rank > 64` row: at
+T != 1 the tail's logits are unknown, so that KL is restricted to the teacher's
+top-64 and off-support mass is only punished by the 0.3 CE term. Softening the
+head while barely defending the tail is exactly how you get *more* rank>64
+proposals — 53.5% against 43.4%. The T=1 arm's lumped-tail term is what stops
+that, and it is also the arm that has almost no soft signal left to learn from.
+
+That is the trap in one sentence: **on this data the soft signal and the tail
+defence trade off against each other, and the direction that has signal is the
+direction that loses the defence.**
+
+### D3 launched to make the trend a trend
+T=2, alpha=0.7 — same alpha and same restricted-support treatment as D2, so
+D2-vs-D3 isolates temperature alone. Two points would leave "no temperature
+helps" as an inference; three make it a measurement.
+
+## 2026-08-20 16:25-17:05 — D3 (KL T=2), the held-out KL control, and the close
+
+### D3: T=2, alpha=0.7 — worse than both
+**4648 steps, 1178 s, peak 27.70 GB**, step-1 CE 6.583929538726807 again.
+
+The three-temperature picture (157 held-out sequences, 27-30k rejections each):
+
+| | card CE | KL T=1 | KL T=2 | KL T=8 |
+|---|---|---|---|---|
+| rank 2 | 15.4% | **16.3%** | 11.8% | 15.9% |
+| cum rank 3 | 22.0% | **22.8%** | 16.4% | 21.8% |
+| rank > 64 | 43.4% | **42.5%** | 62.2% | 53.5% |
+| gap < 2.0 | 6.8% | **8.0%** | 5.7% | 6.0% |
+| gap >= 6.0 | 85.9% | **84.4%** | 88.1% | 86.6% |
+| accept / verify | 5.83 | 5.82 | 5.21 | 4.87 |
+| cards acc@48 | 41.28 | **41.33** | 40.73 | 40.02 |
+| unseen combos acc@48 | 39.91 | **39.98** | 39.03 | 38.23 |
+| general acc@48 | 27.50 | 26.56 | 25.36 | 24.09 |
+| seam windows (cards) | 38.83 | **38.89** | 37.81 | 36.33 |
+
+T=2 is worse than T=8, so **the degradation is not monotone in T** and no trend
+is claimed — only that every point measured is worse than cross-entropy. On the
+cards slice alone it is starker: `gap >= 6.0` is 91.9 / 90.5 / 93.1 / 91.6%.
+
+### The control that makes this a result, not a failed run
+Mean held-out `KL(target || draft)` over ~490k slots per arm (not just
+rejections) — added to `margins.py` and rerun for all four checkpoints:
+
+| | card CE | KL T=1 | KL T=2 | KL T=8 |
+|---|---|---|---|---|
+| all | 2.002 | **1.979** | 2.228 | 2.487 |
+| cards | 1.180 | **1.165** | 1.378 | 1.643 |
+| unseen combos | 1.599 | **1.576** | 1.847 | 2.120 |
+| general | 4.115 | **4.048** | 4.320 | 4.539 |
+
+The T=1 run holds the **lowest** held-out KL on every slice: it optimised its
+objective, beating cross-entropy by 1.1% because cross-entropy was already almost
+optimising it. The temperature arms optimised a different (softened,
+support-restricted) objective and are worse at the real one. So the negative is
+"distillation trained, and the property did not appear", not "the run failed".
+
+### Gate not met -> the tau arm was NOT rerun
+The brief gated the tau=2.0 rerun and the blind pairwise judging on the margins
+becoming near-tie-dominated. §7's bar was over half of rejections at rank 2-3 and
+a median gap under 1.0. The best arm reaches **22.8%** with a median gap still
+above 6.0, and tau=2.0's reach moves only from 6.8% to 8.0% of rejections. So the
+serving-side arms were correctly not run, and no research-server window was
+opened for them.
+
+### Box state at close
+- `gpu_window.sh close` -> `qwen-ab` back at **launcher defaults**
+  (`mem_fraction_static 0.75, mrr=4, kv_tokens 833493`), healthy after 100 s,
+  identical to the state at session start. `launch_qwen_ab.sh` never edited.
+- **No production outage this session.** The only downtime was the two deliberate
+  launcher restarts for the window (80 s open, 100 s close).
+- New artefacts: `/mnt/dflash-teach` (836MB, 1319 seqs), `ckpt_kl_t1`,
+  `ckpt_kl_t2`, `ckpt_kl_t8`, `margins_{card,stylist,kl_t1,kl_t2,kl_t8}.json`,
+  `eval_kl_t{1,2,8}.json`, `teacher_stats.json`, `train_kl*.log`.
+- New code: `src/distill/` (extract_logprobs, teacher, margins, teacher_stats,
+  compare_margins, test_kl, run_*.sh) plus `--teacher-dir/--kl-alpha/--kl-temp`
+  and `kl_term` in `src/train_dflash.py`, and `abs_pos_cpu` in `src/dataset.py`.
+- **STYLIST.md §9** written: the clean negative, with the mechanism.
