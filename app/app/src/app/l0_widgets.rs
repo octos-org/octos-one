@@ -926,6 +926,14 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
                 " draw_bg.tlo: {} draw_bg.thi: {} draw_bg.wmin: {} draw_bg.wmax: {}",
                 num(a.lo), num(a.hi), num(a.min), num(a.max)
             );
+            // Mood-owned bar treatment (kit: `l0_bar`): rail on `bg`, single
+            // hue on `bg2`. Absent, the shader keeps its legacy spectrum.
+            if let Some(bar) = a.bg2 {
+                let _ = write!(out, " draw_bg.flat_ink: {}", hex(bar));
+            }
+            if let Some(rail) = a.bg {
+                let _ = write!(out, " draw_bg.rail_ink: {}", hex(rail));
+            }
         }
         NodeKind::SunArc => {
             let _ = write!(
@@ -975,6 +983,11 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if node.kind == NodeKind::WeatherIcon {
         if let Some(v) = a.variant.as_deref() {
             let _ = write!(out, " draw_bg.cond: {}", v.parse::<f32>().unwrap_or(0.0));
+        }
+        // Mood-owned mono ink (kit: `icon_mono`): the finished glyph is
+        // recoloured to one silhouette ink. Absent, legacy colours.
+        if let Some(ink) = a.color {
+            let _ = write!(out, " draw_bg.mono_ink: {}", hex(ink));
         }
     }
     // The trip. `variant` carries which member of the map family this is, in the

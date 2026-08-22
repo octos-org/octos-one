@@ -9149,6 +9149,37 @@ impl MatchEvent for App {
             }
         }
 
+        // A pushed `cards/seed.html` seeds a `runhtml` WEB card, exactly as
+        // SEED_L0_FILE seeds a ledger: the document lands in the chat as the
+        // fenced message a web-app answer would be, so it renders through the
+        // same webview path a generated card uses. This is the design
+        // pipeline's inner loop — an HTML draft is judged in THIS app's
+        // webview, same viewport and same system Roboto as the Splash card it
+        // will be lowered to, rather than in a desktop browser that shares
+        // neither.
+        //
+        // The trigger is a FILE, not an `--es makepad.SEED_HTML_FILE` extra:
+        // whatever forwards `makepad.*` extras into the environment carries
+        // SEED_L0_FILE but demonstrably not a new name (the env var simply
+        // never appears), and a file needs no bridge. Consumed by rename so a
+        // later normal launch does not re-seed it.
+        #[cfg(target_os = "android")]
+        {
+            let seed = "/storage/emulated/0/Android/media/dev.makepad.octos_app/cards/seed.html";
+            if let Ok(doc) = std::fs::read_to_string(seed) {
+                if let Ok(mut chat) = CHAT_DATA.write() {
+                    chat.messages.push(ChatMessage {
+                        role: ChatRole::Assistant,
+                        text: format!("```runhtml\n{doc}\n```"),
+                    });
+                }
+                self.update_empty_state_visibility(cx);
+                cx.redraw_all();
+                let _ = std::fs::rename(seed, format!("{seed}.seen"));
+                log::info!("SEED_HTML injected from {seed}");
+            }
+        }
+
         // `--es makepad.FAKE_GPS_FILE <path>` walks a track of `lat,lon` lines,
         // one fix per interval, as if the device were driving it.
         //
