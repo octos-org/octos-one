@@ -83,6 +83,35 @@ thread_local! {
 
     static LIVE: std::cell::RefCell<Option<Vec<(String, String)>>> =
         const { std::cell::RefCell::new(None) };
+
+    /// Whether the container currently being emitted hugs its width. Text
+    /// children consult the PARENT's entry: a Label's default `width: Fill`
+    /// inside a hug (`fitw`) container resolves to ZERO width in makepad —
+    /// the same trap `l0_tap_fit` hit, found a third time when a fit row's
+    /// condition word and both feels captions rendered as nothing.
+    static HUGS: std::cell::RefCell<Vec<bool>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// RAII entry in `HUGS`: pushed for the node being emitted, popped on every
+/// return path of `emit_widget` — which has several, so a manual pop is a bug
+/// waiting for the next early return.
+struct HugGuard;
+impl HugGuard {
+    fn push(hugs: bool) -> Self {
+        HUGS.with(|h| h.borrow_mut().push(hugs));
+        HugGuard
+    }
+}
+impl Drop for HugGuard {
+    fn drop(&mut self) {
+        HUGS.with(|h| {
+            h.borrow_mut().pop();
+        });
+    }
+}
+
+fn parent_hugs() -> bool {
+    HUGS.with(|h| h.borrow().last().copied().unwrap_or(false))
 }
 
 /// A Roboto text style at this size and weight.
@@ -814,6 +843,8 @@ fn emit(node: &UiNode, out: &mut String, depth: usize) {
 fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     let pad = "  ".repeat(depth.min(32));
     let a = &node.attrs;
+    let in_hug = parent_hugs();
+    let _hug = HugGuard::push(a.fitw == Some(1));
     let w = widget(node.kind);
 
     // A live text node is NAMED, so `fn tick()` can set it without a rebuild. The
@@ -873,7 +904,25 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         let _ = write!(out, " draw_bg.border_radius: {r}");
     }
     if node.kind == NodeKind::Text {
+        // The eyebrow role: tracked caps, faked in the STRING because the
+        // text stack has no tracking axis the DSL reaches — thin spaces
+        // between uppercased characters of a LITERAL. A live value arrives
+        // after emission and stays untransformed, which degrades gracefully.
+        let eyebrow = a.variant.as_deref() == Some("eyebrow");
         if let Some(t) = a.text.as_deref() {
+            if eyebrow && !t.contains("sys.") {
+                let spaced: String = t
+                    .to_uppercase()
+                    .chars()
+                    .flat_map(|c| [c, '\u{2009}'])
+                    .collect();
+                let spaced = spaced.trim_end_matches('\u{2009}');
+                let _ = write!(out, " text: {spaced:?}");
+            }
+        }
+        if let Some(t) = a.text.as_deref().filter(|_| {
+            !(eyebrow && !a.text.as_deref().unwrap_or("").contains("sys."))
+        }) {
             // Always a literal. An earlier version of this passed a value
             // through unquoted when it looked like `"$" + sys.stock(…)`, which
             // misread where the pipeline evaluates: that expression is called
@@ -894,7 +943,8 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         // the node stated no width of its own (`sizing_of` already wrote one
         // otherwise, so this never double-writes `width:`).
         if a.w.is_none() && a.fillw.is_none() && a.fitw.is_none() {
-            let _ = write!(out, " width: Fill");
+            // Inside a hug container Fill is 0 — hug with it instead.
+            let _ = write!(out, " width: {}", if in_hug { "Fit" } else { "Fill" });
         }
     }
     if node.kind == NodeKind::Image {
