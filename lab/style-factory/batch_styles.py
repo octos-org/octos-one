@@ -48,7 +48,8 @@ source feed sys.news(count: 5, fields: [id, title, author, points])
 source scene sys.photo(query: state.mood)   # only for photo backgrounds""",
     "stock": """source movers sys.movers(count: 5, fields: [ticker, name, last, change, pct])
 source scene sys.photo(query: state.mood)   # only for photo backgrounds""",
-    "reading": """source saved sys.reading(fields: [id, title, points])
+    "quake": """source lead  sys.quakes(count: 1, fields: [id, mag, place, depth, ago])
+source feed  sys.quakes(count: 5, offset: 1, fields: [id, mag, place, ago])
 source scene sys.photo(query: state.mood)   # only for photo backgrounds""",
 }
 
@@ -56,8 +57,11 @@ HTML_DATA = {
     "weather": 'fetch open-meteo for Tokyo: https://api.open-meteo.com/v1/forecast?latitude=35.6895&longitude=139.6917&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Asia%2FTokyo',
     "news": 'fetch the live HN front page: https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=6 (hits[].title/author/points/num_comments)',
     "stock": 'fetch live quotes from https://query1.finance.yahoo.com/v8/finance/chart/{SYM}?range=1d&interval=1d for NVDA, AAPL, MSFT, TSLA, AMD (meta.regularMarketPrice, meta.chartPreviousClose); if a fetch fails render the row with an em-dash, never blank',
-    "reading": 'fetch https://hn.algolia.com/api/v1/search?tags=story&numericFilters=points>200&hitsPerPage=6 as stand-in saved articles',
+    "quake": 'fetch the live USGS feed https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson (features[].properties.mag/place/time, newest first)',
 }
+
+
+CONSTRUCTORS = Path("/Users/yuechen/home/Splash/docs/ui-l0-constructors.toml").read_text()
 
 
 def sh(*args, timeout=120, **kw):
@@ -108,9 +112,14 @@ def strip_fence(text, lang=""):
 def judge(target, render, extra=""):
     out = claude_text(
         f"Two images. FIRST Read {target} — the TARGET design mockup. THEN Read {render} — "
-        f"an implementation rendered live on a phone (ignore the small floating button and any "
-        f"bottom app chrome; live data values differ from the mockup's — judge design, not content"
-        f"{extra}). Return ONLY JSON: {{\"fidelity\": 1-10, \"overall\": 1-10, "
+        f"an implementation rendered live on a phone. IGNORE, as none are the implementation's "
+        f"fault: the small floating button and any bottom app chrome; differences in overall "
+        f"aspect ratio and any empty space that follows from them; imagery CONTENT the "
+        f"implementation could not obtain (the mockup's photographs, avatars and illustrations "
+        f"are invented and unavailable); and text that is longer or shorter than the mockup's "
+        f"because it is real live data. JUDGE the design system: composition, typographic scale "
+        f"and hierarchy, colour relationships, spacing rhythm, shape language, surface treatment"
+        f"{extra}. Return ONLY JSON: {{\"fidelity\": 1-10, \"overall\": 1-10, "
         f"\"gaps\": \"<=25 words\"}}")
     m = re.search(r"\{.*\}", out, re.S)
     return json.loads(m.group(0))
@@ -186,8 +195,11 @@ def screencap(path):
 
 
 def validate(card_path):
+    # ABSOLUTE: cargo runs with cwd=SPLASH, so a relative path silently
+    # resolves against the wrong directory and the validator reports a
+    # missing `view root` for a card that is perfectly fine.
     r = sh("cargo", "run", "-q", "-p", "splash-ui-l0", "--example", "l0validate",
-           "--", str(card_path), cwd=SPLASH, timeout=300)
+           "--", str(Path(card_path).resolve()), cwd=SPLASH, timeout=300)
     try:
         return json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
@@ -197,8 +209,18 @@ def validate(card_path):
 def run_specimen(r, outdir):
     sid = r["id"]
     rec = {"id": sid, "recipe": r}
-    style_line = (f"{r['art']}; typography: {r['font']}; layout: {r['layout']}; "
-                  f"single accent colour: {r['accent']}; spacing: {r['density']}")
+    style_line = (
+        f"{r['art']} "
+        f"COMPOSITION: {r['layout']}. "
+        f"TYPE: {r['type_class'].replace('_', ' ')} at a {r['ratio']} scale ratio, "
+        f"{r['hierarchy']} hierarchy. "
+        f"GEOMETRY: {r['geometry'].replace('_', ' ')}. "
+        f"COLOUR: {r['harmony'].replace('_', ' ')} harmony on a {r['key'].replace('_', ' ')} ground. "
+        f"CONTRAST carried primarily by {r['contrast'].replace('_', ' ')}. "
+        f"FIGURE-GROUND: {r['figure_ground'].replace('_', ' ')}. "
+        f"ORNAMENT: {r['ornament'].replace('_', ' ')}. "
+        f"SPACING: {r['density']}. "
+        f"IMAGERY: {r['media'].replace('_', ' ')}.")
 
     # ── 1. the mockup ─────────────────────────────────────────────────────
     mock = outdir / f"{sid}-mockup.png"
@@ -210,7 +232,7 @@ def run_specimen(r, outdir):
                       f"EXACTLY the left panel's photograph as its full-bleed background. "
                       f"STYLE: {style_line}. No device frame, no watermark, no logos.")
             paired = outdir / f"{sid}-paired.png"
-            imagegen(prompt, "1536x1024", paired)
+            imagegen(prompt, "1792x1920", paired)
             from PIL import Image
             im = Image.open(paired)
             im.crop((0, 0, im.width // 2, im.height)).save(outdir / f"{sid}-bg.png")
@@ -218,7 +240,9 @@ def run_specimen(r, outdir):
             (ASSETS / f"{sid}-bg.png").write_bytes((outdir / f"{sid}-bg.png").read_bytes())
         else:
             imagegen(f"{r['content']}, portrait, single screen. STYLE: {style_line}. "
-                     f"No device frame, no watermark, no logos.", "1024x1536", mock)
+                     f"The design fills the FULL HEIGHT of a tall phone screen, edge to edge, "
+                     f"with no empty band at the bottom. No device frame, no watermark, no logos.",
+                     "896x1920", mock)
     log(sid, "mockup ok")
 
     # ── 2. the HTML twin ──────────────────────────────────────────────────
@@ -272,6 +296,9 @@ def run_specimen(r, outdir):
             f"— two valid L0 cards showing the EXACT dialect (sources, state, copy, views, for-loops, "
             f"when-guards, TextEyebrow/TextHero/TextRow/TextCaption/TextValue/Panel/Card/Row/Col/Rule, "
             f"theme photo|light|dark|glass). Write ONE L0 card for this {r['domain']} design. "
+            f"THE CONSTRUCTOR CONTRACT — every role and every argument L0 admits. Do not "
+            f"invent arguments; anything not listed here is a validation error:\n"
+            f"{CONSTRUCTORS}\n"
             f"Data contract (use ONLY these sources; display every source you declare):\n"
             f"{CONTRACTS[r['domain']]}\n"
             f"Choose the theme mood closest to the mockup ({'photo' if r['photo_bg'] else 'light or dark'}). "
@@ -321,6 +348,7 @@ def run_specimen(r, outdir):
 
 
 def main():
+    cards_only = "--cards-only" in sys.argv
     outdir = BASE / "out"
     outdir.mkdir(exist_ok=True)
     ledger_path = BASE / "ledger.jsonl"
@@ -328,7 +356,16 @@ def main():
     if ledger_path.exists():
         done = {json.loads(l)["id"] for l in open(ledger_path)}
     recipes = [json.loads(l) for l in open(BASE / "recipes.jsonl")]
-    todo = [r for r in recipes if r["id"] not in done]
+    if cards_only:
+        # Re-render and re-judge existing cards against existing mockups. No
+        # image generation, no HTML: the phase-delta measurement.
+        todo = [r for r in recipes if (outdir / f"{r['id']}.card").exists()]
+        for r in todo:
+            for stale in outdir.glob(f"{r['id']}-card*.png"):
+                stale.unlink()
+        ledger_path.rename(ledger_path.with_suffix(".jsonl.prev"))
+    else:
+        todo = [r for r in recipes if r["id"] not in done]
     print(f"{len(todo)} specimens to run ({len(done)} already done)", flush=True)
     for r in todo:
         try:
