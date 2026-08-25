@@ -892,6 +892,13 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     box_model(a, out);
 
     if let Some(bg) = a.bg {
+        // No `show_bg: true` here, and that is not an oversight. `View` declares
+        // `#[live(false)] show_bg`, so this looks like a fill that never paints —
+        // it is not. Assigning `draw_bg.*` through the script apply path enables
+        // the background, and a device A/B on 2026-08-25 measured the light
+        // mood's page at #f2f2f7 both with and without an explicit `show_bg`.
+        // Verify against an INTERIOR pixel if you re-open this: the card carries
+        // a thin dark edge margin, and sampling x=14 reads the margin, not the page.
         let _ = write!(out, " draw_bg.color: {}", hex(bg));
     }
     // A second stop makes the fill a vertical gradient: the view shader mixes
