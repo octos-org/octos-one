@@ -910,6 +910,29 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if let Some(r) = a.radius {
         let _ = write!(out, " draw_bg.border_radius: {r}");
     }
+    // NOT REACHING THE SCREEN as of 2026-08-25, and left in place deliberately.
+    // The emission is correct — the panel node carries
+    // `draw_bg.border_size: 1 draw_bg.border_color: #00000026`, RoundedView's
+    // shader strokes when border_size > 0, and no apply error is logged — yet a
+    // deliberately garish 4px opaque red border produced zero red pixels on
+    // device. `border_radius`, a uniform on the same prototype, works. So the
+    // failure is below this layer and stroke is NOT the cheap win it looked
+    // like; it needs widget-layer investigation before it can be measured.
+    //
+    // A stroke on a surface. NOT halved, unlike the sibling renderer: that one
+    // targets a shader which draws to both sides of the edge, while this
+    // RoundedView insets its box by `border_size` and strokes the inset path,
+    // so the visible width is the value itself. Halving here emitted a 0.5px
+    // stroke at 15% alpha, which measured as nothing on device. Only Card/Chip
+    // declare the uniforms; a plain View would silently discard them.
+    if matches!(node.kind, NodeKind::Card | NodeKind::Chip) {
+        if let Some(b) = a.border.filter(|b| *b > 0.0) {
+            let _ = write!(out, " draw_bg.border_size: {b}");
+            if let Some(bc) = a.bordercolor {
+                let _ = write!(out, " draw_bg.border_color: {}", hex(bc));
+            }
+        }
+    }
     if node.kind == NodeKind::Text {
         // The eyebrow role: tracked caps, faked in the STRING because the
         // text stack has no tracking axis the DSL reaches — thin spaces
@@ -952,6 +975,13 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         if a.w.is_none() && a.fillw.is_none() && a.fitw.is_none() {
             // Inside a hug container Fill is 0 — hug with it instead.
             let _ = write!(out, " width: {}", if in_hug { "Fit" } else { "Fill" });
+        }
+        // How many lines this run may occupy, and an ellipsis when it overruns.
+        // The KIT decides — whether a row title truncates is presentation, not
+        // content, so no card names it. Ellipsis needs a bounded width, which
+        // the branch above supplies unless the node hugs.
+        if let Some(n) = a.lines.filter(|n| *n > 0) {
+            let _ = write!(out, " max_lines: {n} text_overflow: TextOverflow.Ellipsis");
         }
     }
     if node.kind == NodeKind::Image {

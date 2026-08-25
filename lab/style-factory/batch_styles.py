@@ -125,6 +125,67 @@ def judge(target, render, extra=""):
     return json.loads(m.group(0))
 
 
+def judge_pair(target, img_a, img_b, seed_swap):
+    """Which render is closer to the target? Blind, order-randomised.
+
+    Two absolute scores from two unseeded judge calls cannot resolve a
+    half-point change: the judge drifts more than the effect. Asking one call
+    to compare two images removes that, and swapping the presentation order
+    per specimen removes position bias. Returns +1 if the NEW render wins,
+    -1 if the OLD one does, 0 for a tie.
+    """
+    first, second = (img_b, img_a) if seed_swap else (img_a, img_b)
+    out = claude_text(
+        f"Read {target} — a design mockup, the TARGET. Then Read {first} (call it A) "
+        f"and {second} (call it B): two renderings of that design by the same system, "
+        f"differing only in a renderer change. Live data differs between them; ignore "
+        f"content, aspect-driven emptiness, and imagery the implementation could not "
+        f"obtain. Judge ONLY which is closer to the target's DESIGN — composition, "
+        f"typographic hierarchy, colour relationships, spacing rhythm, shape language, "
+        f"surface treatment. Return ONLY JSON: "
+        f'{{"winner": "A"|"B"|"tie", "why": "<=20 words"}}')
+    m = re.search(r"\{.*\}", out, re.S)
+    v = json.loads(m.group(0)).get("winner", "tie")
+    if v == "tie":
+        return 0, json.loads(m.group(0)).get("why", "")
+    new_is_first = seed_swap        # seed_swap put img_b (NEW) first as "A"
+    new_won = (v == "A") == new_is_first
+    return (1 if new_won else -1), json.loads(m.group(0)).get("why", "")
+
+
+def rerun_card(r, outdir, prev):
+    """Ablation pass: re-render an EXISTING card and compare it, blind, against
+    its own previous render. No image generation, no HTML — that is the whole
+    point of --cards-only, and the earlier implementation still judged and
+    sometimes rewrote the HTML, so an iteration cost as much as a full run."""
+    sid = r["id"]
+    card = outdir / f"{sid}.card"
+    mock = outdir / f"{sid}-mockup.png"
+    if not card.exists() or not mock.exists():
+        return {"id": sid, "recipe": r, "error": "no cached card/mockup"}
+    old = outdir / f"{sid}-card-prev.png"
+    cur = outdir / f"{sid}-card.png"
+    if cur.exists() and not old.exists():
+        cur.rename(old)                       # keep the control, never delete it
+    ledger = {"scene": f"http://127.0.0.1:8899/{sid}-bg.png"} if r["photo_bg"] else {}
+    if r["domain"] == "weather":
+        ledger["city"] = "Tokyo"
+    rec = {"id": sid, "recipe": r, "html": prev.get(sid, {}).get("html")}
+    err = render_card(card, ledger, cur)
+    if err:
+        rec["card_render_error"] = err
+        return rec
+    jc = judge(mock, cur, extra="; the background photo may differ from the target's")
+    rec["card"] = {"fidelity": jc.get("fidelity"), "overall": jc.get("overall"),
+                   "gaps": jc.get("gaps")}
+    if old.exists():
+        swap = (int(sid[1:4]) % 2 == 0)       # deterministic order swap per specimen
+        verdict, why = judge_pair(mock, old, cur, swap)
+        rec["paired"] = {"new_wins": verdict, "why": why}
+        log(sid, f"card {jc.get('fidelity')} | paired {'NEW' if verdict>0 else ('OLD' if verdict<0 else 'tie')}: {why[:60]}")
+    return rec
+
+
 def render_html(html_path, shot_path, settle=15):
     if not wait_device():
         raise RuntimeError("device gone")
@@ -356,20 +417,23 @@ def main():
     if ledger_path.exists():
         done = {json.loads(l)["id"] for l in open(ledger_path)}
     recipes = [json.loads(l) for l in open(BASE / "recipes.jsonl")]
+    prev = {}
     if cards_only:
-        # Re-render and re-judge existing cards against existing mockups. No
-        # image generation, no HTML: the phase-delta measurement.
+        # Re-render and re-judge existing cards against existing mockups: no
+        # image generation, no HTML, prior renders RETAINED as the control.
+        prev = {json.loads(l)["id"]: json.loads(l) for l in open(ledger_path)}
         todo = [r for r in recipes if (outdir / f"{r['id']}.card").exists()]
-        for r in todo:
-            for stale in outdir.glob(f"{r['id']}-card*.png"):
-                stale.unlink()
-        ledger_path.rename(ledger_path.with_suffix(".jsonl.prev"))
+        stamp = sh("claude", "--version").stdout.strip()
+        ledger_path.rename(BASE / "ledger-before-ablation.jsonl")
+        with open(BASE / "ablation-meta.json", "w") as f:
+            json.dump({"judge_cli": stamp, "specimens": len(todo)}, f)
+        print(f"cards-only ablation over {len(todo)} specimens; judge {stamp}", flush=True)
     else:
         todo = [r for r in recipes if r["id"] not in done]
     print(f"{len(todo)} specimens to run ({len(done)} already done)", flush=True)
     for r in todo:
         try:
-            rec = run_specimen(r, outdir)
+            rec = rerun_card(r, outdir, prev) if cards_only else run_specimen(r, outdir)
         except Exception as e:  # noqa: BLE001 — a specimen must never kill the batch
             rec = {"id": r["id"], "recipe": r, "error": str(e)[:300]}
             log(r["id"], f"ERROR {e}")
