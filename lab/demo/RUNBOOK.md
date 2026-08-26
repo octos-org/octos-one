@@ -89,3 +89,88 @@ via `preflight.sh` — roughly 15s plus one warm-up.
   logging a scope error on every render — fixed here, but the fix is compiled
   into the APK via `include_str!`, so it needs a rebuild to take effect on the
   phone. Harmless to leave: borders do not paint anyway.
+
+---
+
+# H100 deployment (2026-08-27)
+
+The GH200 is gone. Qwen3.8-27B now runs on the Nebius H100 80GB.
+
+    ssh -i ~/home/tensordock/ottos-one.pem octos-one@89.169.125.111
+
+Username is `octos-one` — it matches the key name, not the instance name; Nebius
+takes it from cloud-init at creation and has no fixed default.
+
+## What is deployed
+
+- `Qwen/Qwen3.8-27B-FP8` (30.9 GB) at `~/models/target`. FP8 runs natively:
+  the H100 is compute capability 9.0. Restart with `~/serve.sh`.
+- NGRAM speculation over `~/corpus/cards.jsonl`. **Measured: accept length
+  27.95 of 32 draft tokens, accept rate 0.869.** Card DSL is templated enough
+  that n-gram copying nearly saturates the draft window.
+- Stock `lmsysorg/sglang:latest` (0.5.18). No OminiX fork needed — DFLASH is
+  upstream now. See the DFlash2 note below.
+
+## Two flags that decide whether this boots in 80s or 90 minutes
+
+    --env SGL_ENABLE_JIT_DEEPGEMM=0     # <- the important one
+    --disable-prefill-cuda-graph
+
+Without the first, SGLang JIT-compiles FP8 DeepGEMM kernels at every boot,
+running a 65536-step warmup per CUDA-graph bucket. Measured: still going after
+30 minutes, ~11000 warmup log lines. With it: **server ready in 80 seconds.**
+Mounting a JIT cache dir did not help — the cache stayed empty at 0 files.
+
+## Latency
+
+`max_total_num_tokens=664937`, context 131072. Raw generation is 37.7 tok/s
+(400 tokens in 10.6s). End to end a card takes **~60s**, dominated by prefill of
+the ~42k-token octos prompt, not decode — decode is fast because speculation is
+accepting ~28 tokens a step.
+
+## The network shape, which is not optional
+
+**The phone cannot reach 89.169.125.111.** Measured 100% packet loss from the
+device while the Mac reaches it fine — the GFW blocks the Nebius range. So:
+
+    phone -> adb reverse 30878 -> Mac -> ssh -L 30878 -> H100
+
+and the phone profile (`prov_h100t`) points at `http://127.0.0.1:30878/v1`.
+`demo.sh` rebuilds the tunnel and the reverse every run. **The phone must stay
+USB-tethered to this Mac.**
+
+## Known blocker at handover: no phone internet
+
+Live data (weather, stock, quake, satellite) is fetched **by the phone,
+directly** — the tunnel carries only the LLM. The phone's WiFi dropped
+mid-session (`NETWORK_DISCONNECTION_EVENT` at 03:14:08) and did not recover:
+it cannot reach 8.8.8.8, open-meteo, or even baidu.com, so this is a dead link
+rather than the GFW.
+
+Consequence: **cards generate and render correctly but show `—°` everywhere.**
+Verified end to end — the card DSL is accepted, the layout is right, the data
+is empty.
+
+Routing the phone's HTTP through the Mac (`settings put global http_proxy
+127.0.0.1:7897` + `adb reverse 7897`) does reach the internet — data-fetch
+errors went to zero — but HTTPS then fails with `SSLPeerUnverifiedException`
+through Clash, and excluding localhost to save the LLM path brings the data
+errors back. That setting has been cleared; it is not a working answer.
+
+**Fix the phone's WiFi and everything works.** That is the only outstanding item.
+
+## DFlash2
+
+`z-lab/Qwen3.8-27B-DFlash2` is downloaded to `~/models/draft2` (3.6 GB) and
+`~/serve_dflash2.sh` is written and ready. It is **not running**, because stock
+sglang 0.5.18 ships DFlash v1 only (`models/dflash.py`) and has no
+`selector_rank` / `conv_group_size` — the v2 draft declares
+`DFlash2DraftModel`, `block_size: 8`, and target layers `[5,19,33,47,61]`.
+Running it needs the OminiX fork built from source.
+
+Worth knowing before spending that time: the GH200's fast production endpoint
+was **never running DFlash**. Its launcher says
+`--speculative-algorithm NGRAM`; only the served-model *name* said DFlash. And
+NGRAM is currently measuring 0.869 acceptance on this workload, against the
+DFlash2 card's own published 20.14%. NGRAM is very likely the better choice
+here, not a fallback.
