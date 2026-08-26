@@ -105,9 +105,14 @@ takes it from cloud-init at creation and has no fixed default.
 
 - `Qwen/Qwen3.8-27B-FP8` (30.9 GB) at `~/models/target`. FP8 runs natively:
   the H100 is compute capability 9.0. Restart with `~/serve.sh`.
-- NGRAM speculation over `~/corpus/cards.jsonl`. **Measured: accept length
-  27.95 of 32 draft tokens, accept rate 0.869.** Card DSL is templated enough
-  that n-gram copying nearly saturates the draft window.
+- NGRAM speculation over `~/corpus/cards.jsonl`. **Working rate across 95
+  decode batches: min 1.00 / median 2.25 / mean 4.77 / max 28.73 accepted
+  tokens per step, of 32 drafted.** An earlier note here claimed 27.95 / 0.869
+  — that was a peak sampled right after a run replaying corpus content, not a
+  representative figure. The corpus is 5 cards, so novel output (live
+  temperatures, tickers) matches nothing and acceptance collapses to 1-2.
+  Feeding it the 100-card beauty corpus in `~/home/gh200-backup/beauty-dataset/
+  cards/` is the obvious speed win and is NOT yet done.
 - Stock `lmsysorg/sglang:latest` (0.5.18). No OminiX fork needed — DFLASH is
   upstream now. See the DFlash2 note below.
 
@@ -123,9 +128,13 @@ Mounting a JIT cache dir did not help — the cache stayed empty at 0 files.
 
 ## Latency
 
-`max_total_num_tokens=664937`, context 131072. Raw generation is 37.7 tok/s
+`max_total_num_tokens=664297`, context **262144** (raised from 131072 after a
+live HTTP 400: a continuous session grew the input to 127335 tokens, and
+127335 + 16384 output exceeded the old limit. Force-stopping the app clears
+history, which is why the earlier per-prompt tests never hit it). Raw generation is 37.7 tok/s
 (400 tokens in 10.6s). End to end a card takes **~60s**, dominated by prefill of
-the ~42k-token octos prompt, not decode — decode is fast because speculation is
+the ~82k-token octos prompt (measured `#full token: 82649`, not the 42k quoted
+earlier), not decode — decode is fast because speculation is
 accepting ~28 tokens a step.
 
 ## The network shape, which is not optional
