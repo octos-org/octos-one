@@ -280,3 +280,38 @@ fixtures at 6.
 That closes the last open hypothesis. Sparse or rich, fixture or live, defects
 fixed or not, two judges and two model families all land in the same 5-6 band,
 which the project's own rubric describes as where "most screens" sit.
+
+---
+
+# The fixes were real — the absolute scale just could not see them
+
+The rounds above were judged by an absolute 1-10 score and came out flat
+(5.25 → 5.00 → 5.00 → 5.00 → 5.25), which read as "the work did nothing". That
+reading was wrong, and the instrument was the reason.
+
+The same builds, judged **paired** — the newer render against the older, order
+swapped on alternating moods to cancel position bias:
+
+| mood | winner |
+|---|---|
+| light | round 4 — *"monochrome icons and one accent hue read as a system"* |
+| dark | round 4 — *"monochrome icons and single-hue track bars show real colour restraint"* |
+| glass | round 4 — *"coherent monochrome icons, restrained single-hue bars"* |
+| photo | round 4 — *"rain icons read as complete, consistent-weight glyphs"* |
+
+**4 wins, 0 losses.** A clean sweep, and the stated reasons name exactly the
+changes that were made.
+
+So rounds 2-4 were genuine, visible improvements that the absolute rubric could
+not resolve. This does not contradict the calibration above — it sharpens it.
+The absolute scale is **flat across the 5-7 band** where all real work happens,
+and paired judging resolves differences inside it. Both facts come from the same
+renders.
+
+**The operational rule:** use paired judging for progress, always. Reserve the
+absolute score for coarse banding — is this broken, competent, or exceptional —
+and never as a target, because it will report no movement while the screens
+visibly improve.
+
+Had this been run after round 1 instead of after round 4, four rounds would not
+have been spent believing the work was inert.
