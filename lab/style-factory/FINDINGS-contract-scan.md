@@ -64,6 +64,26 @@ the new `draw_bg.shadow_color`.
 So the failure is isolated to `sdf.stroke` / `border_color` in the makepad
 prototype — widget work, below anything octos-one controls.
 
+**Bisected to completion 2026-08-30.** `border_color` is NOT the fault either.
+Hardcoding the ink at DESIGN time — `border_color: instance(#f00)` written
+straight into `RoundedShadowView`'s prototype, the same way `Button`,
+`CheckBox`, `DropDown` and `GlassPanel` declare theirs, and those render — still
+produces **zero red pixels** on device with `panel_border: 8`.
+
+So every input is ruled out: the property name is right (`border_color`, matching
+`view_ui.rs:113`), the width provably reaches the shader (a 30-logical border
+insets the fill by exactly 82 device px at this phone's 2.75 scale), the ink is
+correct at design time as well as runtime, and the same instance mechanism draws
+the fill and the new shadow on the very same prototype.
+
+**`sdf.stroke` does not draw in this makepad build.** That is an upstream defect,
+not an octos-one one, and it cannot be fixed from this repository. Worth noting
+from the CPU reference implementation
+(`platform/src/os/headless/shader_runtime_preamble.rs:1403`): `stroke` computes
+`d = (shape.abs() - width*0.5).max(0.0)` and then `alpha = -d/aa + 0.5`, so a
+stroke's maximum alpha is **0.5** even where it does draw — the clamp at zero
+means the centre of the band never reaches full opacity.
+
 ## The UX measurement, which did not go where expected
 
 Target was 9/10. Opus scoring renders on device:
