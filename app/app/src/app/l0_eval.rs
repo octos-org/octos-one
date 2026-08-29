@@ -669,7 +669,7 @@ mod kit_palette {
     //! carry the same fill, and a rename that misses one of them fails here.
     use splash_ui_l0::{kit, realize, RealizeLimits};
 
-    fn find<'a>(n: &'a splash_node::UiNode, k: splash_node::NodeKind) -> Option<&'a splash_node::UiNode> {
+    fn find(n: &splash_node::UiNode, k: splash_node::NodeKind) -> Option<&splash_node::UiNode> {
         if n.kind == k {
             return Some(n);
         }

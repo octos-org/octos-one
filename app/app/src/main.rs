@@ -338,10 +338,10 @@ const BUNDLED_MISSION: &str = include_str!("dev_goal_movie.txt");
 
 const APP_SPLASH_ROUTER: &str = "You ARE the app agent and you OWN the entire flow: PICK the right app for the user request YOURSELF, then generate that app's card — ONE turn, no separate router. Your COMPLETE memory (the app framework procedure, the widget helpers, and ALL app specs) is ALREADY IN YOUR CONTEXT — it was injected as your memory. USE it. Do NOT read or fetch any files. Do NOT use the spawn tool. Do NOT delegate. Do NOT summarize.\n\nPICKING (the app ids are framework.md's routing list plus any `apps/<id>/app.md` in memory): a BARE place name → weather; a BARE ticker/company, or top/best/gainers/movers about the market → stock; headlines → news; nearby places / a LIST of things to do → activity; ASKING WHAT TO DO or advice ('what can I do in Beijing', 'what should I do today', '今天适合干什么') → weather-activity (the conditions decide the answer — it does NOT need the word weather); COMPARING COUNTRIES on an economic or development measure over years ('china gdp vs india') → chart; where-should-I-go across the user's SAVED cities → city-picks; DIRECTIONS / any go-there request with a travel verb ('directions to SFO', 'navigate home', '怎么去外滩') → nav; ANY video / music / live-stream / watching request → youtube; unit conversion ('km to miles', '20°C in fahrenheit') → convert (a CURRENCY rate is a capability this profile lacks — no card, say so); earthquakes → quake; a single general app / tool / utility / game / dashboard no other domain covers → web. A weather request stays weather EVEN IF it names a visual style (dark/light/minimal/glass/vibrant/photo/深色/简约/毛玻璃) — those are STYLE modifiers for the weather card. For nav, parse the trip YOURSELF: split 'from A to B' (no origin named → the device's position), QUALIFY an ambiguous place with its city/region from world knowledge ('apple park' → 'apple park cupertino'; leave a clear street address as-is), and put the origin/destination into the card's OWN STATE as the initial queries so it opens on that route, not an empty search box. If NO app's data bears on the request, reply with ONE short plain-text sentence saying what's missing — no card.\n\nGENERATING: follow the chosen app's `apps/<id>/app.md` spec, assembling it from the injected widget patterns (there are no exemplars), using ONLY the sys.* helpers ITS spec names. Bind LIVE data via those helpers — NEVER hardcode or invent numbers/headlines/venues.\n\nWrite the card YOURSELF and stream it as your answer: emit EXACTLY ONE ```runsplash fenced block as your ENTIRE final answer — the COMPLETE card DSL, with ALL mandatory sections the chosen app's spec lists (e.g. for weather: current block, 7-day forecast, BOTH map panes each as its own full-width row — satellite 卫星云图 then air-quality 空气质量图, NEVER side by side — and the detail grid). No prose before or after the block. NEVER truncate — emit the whole card in one block.";
 
-/// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
-/// so a "dark/glass/minimal/photo weather" request
-/// reproduces that style precisely without needing the profile MEMORY updated.
-/// The default (no style keyword) still uses the injected canonical exemplar.
+// Weather card STYLE CHOICES — the exact `.splash` template per style, baked in
+// so a "dark/glass/minimal/photo weather" request reproduces that style precisely
+// without needing the profile MEMORY updated. The default (no style keyword)
+// still uses the injected canonical exemplar.
 
 /// Map a weather request to an explicit style template, if one is named. Bare
 /// `dark` is treated as a style keyword (a weather intent never means "is it
@@ -639,6 +639,9 @@ const GLASS_DETAIL_TEMPLATE: &str = r##"SolidView{ width: Fill height: 940 flow:
 /// composing the `octos.media` kit). Served DIRECTLY on a youtube route so the
 /// full app renders reliably — the on-device model under-generates a 14 KB app
 /// down to a bare player, so youtube is a deterministic card, not a generation.
+// Unused since youtube moved to the `runhtml` app.md spec path; kept as the
+// reference document that spec points at.
+#[allow(dead_code)]
 const YOUTUBE_REFERENCE_CARD: &str = include_str!("../../../docs/youtube-player-reference.html");
 
 /// The complete Google-Maps-style trip-planner card (search → preview → plan →
@@ -775,12 +778,19 @@ const SEED_PLAN_SHANGHAI: &str = r#"{
     ]
 }"#;
 
+// Build-time OAuth credentials; the sign-in flow that reads them is not wired
+// in this build, so they are unset and unused rather than wrong.
+#[allow(dead_code)]
 const GOOGLE_CLIENT_ID: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_ID");
+#[allow(dead_code)]
 const GOOGLE_CLIENT_SECRET: Option<&str> = option_env!("OCTOS_GOOGLE_CLIENT_SECRET");
 
 /// (live-channel handle, the video id it occupies in the reference card). The
 /// freshest ids from `youtube_live_cache` replace these so the card always opens
 /// on a currently-live stream (live ids rotate).
+// Read only by `youtube_reference_card`, which is itself unused — see the note
+// on YOUTUBE_REFERENCE_CARD.
+#[allow(dead_code)]
 const YOUTUBE_REF_PLACEHOLDER_IDS: [(&str, &str); 4] = [
     ("LofiGirl", "VAlMDl00mYY"),
     ("SkyNews", "YDvsBbKfLPA"),
@@ -789,6 +799,8 @@ const YOUTUBE_REF_PLACEHOLDER_IDS: [(&str, &str); 4] = [
 ];
 
 /// The reference youtube card with the freshest resolved live ids substituted in.
+/// Unused alongside `YOUTUBE_REFERENCE_CARD` — see the note there.
+#[allow(dead_code)]
 fn youtube_reference_card() -> String {
     let cache = youtube_live_cache().lock().unwrap();
     let mut html = YOUTUBE_REFERENCE_CARD.to_string();
@@ -4786,12 +4798,11 @@ impl Widget for MermaidSvgView {
                     self.redraw(cx);
                 }
             }
-            Hit::FingerUp(_) => {
-                if self.drag_start_abs.is_some() {
+            Hit::FingerUp(_)
+                if self.drag_start_abs.is_some() => {
                     self.drag_start_abs = None;
                     cx.set_cursor(MouseCursor::Grab);
                 }
-            }
             Hit::FingerHoverIn(_) => cx.set_cursor(MouseCursor::Grab),
             Hit::FingerScroll(fs) => {
                 if !fs.modifiers.is_primary() {
@@ -5550,7 +5561,7 @@ std::thread_local! {
     /// (measured: a manage-mode swipe opened the quote it swept over). A tap
     /// notify arriving within this window of a swipe is the swipe, not a tap.
     static L0_SWIPE_AT: std::cell::Cell<Option<std::time::Instant>> =
-        std::cell::Cell::new(None);
+        const { std::cell::Cell::new(None) };
 }
 
 #[derive(Script, ScriptHook)]
@@ -6590,6 +6601,7 @@ impl App {
     /// isolation: overwriting a sibling `apps/weather/app.md` still needs
     /// kernel-side create-only enforcement (tracked). Android-only; on desktop
     /// the tree lives server-side.
+    #[allow(dead_code)]
     fn app_cards_memory_dir() -> Option<String> {
         #[cfg(target_os = "android")]
         {
@@ -6791,7 +6803,7 @@ impl App {
                                 // Heartbeat every 30 s so the UI thread's
                                 // watchdog runs even when no findings arrive.
                                 tick = tick.wrapping_add(1);
-                                if tick % 10 == 0 {
+                                if tick.is_multiple_of(10) {
                                     makepad_widgets::SignalToUI::set_ui_signal();
                                 }
                                 let Ok(meta) = std::fs::metadata(path) else { continue };
@@ -10450,7 +10462,7 @@ mod tests {
         parse_nav_places, glass_opacity_values, pin_fullbleed_root_height,
         rewrite_child_emits, should_start_window_drag, splash_gen_prompt, substitute_card_state,
         substitute_props, EmitHandler, DEFAULT_GLASS_OPACITY,
-        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY, NAV_CANONICAL_CARD,
+        FULLBLEED_FALLBACK_HEIGHT, MAX_GLASS_OPACITY, MIN_GLASS_OPACITY,
     };
     use std::collections::BTreeMap;
 

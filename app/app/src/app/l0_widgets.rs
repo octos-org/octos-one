@@ -251,13 +251,17 @@ fn live_name(call: &str) -> Option<String> {
     })
 }
 
+/// A list of `(name, expression)` bindings — the shape both halves of the hoist
+/// return, named so the signature reads as one thing rather than four nested types.
+type Bindings = Vec<(String, String)>;
+
 /// Pull every constant sub-call out into a named binding.
 ///
 /// "Constant" means: a `sys.*` call that does not read the device's position. Those
 /// are the expensive ones — a place lookup parses its cached response every time it is
 /// evaluated — and they answer the same thing for the life of the card. What is left
 /// in the tick reads `sys.gps` and must run per frame.
-fn hoist_constants(live: &[(String, String)]) -> (Vec<(String, String)>, Vec<(String, String)>) {
+fn hoist_constants(live: &[(String, String)]) -> (Bindings, Bindings) {
     let mut lets: Vec<(String, String)> = Vec::new();
     let mut ticks = Vec::new();
     for (name, expr) in live {
@@ -633,14 +637,15 @@ pub fn parse_tap(target: &str) -> Option<(String, String, String)> {
     Some((field("k"), field("e"), field("v")))
 }
 
-/// A node, wrapped in a hit target when it declares one.
-///
-/// The tap MUST be a transparent `Button` over the content, not an attribute.
-/// An earlier version of this wrote `l0_tapto:` onto the node and nothing read
-/// it — the VM does not hit-test an arbitrary attribute, so the card rendered
-/// perfectly and every row was dead. That is the identical mistake
-/// `makepad::lower` made and had to be corrected for, and writing it a second
-/// time is why it is spelled out here.
+// A node is wrapped in a hit target when it declares one, and the tap MUST be a
+// transparent `Button` over the content, not an attribute. An earlier version of
+// this wrote `l0_tapto:` onto the node and nothing read it — the VM does not
+// hit-test an arbitrary attribute, so the card rendered perfectly and every row
+// was dead. That is the identical mistake `makepad::lower` made and had to be
+// corrected for, and writing it a second time is why it is spelled out here.
+//
+// Plain `//`: this is rationale for the tap-wrapping approach as a whole, not
+// documentation of the `thread_local!` below, which is about row reveals.
 std::thread_local! {
     /// Per-document counter for row-reveal names (`l0rr0`, `l0rr1`, …) — one
     /// per swipe-revealed row, so each row's swipe drives ITS OWN chip.
@@ -951,7 +956,7 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
             }
         }
         if let Some(t) = a.text.as_deref().filter(|_| {
-            !(eyebrow && !a.text.as_deref().unwrap_or("").contains("sys."))
+            !eyebrow || a.text.as_deref().unwrap_or("").contains("sys.")
         }) {
             // Always a literal. An earlier version of this passed a value
             // through unquoted when it looked like `"$" + sys.stock(…)`, which

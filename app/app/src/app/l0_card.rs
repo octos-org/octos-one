@@ -114,6 +114,7 @@ pub(super) fn kit_src() -> String {
 /// The kit as the device would assemble it FOR THIS CARD — mood included.
 /// Test-only sibling of `kit_src`, for tests that exercise a themed card.
 #[cfg(test)]
+#[allow(dead_code)]
 pub(super) fn kit_with_theme(source: &str) -> String {
     kit_for(source)
 }
@@ -485,7 +486,7 @@ fn fetched_scalars(
         };
         out.insert((*field).to_owned(), value);
     }
-    (!out.is_empty()).then(|| serde_json::Value::Object(out))
+    (!out.is_empty()).then_some(serde_json::Value::Object(out))
 }
 
 /// The values a card's `when`s compare against, answered before realize.
@@ -1501,6 +1502,10 @@ pub(crate) fn error_card() -> String {
     )
 }
 
+// No caller since refusals became a quiet card rather than a diagnostics screen;
+// kept because the diagnostics text is still the useful thing to render if that
+// decision is revisited.
+#[allow(dead_code)]
 pub(crate) fn diagnostics_card(headline: &str, reasons: &[String]) -> String {
     let mut out = String::from(
         "SolidView{ width: Fill height: Fit flow: Down new_batch: true \
