@@ -59,7 +59,40 @@ passed: it sets `l0_accent`, which nothing reads, and never touches the ground
 or the ink. Stroke fails it too — and that is how we know it is broken upstream
 rather than mis-specified.
 
-## 6. Genericity gate
+## 6. A mechanical layout gate, before any model is called
+
+Found by looking at a live earthquake card on the phone: the hero magnitude had
+been split character by character — "3" / "." / "9" stacked down the left edge —
+the place name wrapped to five lines in a narrow column while "2h ago" sat in a
+wide empty one beside it, and the word "Magnitude" broke mid-word into
+"Magnitu" / "de" four times.
+
+**Nothing in this pipeline would have caught that.** Every measurement taken
+this session used the four weather baselines; no quake card was ever scored.
+And a vision judge is the wrong tool anyway — it costs a model call, takes a
+minute, and is insensitive across exactly the 5-7 band where real work happens.
+
+The failure has a geometric signature. In a left-to-right script a run of text
+is WIDER than it is TALL, so a text block taller than it is wide has been
+squeezed into a column narrower than its content. `layout_lint.py` finds those
+from the screenshot alone, deterministically, in under a second:
+
+| render | verdict |
+|---|---|
+| the broken live quake card | **1 failure** — a 106x159 block, the split hero |
+| the quake exemplar, same card type | clean, 13 blocks |
+| shipped weather, light | clean, 11 blocks |
+| shipped weather, dark | clean, 12 blocks |
+
+Zero false positives on three known-good screens. It runs BEFORE the judge, on
+every render, and a card that fails it never reaches a model call.
+
+Worth being clear about what this is not: the renderer was innocent here. The
+exemplar renders beautifully; the live model wrote its own three-column layout
+and allocated the widths badly. So this gate measures GENERATION quality, which
+nothing else in the loop does.
+
+## 7. Genericity gate
 
 How many of the 967 corpus cards consume the capability, before building it.
 `l0_bar` shipped at 16% and returned a null.
