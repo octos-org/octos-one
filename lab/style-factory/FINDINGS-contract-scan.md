@@ -334,3 +334,62 @@ So: theoretically sound, and unmeasurable on the card in front of me. That is
 exactly the shape of the theme-axes work, which measured null after a week.
 **Reverted.** If a corpus card that leans on `TextTitle` is put in front of the
 same instruments and the change wins there, it can come back with evidence.
+
+---
+
+# Closing measurement
+
+Shipped build against the early-session build, all four moods, order swapped:
+
+| mood | winner | judge's reason |
+|---|---|---|
+| light | shipped | "crisp high-contrast icons, restrained single accent" |
+| dark | shipped | "crisp high-contrast icons, tighter hero grouping" |
+| glass | shipped | "crisp white icons versus **broken low-contrast glyphs**" |
+| photo | shipped | "rain glyphs render fully and legibly" |
+
+**4 wins, 0 losses.** Absolute score over the identical pair: 5.25 -> 5.50 —
+flat, as it has been for every comparison this session.
+
+Worth noting what the judge now calls the early build: *"broken low-contrast
+glyphs."* Those were the shipping renderer's output at the start of the day.
+
+## What was actually fixed
+
+Eight defects, each measured on device before and after:
+
+| defect | measure |
+|---|---|
+| `elevation` never drawn by any renderer | 0 -> 44 luminance levels of shadow |
+| rain glyphs falling into the next row | drops crossed the box by 39px -> contained |
+| mid-screen void | 164 -> 126px |
+| top padding double-clearing the status bar | dead space 487 -> 394px |
+| light's page merging with its own card | separation 0 -> 21 |
+| dark's gradient invisible | fall 5 -> 11, hero contrast 11.0 -> 12.5:1 |
+| one accent on three grounds | glass 1.76 -> 2.76:1, light 1.92 -> 2.96:1 |
+| photo hero unreadable over the image | ink coverage +28% |
+
+Plus a scope error that fired on every render, and CI red since 20 August.
+
+## And what was refused
+
+- A **phantom defect** — the photo panel "clipping its last row" — retracted
+  after cropping showed all seven rows contained. Taken from a judge's complaint
+  and my own misread of a full-size screenshot.
+- A **correct but unmeasurable change** — a geometric type scale, standard
+  practice, reverted because the card in front of it does not use the role it
+  moves. That is the shape of the theme-axes work that measured null.
+- A **fix that treated the symptom** — raising the photo scrim to 40% reached
+  WCAG AA and flattened the photograph; the real cause was a 100-weight hero
+  over a busy image.
+
+## The rule that emerged
+
+Every one of the eight was a stated justification that had quietly stopped being
+true: a gradient reasoned about without the surface on it, a knob only one mood
+carried, one accent expected to serve three grounds, padding clearing something
+already cleared, a scrim whose own comment claimed it carried legibility.
+
+None needed new capability. All were found by treating a judge's exact words as
+a testable claim and measuring on device before changing anything — and twice by
+noticing the measurement contradicted the comment in the code.
