@@ -92,6 +92,17 @@ exemplar renders beautifully; the live model wrote its own three-column layout
 and allocated the widths badly. So this gate measures GENERATION quality, which
 nothing else in the loop does.
 
+**And it must never be pointed at a mockup.** The detector assumes ink means
+text. That holds for a card on a plain page and fails completely on a full-bleed
+design image: run across the 100 mockups it flags 44%, and on
+`r012-weather-art_deco` the single "text block" it finds is 834x1895 — the whole
+screen. Ink covers everything, the scanner merges the composition into one
+region, and any full-screen region on a phone is taller than wide.
+
+So the answer to "do the mockups have the same wrapping defect" is no, and the
+tool cannot be used to check. Its measured false-positive rate on the renders it
+IS for — photo, glass, a content-rich card, the quake exemplar — is zero.
+
 ## 7. Genericity gate
 
 How many of the 967 corpus cards consume the capability, before building it.

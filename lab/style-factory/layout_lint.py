@@ -11,6 +11,18 @@ The signature is geometric. In a left-to-right script a run of text is WIDER tha
 it is TALL. A text block taller than it is wide has been squeezed into a column
 narrower than its content, and no amount of good typography survives that.
 
+ONLY VALID ON CARD RENDERS, NEVER ON DESIGN MOCKUPS. The detector assumes ink
+means text, which holds for a card drawn on a plain page and fails completely on
+a full-bleed design image. Pointed at the 100 generated mockups it flags 44% of
+them, and inspection shows why: on `r012-weather-art_deco` the single "text
+block" it finds measures 834x1895 — the whole screen. Ink covers everything, the
+row scanner merges the entire composition into one region, and any full-screen
+region on a phone is taller than it is wide. It never saw text at all.
+
+Measured false-positive rate where it IS used — dense card renders including the
+photo mood, the glass mood, a 9-view content-rich card and the quake exemplar:
+zero.
+
 Usage:  layout_lint.py <render.png> [--dark]
 """
 import sys
