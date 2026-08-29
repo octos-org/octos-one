@@ -1,0 +1,62 @@
+# level: L0
+# model: weather-activity
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind])
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+source scene sys.photo(query: state.mood, cond: now.cond)
+
+source park_search sys.search(query: state.park_query, count: 1, fields: [name, label, lat, lon])
+source here sys.gps()
+source trip sys.route(from_lat: here.lat, from_lon: here.lon,
+                      to_lat: park_search.0.lat, to_lon: park_search.0.lon,
+                      mode: .run, fields: [duration, distance])
+
+state city { shape: text, initial: "" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood { shape: text, initial: "empty running track at dawn, cinematic, muted" }
+state park_query { shape: text, initial: "central park" }
+
+event toggle_units { units: cycle(.c, .f) }
+
+copy eyebrow { class: vocabulary, en: "RUNNER'S CARD", zh: "跑者卡片" }
+copy loading { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy aqi_lbl { class: vocabulary, en: "AIR", zh: "空气" }
+copy rain_lbl { class: vocabulary, en: "RAIN", zh: "降水" }
+copy route_lbl { class: vocabulary, en: "ROUTE TO PARK", zh: "去公园路线" }
+copy seeking { class: vocabulary, en: "Finding a route…", zh: "正在寻找路线…" }
+copy away { class: vocabulary, en: "away", zh: "距离" }
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  route
+}
+
+view current Col(gap: 4) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  Row(align: .center, gap: 12, on_tap: toggle_units) {
+    WeatherIcon(cond: now.cond, size: .hero)
+    TextHero(value: now.temp, unit: units)
+  }
+  Row(gap: 14) {
+    Tile(label: copy.rain_lbl, value: now.precip, unit: .pct)
+    Tile(label: copy.aqi_lbl, value: air.aqi)
+  }
+}
+
+view route Panel {
+  TextCaption(text: copy.route_lbl)
+  when trip.$state == .pending { TextBody(text: copy.seeking) }
+  when trip.$state == .ready {
+    Row(align: .center, gap: 12) {
+      TextValue(value: trip.duration, unit: .duration)
+      TextCaption(value: trip.distance, suffix: copy.away)
+    }
+  }
+  Map(mode: .plan, from_lat: here.lat, from_lon: here.lon, to: park_search, zoom: 14)
+}

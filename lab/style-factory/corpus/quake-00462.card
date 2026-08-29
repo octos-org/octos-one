@@ -1,0 +1,55 @@
+# level: L0
+# model: quake
+
+source lead   sys.quakes(count: 1, fields: [id, mag, place, depth, ago, lat, lon])
+source feed   sys.quakes(count: 6, offset: 1, fields: [id, mag, place, ago])
+source env.locale sys.locale()
+
+copy eyebrow { class: vocabulary, en: "USGS · LAST 24 HOURS", zh: "USGS · 最近 24 小时" }
+copy heading { class: vocabulary, en: "Latest Earthquakes", zh: "最近地震" }
+copy loading { class: vocabulary, en: "Reading the feed…", zh: "正在读取…" }
+copy offline { class: vocabulary, en: "Can't reach USGS", zh: "无法连接 USGS" }
+copy quiet   { class: vocabulary, en: "Nothing above M2.5 in the last day", zh: "最近一天没有 2.5 级以上地震" }
+copy earlier { class: vocabulary, en: "EARLIER", zh: "更早" }
+copy depth   { class: vocabulary, en: "depth", zh: "深度" }
+
+view root Surface(pad: .page) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: copy.heading, width: .fill)
+  when lead.$state == .pending { TextBody(text: copy.loading) }
+  when lead.$state == .failed  { TextBody(text: copy.offline) }
+  latest
+  earlier_list
+}
+
+view latest Panel {
+  for q, i in lead key q.id {
+    Col(gap: 4) {
+      TextHero(value: q.mag)
+      TextRow(text: q.place, width: .fill)
+      Row(gap: 10) {
+        TextCaption(text: q.ago)
+        TextCaption(text: q.depth, glyph: "↓")
+      }
+    }
+    Satellite(lat: q.lat, lon: q.lon)
+  }
+}
+
+view earlier_list Col {
+  TextCaption(text: copy.earlier)
+  when feed.$state == .ready { rows }
+}
+
+view rows Panel {
+  for q, i in feed key q.id {
+    Row(align: .center, gap: 10) {
+      TextValue(value: q.mag)
+      Col(gap: 2, width: .fill) {
+        TextRow(text: q.place)
+        TextCaption(text: q.ago)
+      }
+    }
+    Rule()
+  }
+}

@@ -1,0 +1,88 @@
+# level: L0
+# model: nav
+
+source here sys.gps()
+source found sys.search(query: state.query, count: 5, fields: [name, label, query, lat, lon])
+source dest_place sys.search(query: state.dest, count: 1, fields: [id, name, lat, lon])
+source trip_here sys.route(from_lat: state.from_lat, from_lon: state.from_lon,
+                          to_lat: dest_place.0.lat, to_lon: dest_place.0.lon,
+                          mode: state.mode, fields: [duration, distance])
+source step_here sys.step(from_lat: state.from_lat, from_lon: state.from_lon,
+                          to_lat: dest_place.0.lat, to_lon: dest_place.0.lon,
+                          at_lat: here.lat, at_lon: here.lon,
+                          fields: [instruction, remaining, eta])
+source env.locale sys.locale()
+
+state from_lat { shape: number, initial: here.lat }
+state from_lon { shape: number, initial: here.lon }
+state dest { shape: text, initial: "the beach" }
+state query { shape: text, initial: "" }
+state screen { shape: enum[plan, drive], initial: .plan }
+state mode { shape: enum[drive, walk, bike], initial: .drive }
+
+event set_dest { dest: set($value), query: set($value) }
+event typing { query: set($value) }
+event choose_dest { dest: set($value), query: clear }
+event go { screen: cycle(.plan, .drive) }
+event pick_mode { mode: set($value) }
+
+copy title { class: vocabulary, en: "Directions" }
+copy to { class: vocabulary, en: "TO" }
+copy seeking { class: vocabulary, en: "Finding a route…" }
+copy onward { class: vocabulary, en: "GO" }
+copy drive { class: vocabulary, en: "Drive" }
+copy walk { class: vocabulary, en: "Walk" }
+copy bike { class: vocabulary, en: "Bike" }
+copy stop { class: vocabulary, en: "End" }
+copy left { class: vocabulary, en: "left" }
+
+view root Surface {
+  when screen == .plan {
+    TextTitle(text: copy.title)
+    Col(align: .center) {
+      Row(align: .center, gap: 8, width: .fit) {
+        Chip(text: copy.drive, on_tap: pick_mode, value: .drive, active: mode == .drive)
+        Chip(text: copy.walk, on_tap: pick_mode, value: .walk, active: mode == .walk)
+        Chip(text: copy.bike, on_tap: pick_mode, value: .bike, active: mode == .bike)
+      }
+    }
+    Panel {
+      Row(align: .center, gap: 10) {
+        TextCaption(text: copy.to, width: .label)
+        TextRow(text: dest, width: .fill)
+      }
+    }
+    when query != "" {
+      for f, i in found key f.label {
+        Row(align: .center, gap: 10, on_tap: choose_dest, value: f.query) {
+          Col(gap: 2) {
+            TextRow(text: f.name)
+            TextCaption(text: f.label)
+          }
+        }
+      }
+    }
+    when dest != "" {
+      when trip_here.$state == .pending { TextBody(text: copy.seeking) }
+      when trip_here.$state == .ready {
+        Col(align: .center) {
+          Row(align: .center, width: .fit) {
+            Chip(text: copy.onward, on_tap: go, tone: .primary)
+          }
+        }
+        Map(mode: .plan, from_lat: from_lat, from_lon: from_lon, to: dest_place, zoom: 16)
+      }
+    }
+  }
+  when screen == .drive {
+    Panel(dock: .top) {
+      TextBody(text: step_here.instruction, width: .fill)
+    }
+    Panel(dock: .bottom) {
+      TextHero(value: step_here.eta, unit: .duration)
+      TextCaption(value: step_here.remaining)
+      Chip(text: copy.stop, on_tap: go, tone: .danger)
+    }
+    Map(mode: .drive, from_lat: from_lat, from_lon: from_lon, to: dest_place, at: here, zoom: 15)
+  }
+}

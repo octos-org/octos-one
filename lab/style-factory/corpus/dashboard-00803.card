@@ -1,0 +1,103 @@
+# level: L0
+# model: weather-stock-news
+
+source place       sys.geocode(name: state.city)
+source now         sys.weather(lat: place.lat, lon: place.lon,
+                               fields: [temp, feels, cond, humidity, wind, precip])
+source movers      sys.movers(count: 5, fields: [ticker, name, last, change, pct])
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source env.locale  sys.locale()
+
+state city  { shape: text, initial: "" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+
+event toggle_units { units: cycle(.c, .f) }
+
+copy eyebrow   { class: vocabulary, en: "MORNING DASHBOARD", zh: "早安仪表盘" }
+copy weather_hd { class: vocabulary, en: "WEATHER", zh: "天气" }
+copy stocks_hd  { class: vocabulary, en: "TOP STOCKS", zh: "热门股票" }
+copy news_hd    { class: vocabulary, en: "TOP HEADLINES", zh: "头条新闻" }
+copy feels      { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity   { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind       { class: vocabulary, en: "Wind", zh: "风速" }
+copy rain       { class: vocabulary, en: "Rain", zh: "降水" }
+copy loading    { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline    { class: vocabulary, en: "Can't reach the network", zh: "无法连接" }
+copy pts        { class: vocabulary, en: "pts", zh: "分" }
+copy by         { class: vocabulary, en: "by", zh: "作者" }
+
+view root Surface(pad: .page) {
+  Col(gap: 16) {
+    TextCaption(text: copy.eyebrow)
+    weather_section
+    stocks_section
+    news_section
+  }
+}
+
+view weather_section Col(gap: 8) {
+  TextTitle(text: copy.weather_hd)
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  when now.$state == .ready {
+    Row(align: .center, gap: 12) {
+      WeatherIcon(cond: now.cond, size: .hero)
+      Col(gap: 4) {
+        TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+        Row(gap: 8, width: .fit) {
+          TextCaption(glyph: "≈", value: now.feels, unit: units)
+        }
+      }
+    }
+    Grid(cols: 2) {
+      Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+      Tile(label: copy.wind, value: now.wind, unit: .speed)
+      Tile(label: copy.rain, value: now.precip, unit: .pct)
+    }
+  }
+}
+
+view stocks_section Col(gap: 8) {
+  TextTitle(text: copy.stocks_hd)
+  when movers.$state == .pending { TextBody(text: copy.loading) }
+  when movers.$state == .failed  { TextBody(text: copy.offline) }
+  when movers.$state == .ready {
+    Panel {
+      for m, i in movers key m.ticker {
+        Row(align: .center, gap: 8) {
+          Col(gap: 2, width: .fill) {
+            TextRow(text: m.ticker)
+            TextCaption(text: m.name, width: .fill)
+          }
+          TextValue(value: m.last, format: .money)
+          TextValue(value: m.pct, format: .signed_pct, tint: m.change)
+        }
+        Rule()
+      }
+    }
+  }
+}
+
+view news_section Col(gap: 8) {
+  TextTitle(text: copy.news_hd)
+  when feed.$state == .pending { TextBody(text: copy.loading) }
+  when feed.$state == .failed  { TextBody(text: copy.offline) }
+  when feed.$state == .ready {
+    Panel {
+      for s, i in feed key s.id {
+        Row(align: .center, gap: 8) {
+          Col(gap: 2, width: .fill) {
+            TextRow(text: s.title, width: .fill)
+            Row(gap: 6) {
+              TextCaption(value: s.points, suffix: copy.pts)
+              TextCaption(text: copy.by)
+              TextCaption(text: s.author)
+            }
+          }
+        }
+        Rule()
+      }
+    }
+  }
+}

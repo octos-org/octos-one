@@ -1,0 +1,160 @@
+# level: L0
+# model: storm-tracker
+
+source place   sys.geocode(name: state.city)
+source now     sys.weather(lat: place.lat, lon: place.lon,
+                           fields: [temp, cond, precip, wind])
+source air     sys.airquality(lat: place.lat, lon: place.lon)
+source scene   sys.photo(query: state.mood, cond: now.cond)
+
+source lead    sys.quakes(count: 1, fields: [id, mag, place, depth, ago, lat, lon])
+source feed    sys.quakes(count: 6, offset: 1, fields: [id, mag, place, ago])
+
+source news_lead sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source news_feed sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source article   sys.news_item(id: state.selected,
+                               fields: [title, author, points, comments, url])
+source page      sys.link(fields: [url])
+
+source env.locale sys.locale()
+
+state city     { shape: text, initial: "" }
+state units    { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood     { shape: text, initial: "storm clouds over city skyline, dramatic, cinematic" }
+state selected { shape: text, initial: "" }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_story   { selected: set($value) }
+event back         { selected: clear }
+event read_story   { page: set($value) }
+
+copy eyebrow   { class: vocabulary, en: "STORM TRACKER", zh: "风暴追踪" }
+copy loading   { class: vocabulary, en: "Reading the situation…", zh: "正在读取…" }
+copy offline   { class: vocabulary, en: "Can't reach the services", zh: "无法获取数据" }
+copy weather_hd { class: vocabulary, en: "CONDITIONS", zh: "天气状况" }
+copy quake_hd   { class: vocabulary, en: "SEISMIC ACTIVITY", zh: "地震活动" }
+copy news_hd    { class: vocabulary, en: "EMERGENCY NEWS", zh: "紧急新闻" }
+copy rain_lbl   { class: vocabulary, en: "RAIN", zh: "降水" }
+copy aqi_lbl    { class: vocabulary, en: "AIR", zh: "空气" }
+copy wind_lbl   { class: vocabulary, en: "WIND", zh: "风速" }
+copy temp_lbl   { class: vocabulary, en: "TEMP", zh: "气温" }
+copy depth      { class: vocabulary, en: "depth", zh: "深度" }
+copy earlier    { class: vocabulary, en: "EARLIER", zh: "更早" }
+copy lead_lbl   { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy pts        { class: vocabulary, en: "pts", zh: "分" }
+copy comments   { class: vocabulary, en: "comments", zh: "评论" }
+copy by         { class: vocabulary, en: "by", zh: "作者" }
+copy back_lbl   { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy read_lbl   { class: vocabulary, en: "Read ↗", zh: "阅读原文 ↗" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+         TextRow(text: hit.name)
+         TextCaption(text: hit.label)
+       }
+}
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  seismic
+  news_section
+}
+
+view current Col(gap: 4) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  Row(align: .center, gap: 12, on_tap: toggle_units) {
+    WeatherIcon(cond: now.cond, size: .hero)
+    TextHero(value: now.temp, unit: units)
+  }
+  Row(gap: 14) {
+    Tile(label: copy.rain_lbl, value: now.precip, unit: .pct)
+    Tile(label: copy.aqi_lbl, value: air.aqi)
+    Tile(label: copy.wind_lbl, value: now.wind, unit: .speed)
+  }
+}
+
+view seismic Col(gap: 8) {
+  TextTitle(text: copy.quake_hd)
+  when lead.$state == .pending { TextBody(text: copy.loading) }
+  when lead.$state == .failed  { TextBody(text: copy.offline) }
+  Panel {
+    for q, i in lead key q.id {
+      Col(gap: 4) {
+        TextHero(value: q.mag)
+        TextRow(text: q.place, width: .fill)
+        Row(gap: 10) {
+          TextCaption(text: q.ago)
+          TextCaption(text: q.depth, glyph: "↓")
+        }
+      }
+      Satellite(lat: q.lat, lon: q.lon)
+    }
+  }
+  when feed.$state == .ready {
+    TextCaption(text: copy.earlier)
+    Panel {
+      for q, i in feed key q.id {
+        Row(align: .center, gap: 10) {
+          TextValue(value: q.mag)
+          Col(gap: 2, width: .fill) {
+            TextRow(text: q.place)
+            TextCaption(text: q.ago)
+          }
+        }
+        Rule()
+      }
+    }
+  }
+}
+
+view news_section Col(gap: 8) {
+  TextTitle(text: copy.news_hd)
+  when selected == "" { news_feed_view }
+  when selected != "" { news_detail_view }
+}
+
+view news_feed_view Col {
+  when news_feed.$state == .pending { TextBody(text: copy.loading) }
+  when news_feed.$state == .failed  { TextBody(text: copy.offline) }
+  Card(on_tap: open_story, value: news_lead.0.id) {
+    TextCaption(text: copy.lead_lbl)
+    TextBody(text: news_lead.0.title, width: .fill)
+    Row(gap: 6) {
+      TextCaption(value: news_lead.0.points, suffix: copy.pts)
+      TextCaption(value: news_lead.0.comments, suffix: copy.comments)
+      TextCaption(text: copy.by)
+      TextCaption(text: news_lead.0.author)
+    }
+  }
+  Panel {
+    for s, i in news_feed key s.id {
+      Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+        Col(gap: 2, width: .fill) {
+          TextRow(text: s.title, width: .fill)
+          Row(gap: 6) {
+            TextCaption(value: s.points, suffix: copy.pts)
+            TextCaption(text: s.author)
+          }
+        }
+      }
+      Rule()
+    }
+  }
+}
+
+view news_detail_view Col {
+  Row(align: .center, on_tap: back) { TextRow(text: copy.back_lbl) }
+  Row(gap: 8) {
+    Chip(text: copy.read_lbl, on_tap: read_story, value: article.url)
+  }
+  TextTitle(text: article.title, width: .fill)
+  Row(gap: 6) {
+    TextCaption(value: article.points, suffix: copy.pts)
+    TextCaption(text: copy.by)
+    TextCaption(text: article.author)
+  }
+  TextCaption(text: article.url)
+}

@@ -1,0 +1,68 @@
+# level: L0
+# model: weather-nav
+
+source place       sys.geocode(name: state.city)
+source now         sys.weather(lat: place.lat, lon: place.lon,
+                               fields: [temp, feels, cond, precip, wind])
+source scene       sys.photo(query: state.mood, cond: now.cond)
+source here        sys.gps()
+source dest_place  sys.search(query: state.dest, count: 1, fields: [id, name, lat, lon])
+source trip        sys.route(from_lat: here.lat, from_lon: here.lon,
+                              to_lat: dest_place.0.lat, to_lon: dest_place.0.lon,
+                              mode: state.mode, fields: [duration, distance])
+source env.locale  sys.locale()
+
+state city  { shape: text, initial: "" }
+state dest  { shape: text, initial: "office" }
+state mode  { shape: enum[drive, walk, bike], initial: .drive }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood  { shape: text, initial: "city street morning commute, cinematic, muted" }
+
+event toggle_units { units: cycle(.c, .f) }
+event pick_mode    { mode: set($value) }
+
+copy eyebrow   { class: vocabulary, en: "COMMUTE", zh: "通勤" }
+copy loading  { class: vocabulary, en: "Getting the weather…", zh: "正在获取天气…" }
+copy offline  { class: vocabulary, en: "Can't reach the weather service", zh: "无法获取天气" }
+copy route    { class: vocabulary, en: "Finding a route…", zh: "正在查找路线…" }
+copy to_office{ class: vocabulary, en: "To office", zh: "去办公室" }
+copy drive    { class: vocabulary, en: "Drive", zh: "驾车" }
+copy walk     { class: vocabulary, en: "Walk", zh: "步行" }
+copy bike     { class: vocabulary, en: "Bike", zh: "骑行" }
+copy away     { class: vocabulary, en: "away", zh: "距离" }
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  commute
+}
+
+view current Col(align: .center) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  WeatherIcon(cond: now.cond, size: .hero)
+  TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+  Row(gap: 8, width: .fit) {
+    TextCaption(glyph: "≈", value: now.feels, unit: units)
+    TextCaption(glyph: "💧", value: now.precip, unit: .pct)
+    TextCaption(glyph: "🌬", value: now.wind, unit: .speed)
+  }
+}
+
+view commute Panel {
+  TextCaption(text: copy.to_office)
+  Row(align: .center, gap: 8, width: .fit) {
+    Chip(text: copy.drive, on_tap: pick_mode, value: .drive, active: mode == .drive)
+    Chip(text: copy.walk,  on_tap: pick_mode, value: .walk,  active: mode == .walk)
+    Chip(text: copy.bike,  on_tap: pick_mode, value: .bike,  active: mode == .bike)
+  }
+  when trip.$state == .pending { TextBody(text: copy.route) }
+  when trip.$state == .ready {
+    Row(align: .center, gap: 12) {
+      TextValue(value: trip.duration, unit: .duration)
+      TextCaption(value: trip.distance, suffix: copy.away)
+    }
+  }
+  Map(mode: .plan, from_lat: here.lat, from_lon: here.lon, to: dest_place, zoom: 14)
+}

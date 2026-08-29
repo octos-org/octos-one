@@ -1,0 +1,218 @@
+# level: L0
+# model: travel-tokyo
+
+source place   sys.geocode(name: state.city)
+source now     sys.weather(lat: place.lat, lon: place.lon,
+                           fields: [temp, feels, cond, precip, wind, humidity, pressure, uv])
+source week    sys.weather(lat: place.lat, lon: place.lon, days: 3,
+                           fields: [dayname, hi, lo, cond],
+                           aggregate: [min_lo, max_hi])
+source sun     sys.daylight(lat: place.lat, lon: place.lon)
+source moon    sys.moonphase()
+source scene   sys.photo(query: state.mood, cond: now.cond)
+source out1    sys.search(query: "Senso-ji Temple Tokyo", count: 1, fields: [name, label])
+source out2    sys.search(query: "Shibuya Crossing Tokyo", count: 1, fields: [name, label])
+source out3    sys.search(query: "Meiji Shrine Tokyo", count: 1, fields: [name, label])
+source in1     sys.search(query: "Tokyo National Museum", count: 1, fields: [name, label])
+source in2     sys.search(query: "teamLab Planets Tokyo", count: 1, fields: [name, label])
+source in3     sys.search(query: "Tsukiji Outer Market Tokyo", count: 1, fields: [name, label])
+source here    sys.gps()
+source dest    sys.search(query: state.dest, count: 1, fields: [id, name, lat, lon])
+source trip    sys.route(from_lat: here.lat, from_lon: here.lon,
+                         to_lat: dest.0.lat, to_lon: dest.0.lon,
+                         mode: state.mode, fields: [duration, distance])
+source step    sys.step(from_lat: here.lat, from_lon: here.lon,
+                        to_lat: dest.0.lat, to_lon: dest.0.lon,
+                        at_lat: here.lat, at_lon: here.lon,
+                        fields: [instruction, remaining, eta])
+source env.locale sys.locale()
+
+state city   { shape: text, initial: "Tokyo" }
+state mood   { shape: text, initial: "tokyo city street at dusk, neon signs, cinematic, muted" }
+state units  { shape: enum[c, f], initial: env.locale.temp_unit }
+state dest   { shape: text, initial: "Tokyo Station" }
+state mode   { shape: enum[drive, walk, bike], initial: .drive }
+state screen { shape: enum[plan, drive], initial: .plan }
+
+event toggle_units { units: cycle(.c, .f) }
+event pick_mode    { mode: set($value) }
+event go           { screen: cycle(.plan, .drive) }
+
+copy eyebrow   { class: vocabulary, en: "TOKYO · TODAY", zh: "东京 · 今天" }
+copy loading   { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline   { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy go_out    { class: vocabulary, en: "Good day to be outside", zh: "适合外出" }
+copy stay_in   { class: vocabulary, en: "Better indoors today", zh: "今天更适合室内" }
+copy why_wet   { class: vocabulary, en: "rain is likely", zh: "可能有雨" }
+copy why_cold  { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
+copy why_fine  { class: vocabulary, en: "mild and dry", zh: "温和干燥" }
+copy rain_lbl  { class: vocabulary, en: "RAIN", zh: "降水" }
+copy feels     { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity  { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind      { class: vocabulary, en: "Wind", zh: "风速" }
+copy pressure  { class: vocabulary, en: "Pressure", zh: "气压" }
+copy uv        { class: vocabulary, en: "UV Index", zh: "紫外线" }
+copy precip    { class: vocabulary, en: "Rain", zh: "降水概率" }
+copy sunrise   { class: vocabulary, en: "Sunrise", zh: "日出" }
+copy sunset    { class: vocabulary, en: "Sunset", zh: "日落" }
+copy things    { class: vocabulary, en: "TOP THINGS TO DO", zh: "必做" }
+copy outdoors  { class: vocabulary, en: "OUTDOORS", zh: "户外" }
+copy indoors   { class: vocabulary, en: "INDOORS", zh: "室内" }
+copy nav_title { class: vocabulary, en: "GET AROUND", zh: "出行" }
+copy drive     { class: vocabulary, en: "Drive", zh: "驾车" }
+copy walk      { class: vocabulary, en: "Walk", zh: "步行" }
+copy bike      { class: vocabulary, en: "Bike", zh: "骑行" }
+copy onward    { class: vocabulary, en: "GO", zh: "出发" }
+copy stop      { class: vocabulary, en: "End", zh: "结束" }
+copy seeking   { class: vocabulary, en: "Finding a route…", zh: "正在查找路线…" }
+copy to_lbl    { class: vocabulary, en: "TO", zh: "目的地" }
+copy from_lbl  { class: vocabulary, en: "FROM", zh: "起点" }
+copy cur_loc   { class: vocabulary, en: "Current location", zh: "当前位置" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+    TextRow(text: hit.name)
+    TextCaption(text: hit.label)
+  }
+}
+
+component ForecastRow(item: record, unit: enum[c, f]) {
+  view Row(align: .center) {
+    TextRow(text: item.dayname, width: .day)
+    WeatherIcon(cond: item.cond, size: .row)
+    TextValue(value: item.lo, unit: unit)
+    TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+    TextValue(value: item.hi, unit: unit)
+  }
+}
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  forecast
+  sunmoon
+  details
+  verdict
+  nav
+}
+
+view current Col(align: .center) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  WeatherIcon(cond: now.cond, size: .hero)
+  TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+  Row(gap: 8, width: .fit) {
+    TextCaption(glyph: "↑", value: now.hi, unit: units)
+    TextCaption(glyph: "↓", value: now.lo, unit: units)
+    TextCaption(glyph: "≈", value: now.feels, unit: units)
+  }
+}
+
+view forecast Panel {
+  for d in week.days key d.dayname {
+    ForecastRow(item: d, unit: units)
+  }
+}
+
+view sunmoon Panel {
+  Row {
+    Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: .time) }
+    SunArc(rise: sun.rise, set: sun.set, now: sun.now)
+    Col { TextCaption(text: copy.sunset) TextStat(value: sun.set, format: .time) }
+  }
+  MoonPhase(phase: moon.phase, illum: moon.illumination)
+}
+
+view details Grid(cols: 2) {
+  Tile(label: copy.feels,    value: now.feels,    unit: units)
+  Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+  Tile(label: copy.wind,     value: now.wind,     unit: .speed)
+  Tile(label: copy.pressure, value: now.pressure, unit: .pressure)
+  Tile(label: copy.uv,       value: now.uv)
+  Tile(label: copy.precip,   value: now.precip,   unit: .pct)
+}
+
+view verdict Col(gap: 10) {
+  TextTitle(text: copy.things, width: .fill)
+  when now.precip >= 40 { wet }
+  when now.precip < 40 {
+    when now.temp < 12 { cold }
+    when now.temp >= 12 { fine }
+  }
+}
+
+view wet Col(gap: 10) {
+  TextTitle(text: copy.stay_in)
+  TextBody(text: copy.why_wet)
+  indoors_panel
+}
+
+view cold Col(gap: 10) {
+  TextTitle(text: copy.stay_in)
+  TextBody(text: copy.why_cold)
+  indoors_panel
+}
+
+view fine Col(gap: 10) {
+  TextTitle(text: copy.go_out)
+  TextBody(text: copy.why_fine)
+  outdoors_panel
+}
+
+view outdoors_panel Panel {
+  TextCaption(text: copy.outdoors)
+  when out1.$state == .pending { TextBody(text: copy.loading) }
+  for h, i in out1 key h.label { Pick(hit: h) Rule() }
+  for h, i in out2 key h.label { Pick(hit: h) Rule() }
+  for h, i in out3 key h.label { Pick(hit: h) Rule() }
+}
+
+view indoors_panel Panel {
+  TextCaption(text: copy.indoors)
+  when in1.$state == .pending { TextBody(text: copy.loading) }
+  for h, i in in1 key h.label { Pick(hit: h) Rule() }
+  for h, i in in2 key h.label { Pick(hit: h) Rule() }
+  for h, i in in3 key h.label { Pick(hit: h) Rule() }
+}
+
+view nav Panel {
+  TextTitle(text: copy.nav_title, width: .fill)
+  Col(align: .center) {
+    Row(align: .center, gap: 8, width: .fit) {
+      Chip(text: copy.drive, on_tap: pick_mode, value: .drive, active: mode == .drive)
+      Chip(text: copy.walk,  on_tap: pick_mode, value: .walk,  active: mode == .walk)
+      Chip(text: copy.bike,  on_tap: pick_mode, value: .bike,  active: mode == .bike)
+    }
+  }
+  when screen == .plan {
+    Row(align: .center, gap: 10) {
+      TextCaption(text: copy.from_lbl, width: .label)
+      TextRow(text: copy.cur_loc, width: .fill)
+    }
+    Row(align: .center, gap: 10) {
+      TextCaption(text: copy.to_lbl, width: .label)
+      TextRow(text: dest, width: .fill)
+    }
+    when trip.$state == .pending { TextBody(text: copy.seeking) }
+    when trip.$state == .ready {
+      Row(align: .center, gap: 12) {
+        TextValue(value: trip.duration, unit: .duration)
+        TextValue(value: trip.distance, unit: .distance)
+        Chip(text: copy.onward, on_tap: go, tone: .primary)
+      }
+    }
+    Map(mode: .plan, from_lat: here.lat, from_lon: here.lon, to: dest, zoom: 14)
+  }
+  when screen == .drive {
+    Panel(dock: .top) {
+      TextBody(text: step.instruction, width: .fill)
+    }
+    Panel(dock: .bottom) {
+      TextHero(value: step.eta, unit: .duration)
+      TextCaption(value: step.remaining)
+      Chip(text: copy.stop, on_tap: go, tone: .danger)
+    }
+    Map(mode: .drive, from_lat: here.lat, from_lon: here.lon, to: dest, at: here, zoom: 15)
+  }
+}

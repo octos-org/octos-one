@@ -1,0 +1,188 @@
+# level: L0
+# model: weather-activity-news
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind])
+source week  sys.weather(lat: place.lat, lon: place.lon, days: 7,
+                         fields: [dayname, hi, lo, cond],
+                         aggregate: [min_lo, max_hi])
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+source scene sys.photo(query: state.mood, cond: now.cond)
+
+source out1 sys.search(query: "Stanley Park Vancouver", count: 1, fields: [name, label])
+source out2 sys.search(query: "Capilano Suspension Bridge Vancouver", count: 1, fields: [name, label])
+source out3 sys.search(query: "Gastown Vancouver", count: 1, fields: [name, label])
+source in1  sys.search(query: "Vancouver Art Gallery", count: 1, fields: [name, label])
+source in2  sys.search(query: "Vancouver Museum of Anthropology", count: 1, fields: [name, label])
+source in3  sys.search(query: "Science World Vancouver", count: 1, fields: [name, label])
+
+source lead   sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed   sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source article sys.news_item(id: state.selected,
+                             fields: [title, author, points, comments, url])
+source page   sys.link(fields: [url])
+
+source env.locale sys.locale()
+
+state city     { shape: text, initial: "Vancouver" }
+state units    { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood     { shape: text, initial: "coastal city skyline with mountains and water, cinematic, muted" }
+state selected { shape: text, initial: "" }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_story   { selected: set($value) }
+event back          { selected: clear }
+event read_story    { page: set($value) }
+
+copy eyebrow   { class: vocabulary, en: "TODAY", zh: "今天" }
+copy loading   { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline   { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy go_out    { class: vocabulary, en: "Good day to be outside", zh: "适合外出" }
+copy stay_in   { class: vocabulary, en: "Better indoors today", zh: "今天更适合室内" }
+copy why_wet   { class: vocabulary, en: "rain is likely", zh: "可能有雨" }
+copy why_air   { class: vocabulary, en: "the air is poor", zh: "空气质量差" }
+copy why_cold  { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
+copy why_fine  { class: vocabulary, en: "mild, dry and clear", zh: "温和、干燥、空气好" }
+copy aqi_lbl   { class: vocabulary, en: "AIR", zh: "空气" }
+copy rain_lbl  { class: vocabulary, en: "RAIN", zh: "降水" }
+copy forecast  { class: vocabulary, en: "7-DAY FORECAST", zh: "7天预报" }
+copy news_hd   { class: vocabulary, en: "VANCOUVER NEWS", zh: "温哥华新闻" }
+copy lead      { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy latest    { class: vocabulary, en: "LATEST", zh: "最新" }
+copy pts       { class: vocabulary, en: "pts", zh: "分" }
+copy comments  { class: vocabulary, en: "comments", zh: "评论" }
+copy by        { class: vocabulary, en: "by", zh: "作者" }
+copy back_lbl  { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy read_lbl  { class: vocabulary, en: "Read ↗", zh: "阅读原文 ↗" }
+copy news_loading { class: vocabulary, en: "Fetching headlines…", zh: "正在获取头条…" }
+copy news_offline { class: vocabulary, en: "Can't reach the news feed", zh: "无法获取新闻" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+         TextRow(text: hit.name)
+         TextCaption(text: hit.label)
+       }
+}
+
+component ForecastRow(item: record, unit: enum[c, f]) {
+  view Row(align: .center) {
+         TextRow(text: item.dayname, width: .day)
+         WeatherIcon(cond: item.cond, size: .row)
+         TextValue(value: item.lo, unit: unit)
+         TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+         TextValue(value: item.hi, unit: unit)
+       }
+}
+
+view root Photo(src: scene, pad: .page) {
+       when now.$state == .pending { TextBody(text: copy.loading) }
+       when now.$state == .failed  { TextBody(text: copy.offline) }
+       current
+       forecast
+       verdict
+       news
+     }
+
+view current Col(gap: 4) {
+       TextCaption(text: copy.eyebrow)
+       TextTitle(text: place.name, width: .fill)
+       Row(align: .center, gap: 12, on_tap: toggle_units) {
+         WeatherIcon(cond: now.cond, size: .hero)
+         TextHero(value: now.temp, unit: units)
+       }
+       Row(gap: 14) {
+         Tile(label: copy.rain_lbl, value: now.precip, unit: .pct)
+         Tile(label: copy.aqi_lbl, value: air.aqi)
+       }
+     }
+
+view forecast Panel {
+       TextCaption(text: copy.forecast)
+       for d in week.days key d.dayname {
+         ForecastRow(item: d, unit: units)
+       }
+     }
+
+view verdict Col(gap: 10) {
+       when now.precip >= 40 { wet }
+       when now.precip < 40 {
+         when air.aqi >= 100 { smoggy }
+         when air.aqi < 100 {
+           when now.temp < 12 { cold }
+           when now.temp >= 12 { fine }
+         }
+       }
+     }
+
+view wet    Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_wet)
+                           indoors }
+view smoggy Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_air)
+                           indoors }
+view cold   Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_cold)
+                           indoors }
+view fine   Col(gap: 10) { TextTitle(text: copy.go_out)
+                           TextBody(text: copy.why_fine)
+                           outdoors }
+
+view outdoors Panel {
+       when out1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in out1 key h.label { Pick(hit: h) Rule() }
+       for h, i in out2 key h.label { Pick(hit: h) Rule() }
+       for h, i in out3 key h.label { Pick(hit: h) Rule() }
+     }
+
+view indoors Panel {
+       when in1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in in1 key h.label { Pick(hit: h) Rule() }
+       for h, i in in2 key h.label { Pick(hit: h) Rule() }
+       for h, i in in3 key h.label { Pick(hit: h) Rule() }
+     }
+
+view news Col {
+       TextTitle(text: copy.news_hd, width: .fill)
+       when selected == "" { news_feed }
+       when selected != "" { news_detail }
+     }
+
+view news_feed Col {
+       when feed.$state == .pending { TextBody(text: copy.news_loading) }
+       when feed.$state == .failed  { TextBody(text: copy.news_offline) }
+       Card(on_tap: open_story, value: lead.0.id) {
+         TextCaption(text: copy.lead)
+         TextBody(text: lead.0.title, width: .fill)
+         Row(gap: 6) {
+           TextCaption(value: lead.0.points, suffix: copy.pts)
+           TextCaption(value: lead.0.comments, suffix: copy.comments)
+           TextCaption(text: copy.by)
+           TextCaption(text: lead.0.author)
+         }
+       }
+       TextCaption(text: copy.latest)
+       Panel {
+         for s, i in feed key s.id {
+           Row(align: .center, on_tap: open_story, value: s.id) {
+             TextRow(text: s.title, width: .fill)
+             TextCaption(value: s.points, suffix: copy.pts)
+           }
+           Rule()
+         }
+       }
+     }
+
+view news_detail Col {
+       Row(align: .center, on_tap: back) { TextRow(text: copy.back_lbl) }
+       Row(gap: 8) {
+         Chip(text: copy.read_lbl, on_tap: read_story, value: article.url)
+       }
+       TextTitle(text: article.title, width: .fill)
+       Row(gap: 6) {
+         TextCaption(value: article.points, suffix: copy.pts)
+         TextCaption(text: copy.by)
+         TextCaption(text: article.author)
+       }
+       TextCaption(text: article.url)
+     }

@@ -1,0 +1,114 @@
+# ledger weather-tokyo@1.0.0
+# level:   L0
+# profile: ui/l0
+# model:   weather
+#
+# A translation of mockups/weather-tokyo.png into L0 vocabulary: a cinematic
+# rainy-evening photograph, one enormous temperature over a small city label,
+# and a single frosted forecast card ruled between its days. Nothing here is
+# drawn — every element is a ROLE, and the `photo` kit decides what the mood
+# looks like.
+
+# The page IS a photograph, so its fills are laid OVER the image rather than
+# replacing it: near-black scrim, 10 % white panel, 13 % hairlines. `glass`
+# would have painted its own blue page under the picture.
+theme photo
+
+# ── sources ──────────────────────────────────────────────────────────────────
+# Same contract as the canonical weather card, minus the blocks this screen
+# does not show. A source the view never reads fails the on-device seed path,
+# so sun, moon, saved cities and the place search are not declared here.
+source place  sys.geocode(name: state.city)
+source now    sys.weather(lat: place.lat, lon: place.lon,
+                          fields: [temp, feels, cond])
+# The week is a RECORD: `week.days` is the collection each row loops, and
+# `week.min_lo`/`week.max_hi` are the bounds every bar scales against — the
+# single range that makes seven bars readable as one week.
+source week   sys.weather(lat: place.lat, lon: place.lon, days: state.days,
+                          fields: [dayname, hi, lo, cond],
+                          aggregate: [min_lo, max_hi])
+# The backdrop. A SCENE, never the place: `sys.photo` is a generative model, so
+# asking it for "Tokyo" asks it to invent one, and the card's own title would
+# then sit over a fabricated depiction of a real city. `cond:` folds the live
+# condition into the prompt, so the rain on the screen is the rain in the sky.
+source scene  sys.photo(query: state.mood, cond: now.cond)
+source env.locale sys.locale()
+
+# ── state ────────────────────────────────────────────────────────────────────
+state city  { shape: text, initial: "Tokyo" }     # "" ⇒ the device's own location
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state days  { shape: number, initial: 7 }         # the mockup's seven rows
+# The mood the backdrop is asked for. State rather than a literal argument so
+# the scene is one declared, translatable string — and so the card can never be
+# read as asserting that this is a photograph of Tokyo.
+state mood  { shape: text,
+              initial: "rainy evening city street, wet asphalt, reflected light, cinematic, muted" }
+
+# ── events ───────────────────────────────────────────────────────────────────
+event toggle_units { units: cycle(.c, .f) }
+
+# ── copy ─────────────────────────────────────────────────────────────────────
+copy feels   { class: vocabulary, en: "Feels like", zh: "体感" }
+copy loading { class: vocabulary, en: "Getting the weather…",        zh: "正在获取天气…" }
+copy offline { class: vocabulary, en: "Can't reach the weather service", zh: "无法获取天气" }
+
+# ── view ─────────────────────────────────────────────────────────────────────
+# The fetch lifecycle is a state the card branches on: "not yet" and "went
+# wrong" are different facts and each says so.
+#
+# `gap: 36` is the mockup's air — the half-screen of photograph between the
+# temperature and the forecast card. It is the only lever L0 offers for it:
+# there is no spacer role and no way to dock a panel to the bottom of a photo.
+view root  Photo(src: scene, pad: .page) {
+             when now.$state == .pending { TextBody(text: copy.loading) }
+             when now.$state == .failed  { TextBody(text: copy.offline) }
+             Col(gap: 36) {
+               hero
+               forecast
+             }
+           }
+
+# The hero block, hard left as the mockup has it — a `Col` starts its children,
+# and the canonical card's centred header is the variant, not the default.
+#
+# Reading order is the mockup's: place, temperature, sky, feel. The place is a
+# CAPTION beneath a hero rather than a title, which is what makes the number
+# dominate; tapping the number cycles the unit.
+view hero  Col(gap: 4) {
+             TextCaption(text: place.name)
+             TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+             # `width: .fit` on both rows: a row FILLS by default, and a filling
+             # row would stretch its gap across the page.
+             Row(width: .fit, align: .center, gap: 10) {
+               WeatherIcon(cond: now.cond, size: .row)
+               TextRow(text: now.cond)
+             }
+             # Two captions, not one: a caption given both `text:` and `value:`
+             # renders the value and drops the words.
+             Row(width: .fit, align: .center, gap: 6) {
+               TextCaption(text: copy.feels)
+               TextCaption(value: now.feels, unit: units)
+             }
+           }
+
+# The frosted card. One `Panel` holding every day — the mockup's single pane,
+# not seven tiles — with a hairline between rows and none above the first or
+# below the last. The loop index is 1-based, so `i > 1` is "every row but the
+# first".
+#
+# No component: the mockup's rows disclose nothing, so there is no local state
+# to give them, and the index the rule reads is the loop's.
+view forecast  Panel {
+                 for d, i in week.days key d.dayname {
+                   Col(gap: 8) {
+                     when i > 1 { Rule }
+                     Row(align: .center, gap: 10) {
+                       TextRow(text: d.dayname, width: .day)
+                       WeatherIcon(cond: d.cond, size: .row)
+                       TextValue(value: d.lo, unit: units)
+                       TempBar(lo: d.lo, hi: d.hi, min: week.min_lo, max: week.max_hi)
+                       TextValue(value: d.hi, unit: units)
+                     }
+                   }
+                 }
+               }

@@ -1,0 +1,136 @@
+# level: L0
+# model: stock-news
+
+source movers      sys.movers(count: 8, symbols: "NVDA,AMD,AVGO,SMCI,MU,TSM,MRVL,ARM,CRWV,PLTR,SNOW,AI,VRT,ANET,ORCL,MSFT,GOOGL,META", fields: [ticker, name, last, change, pct])
+source quote       sys.quote(ticker: state.selected, fields: [name, last, change, pct, open, high, low, volume, mktcap, pe])
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 6, offset: 1, fields: [id, title, author, points])
+source article     sys.news_item(id: state.story, fields: [title, author, points, comments, url])
+source page        sys.link(fields: [url])
+source env.locale  sys.locale()
+
+state selected { shape: text, initial: "" }
+state story    { shape: text, initial: "" }
+state range    { shape: enum[d1, w1, m1, m6, y1], initial: .m1 }
+
+event open_quote { selected: set($value) }
+event back_quote { selected: clear }
+event set_range  { range: set($value) }
+event open_story { story: set($value) }
+event back_story { story: clear }
+event read_story { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "TECH PULSE", zh: "科技脉搏" }
+copy movers   { class: vocabulary, en: "Chip Movers", zh: "芯片股涨跌" }
+copy news     { class: vocabulary, en: "Semiconductor News", zh: "半导体新闻" }
+copy back_lbl { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy loading  { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline  { class: vocabulary, en: "Can't reach the data", zh: "无法获取数据" }
+copy open     { class: vocabulary, en: "Open", zh: "开盘" }
+copy high     { class: vocabulary, en: "High", zh: "最高" }
+copy low      { class: vocabulary, en: "Low", zh: "最低" }
+copy volume   { class: vocabulary, en: "Volume", zh: "成交量" }
+copy mktcap   { class: vocabulary, en: "Mkt Cap", zh: "市值" }
+copy pe       { class: vocabulary, en: "P/E", zh: "市盈率" }
+copy pts      { class: vocabulary, en: "pts", zh: "分" }
+copy by       { class: vocabulary, en: "by", zh: "作者" }
+copy read_lbl { class: vocabulary, en: "Read ↗", zh: "阅读原文 ↗" }
+
+view root Surface(pad: .page) {
+  TextCaption(text: copy.eyebrow)
+  when selected == "" {
+    when story == "" { home }
+    when story != "" { story_detail }
+  }
+  when selected != "" { quote_detail }
+}
+
+view home Col(gap: 12) {
+  TextTitle(text: copy.movers, width: .fill)
+  Panel {
+    for m in movers key m.ticker {
+      Row(align: .center, gap: 8, on_tap: open_quote, value: m.ticker) {
+        Col(gap: 2, width: .fill) {
+          TextRow(text: m.ticker)
+          TextCaption(text: m.name, width: .fill)
+        }
+        TextValue(value: m.last, format: .money)
+        TextValue(value: m.pct, format: .signed_pct, tint: m.change)
+      }
+      Rule()
+    }
+  }
+  TextTitle(text: copy.news, width: .fill)
+  when lead.$state == .pending { TextBody(text: copy.loading) }
+  when lead.$state == .failed  { TextBody(text: copy.offline) }
+  Card(on_tap: open_story, value: lead.0.id) {
+    TextBody(text: lead.0.title, width: .fill)
+    Row(gap: 6) {
+      TextCaption(value: lead.0.points, suffix: copy.pts)
+      TextCaption(text: copy.by)
+      TextCaption(text: lead.0.author)
+    }
+  }
+  Panel {
+    for s, i in feed key s.id {
+      Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+        Col(gap: 2, width: .fill) {
+          TextRow(text: s.title, width: .fill)
+          Row(gap: 6) {
+            TextCaption(value: s.points, suffix: copy.pts)
+            TextCaption(text: s.author)
+          }
+        }
+      }
+      Rule()
+    }
+  }
+}
+
+view quote_detail Col {
+  Row(align: .center, gap: 8) {
+    Row(align: .center, width: .fill, on_tap: back_quote) { TextRow(text: copy.back_lbl) }
+  }
+  when quote.$state == .pending { TextBody(text: copy.loading) }
+  when quote.$state == .failed  { TextBody(text: copy.offline) }
+  Col {
+    TextCaption(text: quote.name)
+    TextHero(value: quote.last, format: .money)
+    Row(gap: 8) {
+      TextStat(value: quote.change, format: .signed_money, tint: quote.change)
+      TextStat(value: quote.pct, format: .signed_pct, tint: quote.change)
+    }
+  }
+  StockPlot(symbol: selected, range: range)
+  Row(gap: 6) {
+    Chip(text: "1D", on_tap: set_range, value: .d1, active: range == .d1)
+    Chip(text: "1W", on_tap: set_range, value: .w1, active: range == .w1)
+    Chip(text: "1M", on_tap: set_range, value: .m1, active: range == .m1)
+    Chip(text: "6M", on_tap: set_range, value: .m6, active: range == .m6)
+    Chip(text: "1Y", on_tap: set_range, value: .y1, active: range == .y1)
+  }
+  Grid(cols: 2) {
+    Tile(label: copy.open, value: quote.open, format: .money)
+    Tile(label: copy.high, value: quote.high, format: .money)
+    Tile(label: copy.low, value: quote.low, format: .money)
+    Tile(label: copy.volume, value: quote.volume, format: .compact)
+    Tile(label: copy.mktcap, value: quote.mktcap, format: .compact)
+    Tile(label: copy.pe, value: quote.pe, format: .ratio)
+  }
+}
+
+view story_detail Col {
+  Row(align: .center, gap: 8) {
+    Row(align: .center, width: .fill, on_tap: back_story) { TextRow(text: copy.back_lbl) }
+    Chip(text: copy.read_lbl, on_tap: read_story, value: article.url)
+  }
+  when article.$state == .pending { TextBody(text: copy.loading) }
+  when article.$state == .failed  { TextBody(text: copy.offline) }
+  TextTitle(text: article.title, width: .fill)
+  Row(gap: 6) {
+    TextCaption(value: article.points, suffix: copy.pts)
+    TextCaption(text: copy.by)
+    TextCaption(text: article.author)
+  }
+  TextCaption(text: article.url)
+}

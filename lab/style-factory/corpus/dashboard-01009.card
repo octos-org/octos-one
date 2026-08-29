@@ -1,0 +1,85 @@
+# level: L0
+# model: foodie-berlin
+
+source place  sys.geocode(name: state.city)
+source rest   sys.places(lat: place.lat, lon: place.lon, category: "cafe",
+                         count: 4, fields: [id, name, distance])
+source hits   sys.video(query: state.q, count: 8,
+                        fields: [id, title, channel, length, views, age, thumb, embed])
+source page   sys.link(fields: [url])
+source env.locale sys.locale()
+
+state city { shape: text, initial: "Berlin" }
+state q    { shape: text, initial: "Berlin food" }
+state typed { shape: text, initial: "" }
+state editing { shape: enum[none, find], initial: .none }
+
+event open_find { editing: set(.find), typed: clear }
+event typing    { typed: set($value) }
+event run_find  { q: set($value), typed: clear, editing: set(.none) }
+event close_find { editing: set(.none), typed: clear }
+event play      { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "FOODIE · BERLIN", zh: "美食 · 柏林" }
+copy heading  { class: vocabulary, en: "Eat & Watch", zh: "吃与看" }
+copy nearby   { class: vocabulary, en: "NEARBY SPOTS", zh: "附近去处" }
+copy videos   { class: vocabulary, en: "FOOD VIDEOS", zh: "美食视频" }
+copy find_lbl { class: vocabulary, en: "Search", zh: "搜索" }
+copy loading  { class: vocabulary, en: "Finding food…", zh: "正在查找美食…" }
+copy offline  { class: vocabulary, en: "Can't reach the data", zh: "无法获取数据" }
+copy away     { class: vocabulary, en: "away · local spot", zh: "附近 · 本地去处" }
+
+view root Surface(pad: .page) {
+  Col(gap: 8) {
+    TextCaption(text: copy.eyebrow)
+    TextTitle(text: copy.heading, width: .fill)
+
+    when rest.$state == .pending { TextBody(text: copy.loading) }
+    when rest.$state == .failed  { TextBody(text: copy.offline) }
+
+    TextCaption(text: copy.nearby)
+    Panel {
+      for r, i in rest key r.id {
+        Row(align: .center, gap: 10) {
+          TextRow(text: "🍽️")
+          Col(gap: 2) {
+            TextRow(text: r.name)
+            TextCaption(text: r.distance, suffix: copy.away)
+          }
+        }
+        Rule()
+      }
+    }
+
+    Row(align: .center, gap: 8) {
+      TextCaption(text: copy.videos, width: .fill)
+      Chip(text: copy.find_lbl, on_tap: open_find, value: "1")
+    }
+    TextTitle(text: q, width: .fill)
+
+    when editing == .find {
+      Panel {
+        Row(align: .center, gap: 10) {
+          Field(text: typed, placeholder: q, on_commit: run_find,
+                on_change: typing, width: .fill)
+          Chip(text: "×", on_tap: close_find)
+        }
+      }
+    }
+
+    when hits.$state == .pending { TextBody(text: copy.loading) }
+    when hits.$state == .failed  { TextBody(text: copy.offline) }
+
+    for v, i in hits key v.id {
+      Row(align: .center, gap: 10, on_tap: play, value: v.embed) {
+        Thumb(src: v.thumb)
+        Col(gap: 2, width: .fill) {
+          TextRow(text: v.title, width: .fill)
+          TextCaption(text: v.channel)
+          TextCaption(text: v.length)
+        }
+      }
+      Rule()
+    }
+  }
+}

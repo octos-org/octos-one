@@ -83,6 +83,35 @@ thread_local! {
 
     static LIVE: std::cell::RefCell<Option<Vec<(String, String)>>> =
         const { std::cell::RefCell::new(None) };
+
+    /// Whether the container currently being emitted hugs its width. Text
+    /// children consult the PARENT's entry: a Label's default `width: Fill`
+    /// inside a hug (`fitw`) container resolves to ZERO width in makepad —
+    /// the same trap `l0_tap_fit` hit, found a third time when a fit row's
+    /// condition word and both feels captions rendered as nothing.
+    static HUGS: std::cell::RefCell<Vec<bool>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// RAII entry in `HUGS`: pushed for the node being emitted, popped on every
+/// return path of `emit_widget` — which has several, so a manual pop is a bug
+/// waiting for the next early return.
+struct HugGuard;
+impl HugGuard {
+    fn push(hugs: bool) -> Self {
+        HUGS.with(|h| h.borrow_mut().push(hugs));
+        HugGuard
+    }
+}
+impl Drop for HugGuard {
+    fn drop(&mut self) {
+        HUGS.with(|h| {
+            h.borrow_mut().pop();
+        });
+    }
+}
+
+fn parent_hugs() -> bool {
+    HUGS.with(|h| h.borrow().last().copied().unwrap_or(false))
 }
 
 /// A Roboto text style at this size and weight.
@@ -814,6 +843,8 @@ fn emit(node: &UiNode, out: &mut String, depth: usize) {
 fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     let pad = "  ".repeat(depth.min(32));
     let a = &node.attrs;
+    let in_hug = parent_hugs();
+    let _hug = HugGuard::push(a.fitw == Some(1));
     let w = widget(node.kind);
 
     // A live text node is NAMED, so `fn tick()` can set it without a rebuild. The
@@ -861,6 +892,13 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     box_model(a, out);
 
     if let Some(bg) = a.bg {
+        // No `show_bg: true` here, and that is not an oversight. `View` declares
+        // `#[live(false)] show_bg`, so this looks like a fill that never paints —
+        // it is not. Assigning `draw_bg.*` through the script apply path enables
+        // the background, and a device A/B on 2026-08-25 measured the light
+        // mood's page at #f2f2f7 both with and without an explicit `show_bg`.
+        // Verify against an INTERIOR pixel if you re-open this: the card carries
+        // a thin dark edge margin, and sampling x=14 reads the margin, not the page.
         let _ = write!(out, " draw_bg.color: {}", hex(bg));
     }
     // A second stop makes the fill a vertical gradient: the view shader mixes
@@ -872,8 +910,49 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if let Some(r) = a.radius {
         let _ = write!(out, " draw_bg.border_radius: {r}");
     }
+    // NOT REACHING THE SCREEN as of 2026-08-25, and left in place deliberately.
+    // The emission is correct — the panel node carries
+    // `draw_bg.border_size: 1 draw_bg.border_color: #00000026`, RoundedView's
+    // shader strokes when border_size > 0, and no apply error is logged — yet a
+    // deliberately garish 4px opaque red border produced zero red pixels on
+    // device. `border_radius`, a uniform on the same prototype, works. So the
+    // failure is below this layer and stroke is NOT the cheap win it looked
+    // like; it needs widget-layer investigation before it can be measured.
+    //
+    // A stroke on a surface. NOT halved, unlike the sibling renderer: that one
+    // targets a shader which draws to both sides of the edge, while this
+    // RoundedView insets its box by `border_size` and strokes the inset path,
+    // so the visible width is the value itself. Halving here emitted a 0.5px
+    // stroke at 15% alpha, which measured as nothing on device. Only Card/Chip
+    // declare the uniforms; a plain View would silently discard them.
+    if matches!(node.kind, NodeKind::Card | NodeKind::Chip) {
+        if let Some(b) = a.border.filter(|b| *b > 0.0) {
+            let _ = write!(out, " draw_bg.border_size: {b}");
+            if let Some(bc) = a.bordercolor {
+                let _ = write!(out, " draw_bg.border_color: {}", hex(bc));
+            }
+        }
+    }
     if node.kind == NodeKind::Text {
+        // The eyebrow role: tracked caps, faked in the STRING because the
+        // text stack has no tracking axis the DSL reaches — thin spaces
+        // between uppercased characters of a LITERAL. A live value arrives
+        // after emission and stays untransformed, which degrades gracefully.
+        let eyebrow = a.variant.as_deref() == Some("eyebrow");
         if let Some(t) = a.text.as_deref() {
+            if eyebrow && !t.contains("sys.") {
+                let spaced: String = t
+                    .to_uppercase()
+                    .chars()
+                    .flat_map(|c| [c, '\u{2009}'])
+                    .collect();
+                let spaced = spaced.trim_end_matches('\u{2009}');
+                let _ = write!(out, " text: {spaced:?}");
+            }
+        }
+        if let Some(t) = a.text.as_deref().filter(|_| {
+            !(eyebrow && !a.text.as_deref().unwrap_or("").contains("sys."))
+        }) {
             // Always a literal. An earlier version of this passed a value
             // through unquoted when it looked like `"$" + sys.stock(…)`, which
             // misread where the pipeline evaluates: that expression is called
@@ -894,7 +973,15 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
         // the node stated no width of its own (`sizing_of` already wrote one
         // otherwise, so this never double-writes `width:`).
         if a.w.is_none() && a.fillw.is_none() && a.fitw.is_none() {
-            let _ = write!(out, " width: Fill");
+            // Inside a hug container Fill is 0 — hug with it instead.
+            let _ = write!(out, " width: {}", if in_hug { "Fit" } else { "Fill" });
+        }
+        // How many lines this run may occupy, and an ellipsis when it overruns.
+        // The KIT decides — whether a row title truncates is presentation, not
+        // content, so no card names it. Ellipsis needs a bounded width, which
+        // the branch above supplies unless the node hugs.
+        if let Some(n) = a.lines.filter(|n| *n > 0) {
+            let _ = write!(out, " max_lines: {n} text_overflow: TextOverflow.Ellipsis");
         }
     }
     if node.kind == NodeKind::Image {
@@ -926,6 +1013,14 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
                 " draw_bg.tlo: {} draw_bg.thi: {} draw_bg.wmin: {} draw_bg.wmax: {}",
                 num(a.lo), num(a.hi), num(a.min), num(a.max)
             );
+            // Mood-owned bar treatment (kit: `l0_bar`): rail on `bg`, single
+            // hue on `bg2`. Absent, the shader keeps its legacy spectrum.
+            if let Some(bar) = a.bg2 {
+                let _ = write!(out, " draw_bg.flat_ink: {}", hex(bar));
+            }
+            if let Some(rail) = a.bg {
+                let _ = write!(out, " draw_bg.rail_ink: {}", hex(rail));
+            }
         }
         NodeKind::SunArc => {
             let _ = write!(
@@ -975,6 +1070,11 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if node.kind == NodeKind::WeatherIcon {
         if let Some(v) = a.variant.as_deref() {
             let _ = write!(out, " draw_bg.cond: {}", v.parse::<f32>().unwrap_or(0.0));
+        }
+        // Mood-owned mono ink (kit: `icon_mono`): the finished glyph is
+        // recoloured to one silhouette ink. Absent, legacy colours.
+        if let Some(ink) = a.color {
+            let _ = write!(out, " draw_bg.mono_ink: {}", hex(ink));
         }
     }
     // The trip. `variant` carries which member of the map family this is, in the

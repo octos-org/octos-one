@@ -1,0 +1,189 @@
+# level: L0
+# model: weather-stock-news
+
+source place       sys.geocode(name: state.city)
+source now         sys.weather(lat: place.lat, lon: place.lon,
+                               fields: [temp, feels, hi, lo, cond, humidity, wind,
+                                        pressure, uv, precip])
+source week        sys.weather(lat: place.lat, lon: place.lon, days: 3,
+                               fields: [dayname, hi, lo, cond],
+                               aggregate: [min_lo, max_hi])
+source sun         sys.daylight(lat: place.lat, lon: place.lon)
+source moon        sys.moonphase()
+source scene       sys.photo(query: state.mood, cond: now.cond)
+
+source movers      sys.movers(count: 5, fields: [ticker, name, last, change, pct])
+source quote       sys.quote(ticker: state.selected,
+                             fields: [name, last, change, pct, open, high, low,
+                                      volume, mktcap, pe])
+
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source article     sys.news_item(id: state.story,
+                                 fields: [title, author, points, comments, url])
+
+source env.locale  sys.locale()
+
+state city    { shape: text, initial: "" }
+state units   { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood    { shape: text, initial: "morning city skyline, soft light, calm" }
+state selected { shape: text, initial: "" }
+state story   { shape: text, initial: "" }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_quote   { selected: set($value) }
+event back_quote   { selected: clear }
+event open_story   { story: set($value) }
+event back_story   { story: clear }
+
+copy eyebrow   { class: vocabulary, en: "MORNING DASHBOARD", zh: "早安仪表盘" }
+copy loading   { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline   { class: vocabulary, en: "Can't reach the network", zh: "无法连接网络" }
+copy feels     { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity  { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind      { class: vocabulary, en: "Wind", zh: "风速" }
+copy pressure  { class: vocabulary, en: "Pressure", zh: "气压" }
+copy uv        { class: vocabulary, en: "UV Index", zh: "紫外线" }
+copy precip    { class: vocabulary, en: "Rain", zh: "降水概率" }
+copy movers    { class: vocabulary, en: "Top Movers", zh: "涨跌榜" }
+copy back_lbl  { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy open      { class: vocabulary, en: "Open", zh: "开盘" }
+copy high      { class: vocabulary, en: "High", zh: "最高" }
+copy low       { class: vocabulary, en: "Low", zh: "最低" }
+copy volume    { class: vocabulary, en: "Volume", zh: "成交量" }
+copy mktcap    { class: vocabulary, en: "Mkt Cap", zh: "市值" }
+copy pe        { class: vocabulary, en: "P/E", zh: "市盈率" }
+copy masthead  { class: vocabulary, en: "Top Stories", zh: "头条" }
+copy lead      { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy pts       { class: vocabulary, en: "pts", zh: "分" }
+copy comments  { class: vocabulary, en: "comments", zh: "评论" }
+copy by        { class: vocabulary, en: "by", zh: "作者" }
+copy latest    { class: vocabulary, en: "LATEST", zh: "最新" }
+
+view root Surface(pad: .page) {
+  TextCaption(text: copy.eyebrow)
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  weather_section
+  stock_section
+  news_section
+}
+
+view weather_section Photo(src: scene, pad: .tight) {
+  Col(gap: 4) {
+    TextTitle(text: place.name, width: .fill)
+    Row(align: .center, gap: 12, on_tap: toggle_units) {
+      WeatherIcon(cond: now.cond, size: .hero)
+      TextHero(value: now.temp, unit: units)
+    }
+    Row(gap: 8, width: .fit) {
+      TextCaption(glyph: "↑", value: now.hi, unit: units)
+      TextCaption(glyph: "↓", value: now.lo, unit: units)
+      TextCaption(glyph: "≈", value: now.feels, unit: units)
+    }
+    Grid(cols: 2) {
+      Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+      Tile(label: copy.wind, value: now.wind, unit: .speed)
+      Tile(label: copy.pressure, value: now.pressure, unit: .pressure)
+      Tile(label: copy.precip, value: now.precip, unit: .pct)
+    }
+    Panel {
+      for d in week.days key d.dayname {
+        Row(align: .center, gap: 8) {
+          TextRow(text: d.dayname, width: .day)
+          WeatherIcon(cond: d.cond, size: .row)
+          TextValue(value: d.lo, unit: units)
+          TempBar(lo: d.lo, hi: d.hi, min: week.min_lo, max: week.max_hi)
+          TextValue(value: d.hi, unit: units)
+        }
+      }
+    }
+  }
+}
+
+view stock_section Col(gap: 8) {
+  when selected == "" {
+    TextTitle(text: copy.movers)
+    Panel {
+      for m in movers key m.ticker {
+        Row(align: .center, gap: 8, on_tap: open_quote, value: m.ticker) {
+          Col(gap: 2, width: .fill) {
+            TextRow(text: m.ticker)
+            TextCaption(text: m.name, width: .fill)
+          }
+          TextValue(value: m.last, format: .money)
+          TextValue(value: m.pct, format: .signed_pct, tint: m.change)
+        }
+        Rule()
+      }
+    }
+  }
+  when selected != "" {
+    Row(align: .center, on_tap: back_quote) { TextRow(text: copy.back_lbl) }
+    when quote.$state == .pending { TextBody(text: copy.loading) }
+    when quote.$state == .failed  { TextBody(text: copy.offline) }
+    Col(gap: 4) {
+      TextCaption(text: quote.name)
+      TextHero(value: quote.last, format: .money)
+      Row(gap: 8) {
+        TextStat(value: quote.change, format: .signed_money, tint: quote.change)
+        TextStat(value: quote.pct, format: .signed_pct, tint: quote.change)
+      }
+      StockPlot(symbol: selected, range: .m1)
+      Grid(cols: 2) {
+        Tile(label: copy.open, value: quote.open, format: .money)
+        Tile(label: copy.high, value: quote.high, format: .money)
+        Tile(label: copy.low, value: quote.low, format: .money)
+        Tile(label: copy.volume, value: quote.volume, format: .compact)
+        Tile(label: copy.mktcap, value: quote.mktcap, format: .compact)
+        Tile(label: copy.pe, value: quote.pe, format: .ratio)
+      }
+    }
+  }
+}
+
+view news_section Col(gap: 8) {
+  when story == "" {
+    TextTitle(text: copy.masthead)
+    Card(on_tap: open_story, value: lead.0.id) {
+      TextCaption(text: copy.lead)
+      TextBody(text: lead.0.title, width: .fill)
+      Row(gap: 6) {
+        TextCaption(value: lead.0.points, suffix: copy.pts)
+        TextCaption(value: lead.0.comments, suffix: copy.comments)
+        TextCaption(text: copy.by)
+        TextCaption(text: lead.0.author)
+      }
+    }
+    TextCaption(text: copy.latest)
+    Panel {
+      for s, i in feed key s.id {
+        Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+          TextRow(text: i, width: .rank)
+          Col(gap: 3, width: .fill) {
+            TextRow(text: s.title, width: .fill)
+            Row(gap: 6) {
+              TextCaption(value: s.points, suffix: copy.pts)
+              TextCaption(text: s.author)
+            }
+          }
+        }
+        Rule()
+      }
+    }
+  }
+  when story != "" {
+    Row(align: .center, on_tap: back_story) { TextRow(text: copy.back_lbl) }
+    when article.$state == .pending { TextBody(text: copy.loading) }
+    when article.$state == .failed  { TextBody(text: copy.offline) }
+    Col(gap: 4) {
+      TextTitle(text: article.title, width: .fill)
+      Row(gap: 6) {
+        TextCaption(value: article.points, suffix: copy.pts)
+        TextCaption(text: copy.by)
+        TextCaption(text: article.author)
+      }
+      TextCaption(text: article.url)
+    }
+  }
+}

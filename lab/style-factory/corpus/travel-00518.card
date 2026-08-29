@@ -1,0 +1,119 @@
+# level: L0
+# model: weather-activity
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind])
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+
+source out1 sys.search(query: "Senso-ji Temple Tokyo", count: 1, fields: [name, label])
+source out2 sys.search(query: "Shibuya Crossing Tokyo", count: 1, fields: [name, label])
+source out3 sys.search(query: "Meiji Shrine Tokyo", count: 1, fields: [name, label])
+source in1  sys.search(query: "Tokyo National Museum", count: 1, fields: [name, label])
+source in2  sys.search(query: "Tsukiji Outer Market Tokyo", count: 1, fields: [name, label])
+source in3  sys.search(query: "teamLab Planets Tokyo", count: 1, fields: [name, label])
+
+source airport sys.search(query: "Haneda Airport Tokyo", count: 1, fields: [name, label, lat, lon])
+source trip    sys.route(from_lat: airport.0.lat, from_lon: airport.0.lon,
+                          to_lat: place.lat, to_lon: place.lon,
+                          mode: .drive, fields: [duration, distance])
+
+state mood { shape: text, initial: "modern city skyline with traditional elements, cinematic, muted" }
+source scene sys.photo(query: state.mood, cond: now.cond)
+source env.locale sys.locale()
+
+state city  { shape: text, initial: "Tokyo" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+
+event toggle_units { units: cycle(.c, .f) }
+
+copy eyebrow  { class: vocabulary, en: "TODAY", zh: "今天" }
+copy loading  { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline  { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy go_out   { class: vocabulary, en: "Good day to be outside", zh: "适合外出" }
+copy stay_in  { class: vocabulary, en: "Better indoors today", zh: "今天更适合室内" }
+copy why_wet  { class: vocabulary, en: "rain is likely", zh: "可能有雨" }
+copy why_air  { class: vocabulary, en: "the air is poor", zh: "空气质量差" }
+copy why_cold { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
+copy why_fine { class: vocabulary, en: "mild, dry and clear", zh: "温和、干燥、空气好" }
+copy aqi_lbl  { class: vocabulary, en: "AIR", zh: "空气" }
+copy rain_lbl { class: vocabulary, en: "RAIN", zh: "降水" }
+copy from_airport { class: vocabulary, en: "From Haneda Airport", zh: "从羽田机场" }
+copy away     { class: vocabulary, en: "away", zh: "距离" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+         TextRow(text: hit.name)
+         TextCaption(text: hit.label)
+       }
+}
+
+view root Photo(src: scene, pad: .page) {
+       when now.$state == .pending { TextBody(text: copy.loading) }
+       when now.$state == .failed  { TextBody(text: copy.offline) }
+       current
+       verdict
+       airport_info
+     }
+
+view current Col(gap: 4) {
+       TextCaption(text: copy.eyebrow)
+       TextTitle(text: place.name, width: .fill)
+       Row(align: .center, gap: 12, on_tap: toggle_units) {
+         WeatherIcon(cond: now.cond, size: .hero)
+         TextHero(value: now.temp, unit: units)
+       }
+       Row(gap: 14) {
+         Tile(label: copy.rain_lbl, value: now.picip, unit: .pct)
+         Tile(label: copy.aqi_lbl, value: air.aqi)
+       }
+     }
+
+view verdict Col(gap: 10) {
+       when now.precip >= 40 { wet }
+       when now.precip < 40 {
+         when air.aqi >= 100 { smoggy }
+         when air.aqi < 100 {
+           when now.temp < 12 { cold }
+           when now.temp >= 12 { fine }
+         }
+       }
+     }
+
+view wet    Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_wet)
+                           indoors }
+view smoggy Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_air)
+                           indoors }
+view cold   Col(gap: 10) { TextTitle(text: copy.stay_in)
+                           TextBody(text: copy.why_cold)
+                           indoors }
+view fine   Col(gap: 10) { TextTitle(text: copy.go_out)
+                           TextBody(text: copy.why_fine)
+                           outdoors }
+
+view outdoors Panel {
+       when out1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in out1 key h.label { Pick(hit: h) Rule() }
+       for h, i in out2 key h.label { Pick(hit: h) Rule() }
+       for h, i in out3 key h.label { Pick(hit: h) Rule() }
+     }
+
+view indoors Panel {
+       when in1.$state == .pending { TextBody(text: copy.loading) }
+       for h, i in in1 key h.label { Pick(hit: h) Rule() }
+       for h, i in in2 key h.label { Pick(hit: h) Rule() }
+       for h, i in in3 key h.label { Pick(hit: h) Rule() }
+     }
+
+view airport_info Panel {
+       TextCaption(text: copy.from_airport)
+       when trip.$state == .pending { TextBody(text: copy.loading) }
+       when trip.$state == .ready {
+         Row(align: .center, gap: 12) {
+           TextValue(value: trip.duration, unit: .duration)
+           TextCaption(value: trip.distance, suffix: copy.away)
+         }
+       }
+     }
