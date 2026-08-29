@@ -105,3 +105,54 @@ addresses a screen that is 23% empty with glyphs reading against the wrong row.
 
 Both of the remaining capability items — border stroke, and icon proportion —
 now sit in the same place: the makepad widget layer, not octos-one.
+
+---
+
+# Four rounds of fix-and-rescore (2026-08-30)
+
+Each round fixed exactly what the judge named, then re-scored the same four
+mood renders on device.
+
+| round | change | mean | judge's top complaint after |
+|---|---|---|---|
+| 0 | — | **5.25** | "empty mid-screen void" (4 of 4 moods) |
+| 1 | `air_factor`, icon overflow | **5.00** | "system emoji icons" (3 of 4) |
+| 2 | `icon_mono` in the base | **5.00** | "spectral gradient bars" (2 of 4) |
+| 3 | single-hue `l0_bar` in the base | **5.00** | "generic flat surfaces, no atmosphere or accent system" |
+
+**Every complaint that was fixed stopped being raised.** The void complaint
+vanished after the gap change; the emoji complaint vanished after `icon_mono`;
+the rainbow complaint vanished after `l0_bar`. The judge is responsive and
+consistent, and the noise-floor work says it agrees with itself 87% of the time.
+
+**The score did not move.** That is the finding, not a failure of the fixes.
+
+Two of the three fixes were decided by a natural experiment that was already
+sitting in the palettes: `photo` was the only mood carrying `icon_mono` and
+`l0_bar`, and it was the only mood NOT accused of emoji icons, and later the
+only one NOT accused of spectral bars. The defaults were wrong, not the knobs.
+
+## Why the number is stuck at 5
+
+The rubric handed to the judge says **"5 means competent but plain"**. Round 3's
+complaints are no longer defects — "generic flat surfaces", "reads as a generic
+table, not a designed surface", "no depth or temperature-semantic colour". They
+are all one statement: *nothing is wrong, and nothing is ambitious.*
+
+So the rounds moved the screen from **broken** to **plain**, which is real and
+visible, and plain is exactly 5. Reaching 9 is not more defect-fixing. It needs
+the things a judge calls atmosphere and depth:
+
+- **Stroke**, which is bisected and broken in the makepad prototype (`border_size`
+  applies, `sdf.stroke` never paints).
+- **Texture** and **hard-offset shadow**, neither of which any renderer here has.
+- **A composition that fills its screen.** The fixture is four content blocks on
+  a tall phone; the void shrank 164px → 126px but the card is still sparse. The
+  photo mood scores best precisely because a photograph occupies the space the
+  other moods leave empty.
+
+## One defect still open
+
+The photo mood's forecast scrim covers `Now`…`Fri` and leaves `Sat` outside it,
+sitting on the bare photograph. Visible in `bar_photo.png`; the judge called it
+"misaligned, ragged forecast card". Not diagnosed.
