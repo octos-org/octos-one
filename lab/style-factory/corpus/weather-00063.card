@@ -1,0 +1,151 @@
+# level: L0
+# model: weather
+
+source place  sys.geocode(name: state.city)
+source now     sys.weather(lat: place.lat, lon: place.lon,
+                           fields: [temp, feels, hi, lo, cond, humidity, wind,
+                                    pressure, uv, precip])
+source week    sys.weather(lat: place.lat, lon: place.lon, days: state.days,
+                           fields: [dayname, hi, lo, cond],
+                           aggregate: [min_lo, max_hi])
+source sun     sys.daylight(lat: place.lat, lon: place.lon)
+source moon    sys.moonphase()
+source scene   sys.photo(query: place.name)
+source cities  sys.cities(fields: [name, temp])
+source found   sys.search(query: state.query, count: 5, fields: [name, label, query])
+source env.locale sys.locale()
+
+state city    { shape: text, initial: "Osaka" }
+state units   { shape: enum[c, f], initial: env.locale.temp_unit }
+state days    { shape: number, initial: 7 }
+state query   { shape: text, initial: "" }
+state editing { shape: enum[none, add], initial: .none }
+
+event toggle_units { units: cycle(.c, .f) }
+event swipe_left   { city: next(cities.name) }
+event swipe_right  { city: prev(cities.name) }
+event add_city     { editing: set(.add), query: clear }
+event typing       { query: set($value) }
+event preview      { city: set($value) }
+event confirm_add  { city: set($value), cities: append($value), query: clear, editing: set(.none) }
+event close_add    { editing: set(.none), query: clear }
+
+copy feels      { class: vocabulary, en: "Feels like",   zh: "体感" }
+copy humidity   { class: vocabulary, en: "Humidity",     zh: "湿度" }
+copy wind       { class: vocabulary, en: "Wind",         zh: "风速" }
+copy pressure   { class: vocabulary, en: "Pressure",     zh: "气压" }
+copy uv         { class: vocabulary, en: "UV Index",     zh: "紫外线" }
+copy precip     { class: vocabulary, en: "Rain",         zh: "降水概率" }
+copy loading    { class: vocabulary, en: "Getting the weather…", zh: "正在获取天气…" }
+copy offline    { class: vocabulary, en: "Can't reach the weather service", zh: "无法获取天气" }
+copy sky        { class: vocabulary, en: "Satellite",    zh: "卫星云图" }
+copy air        { class: vocabulary, en: "Air Quality",  zh: "空气质量" }
+copy sunrise    { class: vocabulary, en: "Sunrise",      zh: "日出" }
+copy sunset     { class: vocabulary, en: "Sunset",       zh: "日落" }
+copy plus       { class: vocabulary, en: "+",            zh: "+" }
+copy add_lbl    { class: vocabulary, en: "Add",          zh: "添加" }
+
+view root  Photo(src: scene, pad: .page) {
+             when now.$state == .pending { TextBody(text: copy.loading) }
+             when now.$state == .failed  { TextBody(text: copy.offline) }
+             current
+             saved
+             forecast
+             cloudfield
+             airfield
+             sunmoon
+             details
+           }
+
+view saved  Col {
+              when editing == .add {
+                Panel {
+                  Row(align: .center, gap: 10) {
+                    TextCaption(text: copy.plus, width: .label)
+                    Field(text: query, placeholder: city, on_commit: preview,
+                          on_change: typing, width: .fill)
+                    Chip(text: "×", on_tap: close_add)
+                  }
+                  when query != "" {
+                    for f, i in found key f.label {
+                      Row(align: .center, gap: 10) {
+                        Row(align: .center, gap: 10, width: .fill, on_tap: preview, value: f.query) {
+                          Col(gap: 2) {
+                            TextRow(text: f.name)
+                            TextCaption(text: f.label)
+                          }
+                        }
+                        Chip(text: copy.add_lbl, on_tap: confirm_add, value: f.query)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+view current  Col(align: .center) {
+                Row(align: .center, gap: 8) {
+                  TextTitle(text: place.name, width: .fill)
+                  Chip(text: copy.plus, on_tap: add_city, value: "1")
+                }
+                WeatherIcon(cond: now.cond, size: .hero)
+                TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+                Row(gap: 8, width: .fit) {
+                  TextCaption(glyph: "↑", value: now.hi, unit: units)
+                  TextCaption(glyph: "↓", value: now.lo, unit: units)
+                  TextCaption(glyph: "≈", value: now.feels, unit: units)
+                }
+              }
+
+component ForecastRow(item: record, unit: enum[c, f]) {
+  state expanded { shape: bool, initial: false }
+  event toggle   { expanded: toggle }
+  view Col {
+         Row(align: .center, on_tap: toggle) {
+           TextRow(text: item.dayname, width: .day)
+           WeatherIcon(cond: item.cond, size: .row)
+           TextValue(value: item.lo, unit: unit)
+           TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+           TextValue(value: item.hi, unit: unit)
+         }
+         when expanded {
+           Row(gap: 8) {
+             TextCaption(text: item.cond)
+           }
+         }
+       }
+}
+
+view forecast  Panel {
+                 for d in week.days key d.dayname {
+                   ForecastRow(item: d, unit: units)
+                 }
+               }
+
+view cloudfield Panel {
+                 TextCaption(text: copy.sky)
+                 Satellite(lat: place.lat, lon: place.lon)
+               }
+
+view airfield  Panel {
+                 TextCaption(text: copy.air)
+                 AqiContour(lat: place.lat, lon: place.lon, span: 1.6)
+               }
+
+view sunmoon  Panel {
+                Row {
+                  Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: .time) }
+                  SunArc(rise: sun.rise, set: sun.set, now: sun.now)
+                  Col { TextCaption(text: copy.sunset)  TextStat(value: sun.set,  format: .time) }
+                }
+                MoonPhase(phase: moon.phase, illum: moon.illumination)
+              }
+
+view details  Grid(cols: 2) {
+                Tile(label: copy.feels,      value: now.feels,      unit: units)
+                Tile(label: copy.humidity,   value: now.humidity,   unit: .pct)
+                Tile(label: copy.wind,       value: now.wind,       unit: .speed)
+                Tile(label: copy.pressure,   value: now.pressure,   unit: .pressure)
+                Tile(label: copy.uv,         value: now.uv)
+                Tile(label: copy.precip,     value: now.precip,     unit: .pct)
+              }

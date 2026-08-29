@@ -1,0 +1,93 @@
+# level: L0
+# model: stock-news
+
+source nvda   sys.quote(ticker: "NVDA", fields: [name, last, change, pct])
+source aapl   sys.quote(ticker: "AAPL", fields: [name, last, change, pct])
+source lead   sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed   sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source env.locale sys.locale()
+
+state selected { shape: text, initial: "" }
+
+event open_story { selected: set($value) }
+event back       { selected: clear }
+
+copy eyebrow  { class: vocabulary, en: "MARKET MORNING", zh: "市场早报" }
+copy heading  { class: vocabulary, en: "Watchlist & Business", zh: "自选与商业" }
+copy watch_hd { class: vocabulary, en: "WATCHLIST", zh: "自选" }
+copy news_hd  { class: vocabulary, en: "BUSINESS NEWS", zh: "商业新闻" }
+copy lead     { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy latest   { class: vocabulary, en: "LATEST", zh: "最新" }
+copy pts      { class: vocabulary, en: "pts", zh: "分" }
+copy comments { class: vocabulary, en: "comments", zh: "评论" }
+copy by       { class: vocabulary, en: "by", zh: "作者" }
+copy back_lbl { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy loading  { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline  { class: vocabulary, en: "Can't reach the feed", zh: "无法获取数据" }
+
+view root Surface(pad: .page) {
+  Col(gap: 8) {
+    TextCaption(text: copy.eyebrow)
+    TextTitle(text: copy.heading, width: .fill)
+
+    when nvda.$state == .pending { TextBody(text: copy.loading) }
+    when nvda.$state == .failed  { TextBody(text: copy.offline) }
+    when aapl.$state == .pending { TextBody(text: copy.loading) }
+    when aapl.$state == .failed  { TextBody(text: copy.offline) }
+
+    TextCaption(text: copy.watch_hd)
+    Grid(cols: 2) {
+      when nvda.$state == .ready {
+        Tile(label: nvda.name, value: nvda.last, format: .money)
+        Tile(label: nvda.pct, value: nvda.pct, format: .signed_pct, tint: nvda.change)
+      }
+      when aapl.$state == .ready {
+        Tile(label: aapl.name, value: aapl.last, format: .money)
+        Tile(label: aapl.pct, value: aapl.pct, format: .signed_pct, tint: aapl.change)
+      }
+    }
+
+    TextCaption(text: copy.news_hd)
+    when selected == "" { news_feed }
+    when selected != "" { news_detail }
+  }
+}
+
+view news_feed Col(gap: 6) {
+  when lead.$state == .pending { TextBody(text: copy.loading) }
+  when lead.$state == .failed  { TextBody(text: copy.offline) }
+  when feed.$state == .pending { TextBody(text: copy.loading) }
+  when feed.$state == .failed  { TextBody(text: copy.offline) }
+
+  Card(on_tap: open_story, value: lead.0.id) {
+    TextCaption(text: copy.lead)
+    TextBody(text: lead.0.title, width: .fill)
+    Row(gap: 6) {
+      TextCaption(value: lead.0.points, suffix: copy.pts)
+      TextCaption(value: lead.0.comments, suffix: copy.comments)
+      TextCaption(text: copy.by)
+      TextCaption(text: lead.0.author)
+    }
+  }
+
+  TextCaption(text: copy.latest)
+  Panel {
+    for s, i in feed key s.id {
+      Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+        TextRow(text: s.title, width: .fill)
+        TextCaption(value: s.points, suffix: copy.pts)
+      }
+      Rule()
+    }
+  }
+}
+
+view news_detail Col(gap: 6) {
+  Row(align: .center, on_tap: back) { TextRow(text: copy.back_lbl) }
+  TextTitle(text: lead.0.title, width: .fill)
+  Row(gap: 6) {
+    TextCaption(value: lead.0.points, suffix: copy.pts)
+    TextCaption(text: copy.by)
+    TextCaption(text: lead.0.author)
+  }
+}

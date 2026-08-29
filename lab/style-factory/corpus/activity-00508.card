@@ -1,0 +1,51 @@
+# level: L0
+# model: activity
+
+source place  sys.geocode(name: state.city)
+source museums sys.places(lat: place.lat, lon: place.lon, category: "museum",
+                          count: 4, fields: [id, name, distance])
+source parks   sys.places(lat: place.lat, lon: place.lon, category: "park",
+                          count: 4, fields: [id, name, distance])
+source env.locale sys.locale()
+
+state city { shape: text, initial: "Naples" }
+
+copy eyebrow  { class: vocabulary, en: "NEARBY · MUSEUMS & PARKS" }
+copy heading  { class: vocabulary, en: "Things to Do in Naples" }
+copy loading  { class: vocabulary, en: "Finding places nearby…" }
+copy museum_why { class: vocabulary, en: "away · culture & history" }
+copy park_why   { class: vocabulary, en: "away · green space" }
+
+view root Surface {
+  Col(gap: 2) {
+    TextCaption(text: copy.eyebrow)
+    TextTitle(text: copy.heading)
+  }
+
+  when museums.$state == .pending { TextBody(text: copy.loading) }
+
+  when museums.$state == .ready {
+    Panel {
+      for m, i in museums key m.id {
+        Row(align: .center, gap: 10) {
+          TextRow(text: "🏛️")
+          Col(gap: 2) {
+            TextRow(text: m.name)
+            TextCaption(text: m.distance, suffix: copy.museum_why)
+          }
+        }
+        Rule()
+      }
+      for p, i in parks key p.id {
+        Row(align: .center, gap: 10) {
+          TextRow(text: "🌳")
+          Col(gap: 2) {
+            TextRow(text: p.name)
+            TextCaption(text: p.distance, suffix: copy.park_why)
+          }
+        }
+        Rule()
+      }
+    }
+  }
+}

@@ -1,0 +1,105 @@
+# level: L0
+# model: foodie-tokyo
+
+source place  sys.geocode(name: state.city)
+source scene  sys.photo(query: state.mood, cond: now.cond)
+source now    sys.weather(lat: place.lat, lon: place.lon, fields: [cond])
+
+source rest1  sys.search(query: "Sukiyabashi Jiro Tokyo", count: 1, fields: [name, label])
+source rest2  sys.search(query: "Ichiran Ramen Tokyo", count: 1, fields: [name, label])
+source rest3  sys.search(query: "Tsukiji Outer Market Tokyo", count: 1, fields: [name, label])
+source rest4  sys.search(query: "Omoide Yokocho Tokyo", count: 1, fields: [name, label])
+source rest5  sys.search(query: "Shibuya Sky Tokyo", count: 1, fields: [name, label])
+source rest6  sys.search(query: "Nishiki Market Tokyo", count: 1, fields: [name, label])
+
+source vids   sys.video(query: state.q, count: 8, fields: [id, title, channel, length, views, age, thumb, embed])
+source page   sys.link(fields: [url])
+source env.locale sys.locale()
+
+state city  { shape: text, initial: "Tokyo" }
+state mood  { shape: text, initial: "tokyo street food at night, neon lights, cinematic, vibrant" }
+state q     { shape: text, initial: "tokyo street food" }
+state typed { shape: text, initial: "" }
+state editing { shape: enum[none, find], initial: .none }
+
+event open_find { editing: set(.find), typed: clear }
+event typing    { typed: set($value) }
+event run_find  { q: set($value), typed: clear, editing: set(.none) }
+event close_find { editing: set(.none), typed: clear }
+event play      { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "TOKYO FOODIE", zh: "东京美食" }
+copy heading  { class: vocabulary, en: "Eat & Watch", zh: "吃与看" }
+copy places   { class: vocabulary, en: "WHERE TO EAT", zh: "去哪吃" }
+copy videos   { class: vocabulary, en: "FOOD VIDEOS", zh: "美食视频" }
+copy find_lbl { class: vocabulary, en: "Search", zh: "搜索" }
+copy loading  { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline  { class: vocabulary, en: "Can't reach the service", zh: "无法连接" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+    TextRow(text: hit.name)
+    TextCaption(text: hit.label)
+  }
+}
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  header
+  places_panel
+  videos_panel
+}
+
+view header Col(gap: 4) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: copy.heading, width: .fill)
+}
+
+view places_panel Panel {
+  TextCaption(text: copy.places)
+  when rest1.$state == .pending { TextBody(text: copy.loading) }
+  for h, i in rest1 key h.label { Pick(hit: h) Rule() }
+  for h, i in rest2 key h.label { Pick(hit: h) Rule() }
+  for h, i in rest3 key h.label { Pick(hit: h) Rule() }
+  for h, i in rest4 key h.label { Pick(hit: h) Rule() }
+  for h, i in rest5 key h.label { Pick(hit: h) Rule() }
+  for h, i in rest6 key h.label { Pick(hit: h) Rule() }
+}
+
+view videos_panel Col {
+  Row(align: .center, gap: 8) {
+    TextCaption(text: copy.videos, width: .fill)
+    Chip(text: copy.find_lbl, on_tap: open_find, value: "1")
+  }
+  TextTitle(text: q, width: .fill)
+  finder
+  when vids.$state == .pending { TextBody(text: copy.loading) }
+  when vids.$state == .failed  { TextBody(text: copy.offline) }
+  results
+}
+
+view finder Col {
+  when editing == .find {
+    Panel {
+      Row(align: .center, gap: 10) {
+        Field(text: typed, placeholder: q, on_commit: run_find, on_change: typing, width: .fill)
+        Chip(text: "×", on_tap: close_find)
+      }
+    }
+  }
+}
+
+view results Col {
+  for v, i in vids key v.id {
+    Row(align: .center, gap: 10, on_tap: play, value: v.embed) {
+      Thumb(src: v.thumb)
+      Col(gap: 2, width: .fill) {
+        TextRow(text: v.title, width: .fill)
+        TextCaption(text: v.channel)
+        TextCaption(text: v.length)
+      }
+    }
+    Rule()
+  }
+}

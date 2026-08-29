@@ -1,0 +1,192 @@
+# level: L0
+# model: travel-prague
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind, humidity, pressure, uv])
+source week  sys.weather(lat: place.lat, lon: place.lon, days: 3,
+                         fields: [dayname, hi, lo, cond],
+                         aggregate: [min_lo, max_hi])
+source sun   sys.daylight(lat: place.lat, lon: place.lon)
+source moon  sys.moonphase()
+source scene sys.photo(query: state.mood, cond: now.cond)
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+
+source out1 sys.search(query: "Charles Bridge Prague", count: 1, fields: [name, label])
+source out2 sys.search(query: "Old Town Square Prague", count: 1, fields: [name, label])
+source out3 sys.search(query: "Prague Castle", count: 1, fields: [name, label])
+source in1  sys.search(query: "National Museum Prague", count: 1, fields: [name, label])
+source in2  sys.search(query: "Strahov Monastery Prague", count: 1, fields: [name, label])
+source in3  sys.search(query: "Museum of Karel IV Prague", count: 1, fields: [name, label])
+
+source transit sys.places(lat: place.lat, lon: place.lon, category: "viewpoint",
+                          count: 3, fields: [id, name, distance])
+
+source env.locale sys.locale()
+
+state city  { shape: text, initial: "Prague" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood  { shape: text, initial: "historic european city center, river, old town, cinematic, muted" }
+
+event toggle_units { units: cycle(.c, .f) }
+
+copy eyebrow   { class: vocabulary, en: "PRAGUE", zh: "布拉格" }
+copy loading   { class: vocabulary, en: "Preparing your travel page…", zh: "正在准备旅行页面…" }
+copy offline   { class: vocabulary, en: "Can't reach the travel data", zh: "无法获取旅行数据" }
+copy feels     { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity  { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind      { class: vocabulary, en: "Wind", zh: "风速" }
+copy pressure  { class: vocabulary, en: "Pressure", zh: "气压" }
+copy uv        { class: vocabulary, en: "UV Index", zh: "紫外线" }
+copy precip    { class: vocabulary, en: "Rain", zh: "降水概率" }
+copy sunrise   { class: vocabulary, en: "Sunrise", zh: "日出" }
+copy sunset    { class: vocabulary, en: "Sunset", zh: "日落" }
+copy sky       { class: vocabulary, en: "Satellite", zh: "卫星云图" }
+copy air       { class: vocabulary, en: "Air Quality", zh: "空气质量" }
+copy go_out    { class: vocabulary, en: "Good day to explore", zh: "适合外出探索" }
+copy stay_in   { class: vocabulary, en: "Better indoors today", zh: "今天更适合室内" }
+copy why_wet   { class: vocabulary, en: "rain is likely", zh: "可能有雨" }
+copy why_air   { class: vocabulary, en: "the air is poor", zh: "空气质量差" }
+copy why_cold  { class: vocabulary, en: "it is cold out", zh: "天气偏冷" }
+copy why_fine  { class: vocabulary, en: "mild, dry and clear", zh: "温和、干燥、空气好" }
+copy aqi_lbl   { class: vocabulary, en: "AIR", zh: "空气" }
+copy rain_lbl  { class: vocabulary, en: "RAIN", zh: "降水" }
+copy things_hd { class: vocabulary, en: "TOP THINGS TO DO", zh: "必做事项" }
+copy around_hd { class: vocabulary, en: "GETTING AROUND", zh: "出行方式" }
+copy transit_why { class: vocabulary, en: "away · useful for orientation", zh: "距离 · 便于定位" }
+
+component Pick(hit: record) {
+  view Col(gap: 2, width: .fill) {
+    TextRow(text: hit.name)
+    TextCaption(text: hit.label)
+  }
+}
+
+component ForecastRow(item: record, unit: enum[c, f]) {
+  view Row(align: .center) {
+    TextRow(text: item.dayname, width: .day)
+    WeatherIcon(cond: item.cond, size: .row)
+    TextValue(value: item.lo, unit: unit)
+    TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+    TextValue(value: item.hi, unit: unit)
+  }
+}
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  forecast
+  verdict
+  things
+  around
+  details
+  sunmoon
+  cloudfield
+  airfield
+}
+
+view current Col(align: .center) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  Row(align: .center, gap: 12, on_tap: toggle_units) {
+    WeatherIcon(cond: now.cond, size: .hero)
+    TextHero(value: now.temp, unit: units)
+  }
+  Row(gap: 8, width: .fit) {
+    TextCaption(glyph: "↑", value: now.hi, unit: units)
+    TextCaption(glyph: "↓", value: now.lo, unit: units)
+    TextCaption(glyph: "≈", value: now.feels, unit: units)
+  }
+}
+
+view forecast Panel {
+  for d in week.days key d.dayname {
+    ForecastRow(item: d, unit: units)
+  }
+}
+
+view verdict Col(gap: 10) {
+  when now.precip >= 40 { wet }
+  when now.precip < 40 {
+    when air.aqi >= 100 { smoggy }
+    when air.aqi < 100 {
+      when now.temp < 12 { cold }
+      when now.temp >= 12 { fine }
+    }
+  }
+}
+
+view wet    Col(gap: 10) { TextTitle(text: copy.stay_in) TextBody(text: copy.why_wet) indoors }
+view smoggy Col(gap: 10) { TextTitle(text: copy.stay_in) TextBody(text: copy.why_air) indoors }
+view cold   Col(gap: 10) { TextTitle(text: copy.stay_in) TextBody(text: copy.why_cold) indoors }
+view fine   Col(gap: 10) { TextTitle(text: copy.go_out) TextBody(text: copy.why_fine) outdoors }
+
+view outdoors Panel {
+  when out1.$state == .pending { TextBody(text: copy.loading) }
+  for h, i in out1 key h.label { Pick(hit: h) Rule() }
+  for h, i in out2 key h.label { Pick(hit: h) Rule() }
+  for h, i in out3 key h.label { Pick(hit: h) Rule() }
+}
+
+view indoors Panel {
+  when in1.$state == .pending { TextBody(text: copy.loading) }
+  for h, i in in1 key h.label { Pick(hit: h) Rule() }
+  for h, i in in2 key h.label { Pick(hit: h) Rule() }
+  for h, i in in3 key h.label { Pick(hit: h) Rule() }
+}
+
+view things Col(gap: 8) {
+  TextCaption(text: copy.things_hd)
+  when now.precip >= 40 { indoors }
+  when now.precip < 40 {
+    when air.aqi >= 100 { indoors }
+    when air.aqi < 100 {
+      when now.temp < 12 { indoors }
+      when now.temp >= 12 { outdoors }
+    }
+  }
+}
+
+view around Panel {
+  TextCaption(text: copy.around_hd)
+  when transit.$state == .pending { TextBody(text: copy.loading) }
+  for t, i in transit key t.id {
+    Row(align: .center, gap: 10) {
+      TextRow(text: "🚶")
+      Col(gap: 2) {
+        TextRow(text: t.name)
+        TextCaption(text: t.distance, suffix: copy.transit_why)
+      }
+    }
+    Rule()
+  }
+}
+
+view details Grid(cols: 2) {
+  Tile(label: copy.feels,    value: now.feels,    unit: units)
+  Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+  Tile(label: copy.wind,     value: now.wind,     unit: .speed)
+  Tile(label: copy.pressure, value: now.pressure, unit: .pressure)
+  Tile(label: copy.uv,       value: now.uv)
+  Tile(label: copy.precip,   value: now.precip,   unit: .pct)
+}
+
+view sunmoon Panel {
+  Row {
+    Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: .time) }
+    SunArc(rise: sun.rise, set: sun.set, now: sun.now)
+    Col { TextCaption(text: copy.sunset) TextStat(value: sun.set, format: .time) }
+  }
+  MoonPhase(phase: moon.phase, illum: moon.illumination)
+}
+
+view cloudfield Panel {
+  TextCaption(text: copy.sky)
+  Satellite(lat: place.lat, lon: place.lon)
+}
+
+view airfield Panel {
+  TextCaption(text: copy.air)
+  AqiContour(lat: place.lat, lon: place.lon, span: 1.6)
+}

@@ -1,0 +1,109 @@
+# level: L0
+# model: weather-stock-news
+
+source place       sys.geocode(name: state.city)
+source now         sys.weather(lat: place.lat, lon: place.lon,
+                               fields: [temp, feels, cond, humidity, wind, precip])
+source movers      sys.movers(count: 5, fields: [ticker, name, last, change, pct])
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source env.locale  sys.locale()
+
+state city  { shape: text, initial: "" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state selected { shape: text, initial: "" }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_quote   { selected: set($value) }
+event back         { selected: clear }
+event open_story   { selected: set($value) }
+
+copy eyebrow   { class: vocabulary, en: "MORNING DASHBOARD", zh: "早安仪表盘" }
+copy loading  { class: vocabulary, en: "Loading dashboard…", zh: "正在加载…" }
+copy offline  { class: vocabulary, en: "Can't reach services", zh: "无法获取数据" }
+copy feels    { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind     { class: vocabulary, en: "Wind", zh: "风速" }
+copy precip   { class: vocabulary, en: "Rain", zh: "降水概率" }
+copy movers   { class: vocabulary, en: "Top Movers", zh: "涨跌榜" }
+copy back_lbl { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy news     { class: vocabulary, en: "Top Headlines", zh: "头条新闻" }
+copy lead     { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy pts      { class: vocabulary, en: "pts", zh: "分" }
+copy comments { class: vocabulary, en: "comments", zh: "评论" }
+copy by       { class: vocabulary, en: "by", zh: "作者" }
+
+view root Surface(pad: .page) {
+  Col(gap: 12) {
+    TextCaption(text: copy.eyebrow)
+    when now.$state == .pending { TextBody(text: copy.loading) }
+    when now.$state == .failed  { TextBody(text: copy.offline) }
+    weather_block
+    stock_block
+    news_block
+  }
+}
+
+view weather_block Panel {
+  Col(gap: 8) {
+    Row(align: .center, gap: 12) {
+      WeatherIcon(cond: now.cond, size: .hero)
+      Col(gap: 2) {
+        TextTitle(text: place.name, width: .fill)
+        TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+      }
+    }
+    Grid(cols: 2) {
+      Tile(label: copy.feels, value: now.feels, unit: units)
+      Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+      Tile(label: copy.wind, value: now.wind, unit: .speed)
+      Tile(label: copy.precip, value: now.precip, unit: .pct)
+    }
+  }
+}
+
+view stock_block Panel {
+  Col(gap: 8) {
+    TextTitle(text: copy.movers)
+    when selected == "" {
+      for m in movers key m.ticker {
+        Row(align: .center, gap: 8, on_tap: open_quote, value: m.ticker) {
+          Col(gap: 2, width: .fill) {
+            TextRow(text: m.ticker)
+            TextCaption(text: m.name, width: .fill)
+          }
+          TextValue(value: m.last, format: .money)
+          TextValue(value: m.pct, format: .signed_pct, tint: m.change)
+        }
+        Rule()
+      }
+    }
+    when selected != "" {
+      Row(align: .center, on_tap: back) { TextRow(text: copy.back_lbl) }
+      TextBody(text: "Quote details for " + selected)
+    }
+  }
+}
+
+view news_block Panel {
+  Col(gap: 8) {
+    TextTitle(text: copy.news)
+    Card(on_tap: open_story, value: lead.0.id) {
+      TextCaption(text: copy.lead)
+      TextBody(text: lead.0.title, width: .fill)
+      Row(gap: 6) {
+        TextCaption(value: lead.0.points, suffix: copy.pts)
+        TextCaption(value: lead.0.comments, suffix: copy.comments)
+        TextCaption(text: copy.by)
+        TextCaption(text: lead.0.author)
+      }
+    }
+    for s, i in feed key s.id {
+      Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+        TextRow(text: s.title, width: .fill)
+        TextCaption(value: s.points, suffix: copy.pts)
+      }
+      Rule()
+    }
+  }
+}

@@ -1,0 +1,59 @@
+# level: L0
+# model: activity
+
+source place  sys.geocode(name: state.city)
+source rest   sys.places(lat: place.lat, lon: place.lon, category: "cafe",
+                         count: 4, fields: [id, name, distance])
+source videos sys.video(query: state.q, count: 6,
+                        fields: [id, title, channel, length, views, age, thumb, embed])
+source page   sys.link(fields: [url])
+source env.locale sys.locale()
+
+state city { shape: text, initial: "London" }
+state q    { shape: text, initial: "London food" }
+
+event play { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "LONDON · FOODIE" }
+copy heading  { class: vocabulary, en: "Eat & Watch" }
+copy loading  { class: vocabulary, en: "Finding places nearby…" }
+copy rest_why { class: vocabulary, en: "away · somewhere to eat" }
+copy video_hd { class: vocabulary, en: "FOOD VIDEOS" }
+
+view root Surface {
+  Col(gap: 2) {
+    TextCaption(text: copy.eyebrow)
+    TextTitle(text: copy.heading)
+  }
+
+  when rest.$state == .pending { TextBody(text: copy.loading) }
+
+  when rest.$state == .ready {
+    Panel {
+      for r, i in rest key r.id {
+        Row(align: .center, gap: 10) {
+          TextRow(text: "🍽️")
+          Col(gap: 2) {
+            TextRow(text: r.name)
+            TextCaption(text: r.distance, suffix: copy.rest_why)
+          }
+        }
+        Rule()
+      }
+    }
+  }
+
+  TextCaption(text: copy.video_hd)
+  when videos.$state == .pending { TextBody(text: copy.loading) }
+  for v, i in videos key v.id {
+    Row(align: .center, gap: 10, on_tap: play, value: v.embed) {
+      Thumb(src: v.thumb)
+      Col(gap: 2, width: .fill) {
+        TextRow(text: v.title, width: .fill)
+        TextCaption(text: v.channel)
+        TextCaption(text: v.length)
+      }
+    }
+    Rule()
+  }
+}

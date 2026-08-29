@@ -1,0 +1,135 @@
+# level: L0
+# model: news
+
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 7, offset: 1, fields: [id, title, author, points])
+source article     sys.news_item(id: state.selected,
+                                 fields: [title, author, points, comments, url])
+source env.locale  sys.locale()
+source saved       sys.reading(fields: [id, title, points])
+source topics      sys.topics(fields: [name, top_title, top_id])
+source page        sys.link(fields: [url])
+
+state selected { shape: text, initial: "" }
+
+event open_story  { selected: set($value) }
+event back        { selected: clear }
+event keep_story  { saved: append($value) }
+event drop_story  { saved: remove($value) }
+event follow      { topics: append($value) }
+event unfollow    { topics: remove($value) }
+event read_story  { page: set($value) }
+
+copy masthead { class: vocabulary, en: "Space Exploration", zh: "太空探索" }
+copy source   { class: vocabulary, en: "SPACE NEWS", zh: "太空新闻" }
+copy saved_hd { class: vocabulary, en: "READING LIST", zh: "收藏" }
+copy keep_lbl { class: vocabulary, en: "☆ Save" }
+copy drop_lbl { class: vocabulary, en: "Remove" }
+copy back_lbl { class: vocabulary, en: "‹ Back", zh: "‹ 返回" }
+copy read_lbl { class: vocabulary, en: "Read ↗", zh: "阅读原文 ↗" }
+copy latest   { class: vocabulary, en: "LATEST", zh: "最新" }
+copy topics_hd { class: vocabulary, en: "TOPICS", zh: "关注" }
+copy t_nasa   { class: vocabulary, en: "NASA" }
+copy t_iss    { class: vocabulary, en: "ISS" }
+copy t_mars   { class: vocabulary, en: "Mars" }
+copy t_rocket { class: vocabulary, en: "Rocket" }
+copy lead     { class: vocabulary, en: "LEAD", zh: "焦点" }
+copy pts      { class: vocabulary, en: "pts", zh: "分" }
+copy comments { class: vocabulary, en: "comments", zh: "评论" }
+copy by       { class: vocabulary, en: "by", zh: "作者" }
+copy loading  { class: vocabulary, en: "Fetching headlines…", zh: "正在获取头条…" }
+copy offline  { class: vocabulary, en: "Can't reach the news feed", zh: "无法获取新闻" }
+
+view root  Surface(pad: .page) {
+             when selected == "" { stream }
+             when selected != "" { story }
+           }
+
+view stream  Col {
+               when feed.$state == .pending { TextBody(text: copy.loading) }
+               when feed.$state == .failed  { TextBody(text: copy.offline) }
+               masthead
+               headline
+               latest
+             }
+
+view masthead  Col {
+                 TextCaption(text: copy.source)
+                 TextTitle(text: copy.masthead)
+               }
+
+view headline  Card(on_tap: open_story, value: lead.0.id) {
+                 TextCaption(text: copy.lead)
+                 TextBody(text: lead.0.title, width: .fill)
+                 Row(gap: 6) {
+                   TextCaption(value: lead.0.points,   suffix: copy.pts)
+                   TextCaption(value: lead.0.comments, suffix: copy.comments)
+                   TextCaption(text: copy.by)
+                   TextCaption(text: lead.0.author)
+                 }
+               }
+
+component StoryRow(story: record, position: number, on_open: event) {
+  view Col {
+         Row(align: .center, on_tap: on_open, value: story.id) {
+           TextRow(text: position, width: .rank)
+           Col(gap: 3) {
+             TextRow(text: story.title, width: .fill)
+             Row(gap: 6) {
+               TextCaption(value: story.points, suffix: copy.pts)
+               TextCaption(text: story.author)
+             }
+           }
+         }
+         Rule()
+       }
+}
+
+view latest  Col {
+               TextCaption(text: copy.latest)
+               Panel {
+                 for s, i in feed key s.id {
+                   StoryRow(story: s, position: i, on_open: open_story)
+                 }
+               }
+               TextCaption(text: copy.topics_hd)
+               Row(gap: 8) {
+                 Chip(text: copy.t_nasa,   on_tap: follow, value: "nasa")
+                 Chip(text: copy.t_iss,    on_tap: follow, value: "iss")
+                 Chip(text: copy.t_mars,   on_tap: follow, value: "mars")
+                 Chip(text: copy.t_rocket, on_tap: follow, value: "rocket")
+               }
+               for t, i in topics key t.name {
+                 Row(align: .center, gap: 8) {
+                   Row(align: .center, gap: 8, width: .fill, on_tap: open_story, value: t.top_id) {
+                     TextCaption(text: t.name, width: .label)
+                     TextRow(text: t.top_title, width: .fill)
+                   }
+                   Chip(text: copy.drop_lbl, on_tap: unfollow, value: t.name)
+                 }
+               }
+               for b, i in saved key b.id {
+                 Row(align: .center, gap: 8) {
+                   Row(align: .center, gap: 8, width: .fill, on_tap: open_story, value: b.id) {
+                     TextCaption(text: copy.saved_hd, width: .label)
+                     TextRow(text: b.title, width: .fill)
+                   }
+                   Chip(text: copy.drop_lbl, on_tap: drop_story, value: b.id)
+                 }
+               }
+             }
+
+view story  Col {
+              Row(align: .center, on_tap: back) { TextRow(text: copy.back_lbl) }
+              Row(gap: 8) {
+                Chip(text: copy.keep_lbl, on_tap: keep_story, value: selected)
+                Chip(text: copy.read_lbl, on_tap: read_story, value: article.url)
+              }
+              TextTitle(text: article.title, width: .fill)
+              Row(gap: 6) {
+                TextCaption(value: article.points, suffix: copy.pts)
+                TextCaption(text: copy.by)
+                TextCaption(text: article.author)
+              }
+              TextCaption(text: article.url)
+            }

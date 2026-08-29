@@ -28,7 +28,11 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 ASSETS = BASE.parent / "pipeline-v2"          # the :8899 server root
-KEY = Path("/private/tmp/claude-501/-Users-yuechen-home-Splash/10acdae2-9f20-4e60-b7b1-7195c1bdb439/scratchpad/oai_key").read_text().strip()
+_KEY_PATH = Path("/private/tmp/claude-501/-Users-yuechen-home-Splash/10acdae2-9f20-4e60-b7b1-7195c1bdb439/scratchpad/oai_key")
+# Lazy: only image generation needs it, and --cards-only never generates. The
+# scratchpad is session-scoped and gets cleaned, which should not stop an
+# ablation that touches no image API at all.
+KEY = _KEY_PATH.read_text().strip() if _KEY_PATH.exists() else ""
 PROXY = "http://127.0.0.1:7897"
 ADB = str(Path.home() / "Library/Android/sdk/platform-tools/adb")
 DEVICE = "bf0a4730"
@@ -62,6 +66,52 @@ HTML_DATA = {
 
 
 CONSTRUCTORS = Path("/Users/yuechen/home/Splash/docs/ui-l0-constructors.toml").read_text()
+
+AXES_DOC = """THEME AXES. The theme line takes coordinates beside the mood, all on ONE line:
+
+    theme light radius: .none accent: .amber density: .compact emphasis: .poster icons: .mono
+
+READ EACH COORDINATE OFF THE MOCKUP. They are observations, not preferences —
+a wrong coordinate is worse than an omitted one, because it overrides a mood
+value that was already reasonable.
+
+  mood      dark | light | glass | photo
+            Look at the page behind everything. photo ONLY if it is a photograph.
+
+  radius    none | small | large | full
+            The corner scale, named as Tailwind and Radix name it.
+            Look at the CORNERS of the cards and rows.
+            Hard 90-degree corners -> .none
+            Barely rounded, a few pixels -> .small
+            Clearly rounded, the common app look -> .large
+            Capsule-shaped ends -> .full
+            Most designs are .small or .large. Do NOT choose .none unless the
+            corners really are hard; squaring a soft design is a visible error.
+
+  emphasis  quiet | clear | poster
+            How much of the screen does the largest number or headline occupy?
+            A small fraction, the list carries the page -> .quiet
+            One clearly dominant element, roughly a fifth -> .clear
+            It fills a third of the screen or more -> .poster
+            .clear is the common case. Do NOT default to .poster: if the hero
+            is not enormous in the mockup, .poster makes the card wrong.
+
+  density   compact | regular | airy
+            Row height against text size. Tightly packed feed -> .compact
+            Ordinary breathing room -> .regular
+            Large deliberate whitespace, few elements -> .airy
+
+  accent    neutral indigo blue red green amber cyan magenta violet
+            Find the ONE colour carrying emphasis — bars, key numbers, labels.
+            Name the nearest. If the design is black, white and grey with no
+            colour at all -> .neutral
+
+  icons     filled | mono
+            Multi-colour filled pictograms -> .filled
+            Single-ink line art or silhouettes -> .mono
+
+Omit an axis when the mockup gives no clear signal; the mood's own value then
+stands. Never invent an axis or a value outside these sets."""
 
 
 def sh(*args, timeout=120, **kw):
@@ -151,6 +201,77 @@ def judge_pair(target, img_a, img_b, seed_swap):
     new_is_first = seed_swap        # seed_swap put img_b (NEW) first as "A"
     new_won = (v == "A") == new_is_first
     return (1 if new_won else -1), json.loads(m.group(0)).get("why", "")
+
+
+def retranslate_card(r, outdir, prev):
+    """Regenerate the CARD for an existing mockup, then render and judge it
+    against the card that mockup produced before.
+
+    Axes are not retroactive — an existing card declares none, so re-rendering
+    it measures nothing. The question is whether a generator TOLD the axes
+    exist writes a better card, and that needs new cards against the same
+    targets. Mockups and HTML twins are reused untouched."""
+    sid = r["id"]
+    mock = outdir / f"{sid}-mockup.png"
+    if not mock.exists():
+        return {"id": sid, "recipe": r, "error": "no cached mockup"}
+    old_card = outdir / f"{sid}.card"
+    old_shot = outdir / f"{sid}-card.png"
+    if old_card.exists():
+        old_card.rename(outdir / f"{sid}-card-noaxes.l0")
+    if old_shot.exists():
+        old_shot.rename(outdir / f"{sid}-card-prev.png")
+    rec = {"id": sid, "recipe": r, "html": prev.get(sid, {}).get("html")}
+    saved, diags = None, ""
+    for attempt in (1, 2, 3):
+        out = claude_text(
+            f"Read {mock} — the design target. Read "
+            f"{BASE.parent/'translated/weather-tokyo.card'} and {BASE.parent/'translated/news-photo.card'} "
+            f"— two valid L0 cards showing the EXACT dialect. Write ONE L0 card for this "
+            f"{r['domain']} design.\n"
+            f"THE CONSTRUCTOR CONTRACT — do not invent arguments:\n{CONSTRUCTORS}\n"
+            f"Data contract (use ONLY these sources; display every source you declare):\n"
+            f"{CONTRACTS[r['domain']]}\n"
+            f"Choose the mood ({'photo' if r['photo_bg'] else 'light or dark'}) AND the axis "
+            f"coordinates this design implies.\n{AXES_DOC}\n"
+            f"Every number/text must bind a source or copy — never a hardcoded fact. "
+            f"A photo background source MUST keep the exact name `scene`. "
+            f"{('Previous attempt failed validation: ' + diags) if diags else ''} "
+            f"Return ONLY the card source in one ```runl0 fence, first line `# level: L0`.")
+        old_card_path = outdir / f"{sid}.card"
+        old_card_path.write_text(strip_fence(out, "runl0"))
+        v = validate(old_card_path)
+        if v.get("ok"):
+            diags = ""
+            break
+        diags = "; ".join(str(d) for d in v.get("diagnostics", []))[:400]
+        log(sid, f"validate {attempt} failed: {diags[:100]}")
+    rec["card_valid"] = not diags
+    if diags:
+        rec["card_diags"] = diags
+        return rec
+    src = (outdir / f"{sid}.card").read_text()
+    import re as _re
+    m = _re.search(r"^theme\s+([^\n]+)", src, _re.M)
+    rec["theme_line"] = m.group(1).strip() if m else ""
+    ledger = {"scene": f"http://127.0.0.1:8899/{sid}-bg.png"} if r["photo_bg"] else {}
+    if r["domain"] == "weather":
+        ledger["city"] = "Tokyo"
+    cur = outdir / f"{sid}-card.png"
+    err = render_card(outdir / f"{sid}.card", ledger, cur)
+    if err:
+        rec["card_render_error"] = err
+        return rec
+    jc = judge(mock, cur, extra="; the background photo may differ from the target's")
+    rec["card"] = {"fidelity": jc.get("fidelity"), "overall": jc.get("overall"), "gaps": jc.get("gaps")}
+    prev_shot = outdir / f"{sid}-card-prev.png"
+    if prev_shot.exists():
+        swap = (int(sid[1:4]) % 2 == 0)
+        verdict, why = judge_pair(mock, prev_shot, cur, swap)
+        rec["paired"] = {"new_wins": verdict, "why": why}
+        log(sid, f"[{rec['theme_line'][:38]}] card {jc.get('fidelity')} | "
+                 f"{'NEW' if verdict>0 else ('OLD' if verdict<0 else 'tie')}: {why[:50]}")
+    return rec
 
 
 def rerun_card(r, outdir, prev):
@@ -362,7 +483,8 @@ def run_specimen(r, outdir):
             f"{CONSTRUCTORS}\n"
             f"Data contract (use ONLY these sources; display every source you declare):\n"
             f"{CONTRACTS[r['domain']]}\n"
-            f"Choose the theme mood closest to the mockup ({'photo' if r['photo_bg'] else 'light or dark'}). "
+            f"Choose the theme mood closest to the mockup ({'photo' if r['photo_bg'] else 'light or dark'}), "
+            f"AND the axis coordinates its design implies.\n{AXES_DOC}\n"
             f"Every number/text must bind a source or copy — never a hardcoded fact. "
             f"A photo background source MUST keep the exact name `scene`. "
             f"{('Previous attempt failed validation: ' + diags) if diags else ''} "
@@ -410,6 +532,7 @@ def run_specimen(r, outdir):
 
 def main():
     cards_only = "--cards-only" in sys.argv
+    retranslate = "--retranslate" in sys.argv
     outdir = BASE / "out"
     outdir.mkdir(exist_ok=True)
     ledger_path = BASE / "ledger.jsonl"
@@ -418,7 +541,12 @@ def main():
         done = {json.loads(l)["id"] for l in open(ledger_path)}
     recipes = [json.loads(l) for l in open(BASE / "recipes.jsonl")]
     prev = {}
-    if cards_only:
+    if retranslate:
+        prev = {json.loads(l)["id"]: json.loads(l) for l in open(ledger_path)}
+        todo = [r for r in recipes if (outdir / f"{r['id']}-mockup.png").exists()]
+        ledger_path.rename(BASE / "ledger-before-axes.jsonl")
+        print(f"retranslating {len(todo)} cards WITH the axis vocabulary", flush=True)
+    elif cards_only:
         # Re-render and re-judge existing cards against existing mockups: no
         # image generation, no HTML, prior renders RETAINED as the control.
         prev = {json.loads(l)["id"]: json.loads(l) for l in open(ledger_path)}
@@ -433,7 +561,9 @@ def main():
     print(f"{len(todo)} specimens to run ({len(done)} already done)", flush=True)
     for r in todo:
         try:
-            rec = rerun_card(r, outdir, prev) if cards_only else run_specimen(r, outdir)
+            rec = (retranslate_card(r, outdir, prev) if retranslate
+                   else rerun_card(r, outdir, prev) if cards_only
+                   else run_specimen(r, outdir))
         except Exception as e:  # noqa: BLE001 — a specimen must never kill the batch
             rec = {"id": r["id"], "recipe": r, "error": str(e)[:300]}
             log(r["id"], f"ERROR {e}")

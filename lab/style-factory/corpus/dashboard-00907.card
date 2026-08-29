@@ -1,0 +1,84 @@
+# level: L0
+# model: weather-activity
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind])
+source air   sys.airquality(lat: place.lat, lon: place.lon)
+source hits  sys.video(query: state.q, count: 12,
+                        fields: [id, title, channel, length, views, age, thumb, embed])
+source page  sys.link(fields: [url])
+source env.locale sys.locale()
+
+state city  { shape: text, initial: "" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state q     { shape: text, initial: "jazz music" }
+state typed { shape: text, initial: "" }
+state editing { shape: enum[none, find], initial: .none }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_find { editing: set(.find), typed: clear }
+event typing    { typed: set($value) }
+event run_find  { q: set($value), typed: clear, editing: set(.none) }
+event close_find { editing: set(.none), typed: clear }
+event play      { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "TONIGHT", zh: "今晚" }
+copy loading  { class: vocabulary, en: "Reading the conditions…", zh: "正在读取天气…" }
+copy offline  { class: vocabulary, en: "Can't reach the forecast", zh: "无法获取天气" }
+copy rain_lbl { class: vocabulary, en: "RAIN", zh: "降水" }
+copy aqi_lbl  { class: vocabulary, en: "AIR", zh: "空气" }
+copy video_hd { class: vocabulary, en: "JAZZ", zh: "爵士" }
+copy find_lbl { class: vocabulary, en: "Search", zh: "搜索" }
+copy vloading { class: vocabulary, en: "Searching…", zh: "正在搜索…" }
+copy voffline { class: vocabulary, en: "Can't reach YouTube", zh: "无法连接 YouTube" }
+
+view root Surface(pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  videos
+}
+
+view current Col(gap: 4) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  Row(align: .center, gap: 12, on_tap: toggle_units) {
+    WeatherIcon(cond: now.cond, size: .hero)
+    TextHero(value: now.temp, unit: units)
+  }
+  Row(gap: 14) {
+    Tile(label: copy.rain_lbl, value: now.precip, unit: .pct)
+    Tile(label: copy.aqi_lbl, value: air.aqi)
+  }
+}
+
+view videos Col(gap: 8) {
+  Row(align: .center, gap: 8) {
+    TextTitle(text: copy.video_hd, width: .fill)
+    Chip(text: copy.find_lbl, on_tap: open_find, value: "1")
+  }
+  TextCaption(text: q, width: .fill)
+  when editing == .find {
+    Panel {
+      Row(align: .center, gap: 10) {
+        Field(text: typed, placeholder: q, on_commit: run_find,
+              on_change: typing, width: .fill)
+        Chip(text: "×", on_tap: close_find)
+      }
+    }
+  }
+  when hits.$state == .pending { TextBody(text: copy.vloading) }
+  when hits.$state == .failed  { TextBody(text: copy.voffline) }
+  for v, i in hits key v.id {
+    Row(align: .center, gap: 10, on_tap: play, value: v.embed) {
+      Thumb(src: v.thumb)
+      Col(gap: 2, width: .fill) {
+        TextRow(text: v.title, width: .fill)
+        TextCaption(text: v.channel)
+        TextCaption(text: v.length)
+      }
+    }
+    Rule()
+  }
+}

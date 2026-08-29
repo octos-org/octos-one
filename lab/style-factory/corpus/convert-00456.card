@@ -1,0 +1,52 @@
+# level: L1
+# model: convert
+
+source env.locale sys.locale()
+
+state amount { shape: number, initial: 1 }
+state factor { shape: number, initial: 2.20462 }
+state offset { shape: number, initial: 0 }
+state dir    { shape: enum[fwd, rev], initial: .fwd }
+
+event set_amount { amount: set($value) }
+event flip       { dir: cycle(.fwd, .rev) }
+
+copy pair_ab { class: vocabulary, en: "kg → lb", zh: "公斤 → 磅" }
+copy pair_ba { class: vocabulary, en: "lb → kg", zh: "磅 → 公斤" }
+copy eyebrow { class: vocabulary, en: "CONVERT", zh: "换算" }
+copy swap    { class: vocabulary, en: "Swap",   zh: "互换" }
+copy unit_to { class: vocabulary, en: "lb",     zh: "磅" }
+copy unit_fr { class: vocabulary, en: "kg",     zh: "公斤" }
+copy one     { class: vocabulary, en: "1" }
+copy ten     { class: vocabulary, en: "10" }
+copy hundred { class: vocabulary, en: "100" }
+
+view root Surface(pad: .page) {
+       TextCaption(text: copy.eyebrow)
+       heading
+       entry
+       result
+       presets
+     }
+
+view heading Row(align: .center, gap: 8) {
+       when dir == .fwd { TextTitle(text: copy.pair_ab, width: .fill) }
+       when dir == .rev { TextTitle(text: copy.pair_ba, width: .fill) }
+       Chip(text: copy.swap, on_tap: flip, width: .fit)
+     }
+
+view entry Row(align: .center, gap: 6) {
+       when dir == .fwd { TextValue(value: amount) TextRow(text: copy.unit_fr) }
+       when dir == .rev { TextValue(value: amount) TextRow(text: copy.unit_to) }
+     }
+
+view result Col(gap: 2) {
+       when dir == .fwd { TextHero(value: amount * factor + offset, format: .ratio) }
+       when dir == .rev { TextHero(value: (amount - offset) / factor, format: .ratio) }
+     }
+
+view presets Row(gap: 8) {
+       Chip(text: copy.one,     on_tap: set_amount, value: 1,   active: amount == 1)
+       Chip(text: copy.ten,     on_tap: set_amount, value: 10,  active: amount == 10)
+       Chip(text: copy.hundred, on_tap: set_amount, value: 100, active: amount == 100)
+     }

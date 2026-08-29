@@ -1,0 +1,164 @@
+# level: L0
+# model: seville-dashboard
+
+source place sys.geocode(name: state.city)
+source now   sys.weather(lat: place.lat, lon: place.lon,
+                         fields: [temp, feels, cond, precip, wind, humidity, pressure, uv])
+source week  sys.weather(lat: place.lat, lon: place.lon, days: 7,
+                         fields: [dayname, hi, lo, cond],
+                         aggregate: [min_lo, max_hi])
+source sun   sys.daylight(lat: place.lat, lon: place.lon)
+source moon  sys.moonphase()
+source scene sys.photo(query: state.mood, cond: now.cond)
+source parks sys.places(lat: place.lat, lon: place.lon, category: "park",
+                        count: 4, fields: [id, name, distance])
+source cafes sys.places(lat: place.lat, lon: place.lon, category: "cafe",
+                        count: 4, fields: [id, name, distance])
+source hits  sys.video(query: state.q, count: 8,
+                       fields: [id, title, channel, length, views, age, thumb, embed])
+source page  sys.link(fields: [url])
+source env.locale sys.locale()
+
+state city  { shape: text, initial: "Seville" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+state mood  { shape: text, initial: "andalusian plaza with orange trees, warm light, cinematic" }
+state q     { shape: text, initial: "Seville travel guide" }
+state typed { shape: text, initial: "" }
+state editing { shape: enum[none, find], initial: .none }
+
+event toggle_units { units: cycle(.c, .f) }
+event open_find { editing: set(.find), typed: clear }
+event typing    { typed: set($value) }
+event run_find  { q: set($value), typed: clear, editing: set(.none) }
+event close_find { editing: set(.none), typed: clear }
+event play      { page: set($value) }
+
+copy eyebrow  { class: vocabulary, en: "SEVILLE DASHBOARD", zh: "塞维利亚仪表盘" }
+copy loading  { class: vocabulary, en: "Loading dashboard…", zh: "正在加载…" }
+copy offline  { class: vocabulary, en: "Can't reach services", zh: "无法获取数据" }
+copy feels    { class: vocabulary, en: "Feels like", zh: "体感" }
+copy humidity { class: vocabulary, en: "Humidity", zh: "湿度" }
+copy wind     { class: vocabulary, en: "Wind", zh: "风速" }
+copy pressure { class: vocabulary, en: "Pressure", zh: "气压" }
+copy uv       { class: vocabulary, en: "UV Index", zh: "紫外线" }
+copy precip   { class: vocabulary, en: "Rain", zh: "降水概率" }
+copy sunrise  { class: vocabulary, en: "Sunrise", zh: "日出" }
+copy sunset   { class: vocabulary, en: "Sunset", zh: "日落" }
+copy nearby   { class: vocabulary, en: "NEARBY", zh: "附近" }
+copy park_why { class: vocabulary, en: "away · green space" }
+copy cafe_why { class: vocabulary, en: "away · coffee stop" }
+copy videos   { class: vocabulary, en: "WATCH", zh: "观看" }
+copy find_lbl { class: vocabulary, en: "Search", zh: "搜索" }
+
+component ForecastRow(item: record, unit: enum[c, f]) {
+  view Row(align: .center) {
+    TextRow(text: item.dayname, width: .day)
+    WeatherIcon(cond: item.cond, size: .row)
+    TextValue(value: item.lo, unit: unit)
+    TempBar(lo: item.lo, hi: item.hi, min: week.min_lo, max: week.max_hi)
+    TextValue(value: item.hi, unit: unit)
+  }
+}
+
+view root Photo(src: scene, pad: .page) {
+  when now.$state == .pending { TextBody(text: copy.loading) }
+  when now.$state == .failed  { TextBody(text: copy.offline) }
+  current
+  forecast
+  nearby
+  videos
+  sunmoon
+  details
+}
+
+view current Col(align: .center) {
+  TextCaption(text: copy.eyebrow)
+  TextTitle(text: place.name, width: .fill)
+  WeatherIcon(cond: now.cond, size: .hero)
+  TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+  Row(gap: 8, width: .fit) {
+    TextCaption(glyph: "↑", value: now.hi, unit: units)
+    TextCaption(glyph: "↓", value: now.lo, unit: units)
+    TextCaption(glyph: "≈", value: now.feels, unit: units)
+  }
+}
+
+view forecast Panel {
+  for d in week.days key d.dayname {
+    ForecastRow(item: d, unit: units)
+  }
+}
+
+view nearby Col {
+  TextCaption(text: copy.nearby)
+  when parks.$state == .pending { TextBody(text: copy.loading) }
+  Panel {
+    for p, i in parks key p.id {
+      Row(align: .center, gap: 10) {
+        TextRow(text: "🌳")
+        Col(gap: 2) {
+          TextRow(text: p.name)
+          TextCaption(text: p.distance, suffix: copy.park_why)
+        }
+      }
+      Rule()
+    }
+    for c, i in cafes key c.id {
+      Row(align: .center, gap: 10) {
+        TextRow(text: "☕")
+        Col(gap: 2) {
+          TextRow(text: c.name)
+          TextCaption(text: c.distance, suffix: copy.cafe_why)
+        }
+      }
+      Rule()
+    }
+  }
+}
+
+view videos Col {
+  Row(align: .center, gap: 8) {
+    TextCaption(text: copy.videos, width: .fill)
+    Chip(text: copy.find_lbl, on_tap: open_find, value: "1")
+  }
+  when editing == .find {
+    Panel {
+      Row(align: .center, gap: 10) {
+        Field(text: typed, placeholder: q, on_commit: run_find,
+              on_change: typing, width: .fill)
+        Chip(text: "×", on_tap: close_find)
+      }
+    }
+  }
+  when hits.$state == .pending { TextBody(text: copy.loading) }
+  when hits.$state == .failed  { TextBody(text: copy.offline) }
+  for v, i in hits key v.id {
+    Row(align: .center, gap: 10, on_tap: play, value: v.embed) {
+      Thumb(src: v.thumb)
+      Col(gap: 2, width: .fill) {
+        TextRow(text: v.title, width: .fill)
+        TextCaption(text: v.channel)
+        TextCaption(text: v.length)
+      }
+    }
+    Rule()
+  }
+}
+
+view sunmoon Panel {
+  Row {
+    Col { TextCaption(text: copy.sunrise) TextStat(value: sun.rise, format: .time) }
+    SunArc(rise: sun.rise, set: sun.set, now: sun.now)
+    Col { TextCaption(text: copy.sunset) TextStat(value: sun.set, format: .time) }
+  }
+  MoonPhase(phase: moon.phase, illum: moon.illumination)
+}
+
+view details Grid(cols: 2) {
+  Tile(label: copy.feels, value: now.feels, unit: units)
+  Tile(label: copy.humidity, value: now.humidity, unit: .pct)
+  Tile(label: copy.wind, value: now.wind, unit: .speed)
+  Tile(label: copy.pressure, value: now.pressure, unit: .pressure)
+  Tile(label: copy.uv, value: now.uv)
+  Tile(label: copy.precip, value: now.precip, unit: .pct)
+}

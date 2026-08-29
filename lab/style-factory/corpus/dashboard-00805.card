@@ -1,0 +1,96 @@
+# level: L0
+# model: weather-stock-news
+
+source place       sys.geocode(name: state.city)
+source now         sys.weather(lat: place.lat, lon: place.lon,
+                               fields: [temp, feels, cond, humidity, wind, precip])
+source movers      sys.movers(count: 5, fields: [ticker, name, last, change, pct])
+source lead        sys.news(count: 1, fields: [id, title, author, points, comments, url])
+source feed        sys.news(count: 5, offset: 1, fields: [id, title, author, points])
+source env.locale  sys.locale()
+
+state city  { shape: text, initial: "" }
+state units { shape: enum[c, f], initial: env.locale.temp_unit }
+
+event toggle_units { units: cycle(.c, .f) }
+
+copy eyebrow   { class: vocabulary, en: "MORNING DASHBOARD", zh: "早安仪表盘" }
+copy weather_hd { class: vocabulary, en: "WEATHER", zh: "天气" }
+copy stocks_hd  { class: vocabulary, en: "TOP STOCKS", zh: "热门股票" }
+copy news_hd    { class: vocabulary, en: "TOP HEADLINES", zh: "头条新闻" }
+copy loading    { class: vocabulary, en: "Loading…", zh: "加载中…" }
+copy offline    { class: vocabulary, en: "Can't reach the network", zh: "无法连接网络" }
+copy pts        { class: vocabulary, en: "pts", zh: "分" }
+copy by         { class: vocabulary, en: "by", zh: "作者" }
+
+view root Surface(pad: .page) {
+  Col(gap: 16) {
+    TextCaption(text: copy.eyebrow)
+
+    Panel {
+      TextTitle(text: copy.weather_hd)
+      when now.$state == .pending { TextBody(text: copy.loading) }
+      when now.$state == .failed  { TextBody(text: copy.offline) }
+      when now.$state == .ready {
+        Row(align: .center, gap: 12) {
+          WeatherIcon(cond: now.cond, size: .hero)
+          TextHero(value: now.temp, unit: units, on_tap: toggle_units)
+        }
+        Row(gap: 12) {
+          TextCaption(text: place.name)
+          TextCaption(value: now.feels, unit: units, glyph: "≈")
+          TextCaption(value: now.humidity, unit: .pct)
+          TextCaption(value: now.wind, unit: .speed)
+        }
+      }
+    }
+
+    Panel {
+      TextTitle(text: copy.stocks_hd)
+      when movers.$state == .pending { TextBody(text: copy.loading) }
+      when movers.$state == .failed  { TextBody(text: copy.offline) }
+      when movers.$state == .ready {
+        for m, i in movers key m.ticker {
+          Row(align: .center, gap: 8) {
+            Col(gap: 2, width: .fill) {
+              TextRow(text: m.ticker)
+              TextCaption(text: m.name)
+            }
+            TextValue(value: m.last, format: .money)
+            TextValue(value: m.pct, format: .signed_pct, tint: m.change)
+          }
+          Rule()
+        }
+      }
+    }
+
+    Panel {
+      TextTitle(text: copy.news_hd)
+      when feed.$state == .pending { TextBody(text: copy.loading) }
+      when feed.$state == .failed  { TextBody(text: copy.offline) }
+      when feed.$state == .ready {
+        when lead.$state == .ready {
+          Card(on_tap: open_story, value: lead.0.id) {
+            TextBody(text: lead.0.title, width: .fill)
+            Row(gap: 6) {
+              TextCaption(value: lead.0.points, suffix: copy.pts)
+              TextCaption(text: copy.by)
+              TextCaption(text: lead.0.author)
+            }
+          }
+          Rule()
+        }
+        for s, i in feed key s.id {
+          Row(align: .center, gap: 8, on_tap: open_story, value: s.id) {
+            Col(gap: 2, width: .fill) {
+              TextRow(text: s.title)
+              TextCaption(text: s.author)
+            }
+            TextCaption(value: s.points, suffix: copy.pts)
+          }
+          Rule()
+        }
+      }
+    }
+  }
+}
