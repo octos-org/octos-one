@@ -248,3 +248,18 @@ even the shipped self-improvement loop does not target 9.
 That is four independent lines of evidence: five rounds of real fixes that never
 moved the number, a best-in-corpus HTML twin at 7, an unconstrained AI mockup at
 7, and the project's own instrument at 6 with a rubric that says so.
+
+## And richness is not the answer either
+
+The scoring above all used the four baseline fixtures, which are sparse by
+construction — four content blocks on a tall phone — and the judge kept naming
+emptiness. So the richest card in the 967-card corpus was rendered instead:
+`weather-activity-00513`, **9 views and 11 sources**, live Turin data, metric
+tiles, an activity verdict and a place list with real addresses.
+
+**It scores 5** on the project's own critic — no better than the sparse
+fixtures at 6.
+
+That closes the last open hypothesis. Sparse or rich, fixture or live, defects
+fixed or not, two judges and two model families all land in the same 5-6 band,
+which the project's own rubric describes as where "most screens" sit.
