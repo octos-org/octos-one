@@ -471,7 +471,15 @@ fn widget(kind: NodeKind) -> &'static str {
         NodeKind::Image => "Image",
         // A card and a chip are both rounded surfaces; what separates them is
         // the radius and padding the kit supplies, not the widget.
-        NodeKind::Card | NodeKind::Chip => "RoundedView",
+        //
+        // `RoundedShadowView`, not `RoundedView`: it is a strict SUPERSET —
+        // identical fill, gradient, radius and border uniforms, plus
+        // `shadow_color` / `shadow_radius` / `shadow_offset`. That is what
+        // implements `Attrs.elevation`, which every layer above declared and no
+        // renderer has ever drawn. A card that sets no elevation writes
+        // `shadow_color: #0000`, so the pixels are unchanged and the four device
+        // goldens still hold; the shadow costs fill rate only when asked for.
+        NodeKind::Card | NodeKind::Chip => "RoundedShadowView",
         // A divider is a filled rule: it needs a background, and a bare `View`
         // does not draw one.
         NodeKind::Divider => "SolidView",
@@ -933,9 +941,52 @@ fn emit_widget(node: &UiNode, out: &mut String, depth: usize) {
     if matches!(node.kind, NodeKind::Card | NodeKind::Chip) {
         if let Some(b) = a.border.filter(|b| *b > 0.0) {
             let _ = write!(out, " draw_bg.border_size: {b}");
-            if let Some(bc) = a.bordercolor {
-                let _ = write!(out, " draw_bg.border_color: {}", hex(bc));
-            }
+            // ALWAYS write the ink rather than leaving it unset: `border_color`
+            // is `instance(#0000)` on the prototype, so an uncoloured border is
+            // a correctly-sized stroke that paints nothing.
+            //
+            // BISECTED ON DEVICE 2026-08-30, and the answer is NOT what the
+            // earlier note here guessed. `border_size` DOES reach the shader:
+            // rendering the light baseline at `panel_border: 30` insets the
+            // white fill by 82 device px — exactly 30 logical px at this
+            // phone's 2.75 scale — and the card's own rows visibly hang outside
+            // the shrunken fill. So the uniform applies and `sdf.box` insets by
+            // it. What never appears is the STROKE: that 82px band renders as
+            // plain page background at every ink tried, including opaque red
+            // and a low-alpha red chosen to rule out the u32 > i32::MAX
+            // hypothesis (argb(255,255,0,0) is 4294901760). `hex()` emits
+            // #RRGGBBAA correctly, and the SAME instance mechanism works for
+            // `draw_bg.color` (the fill) and `draw_bg.shadow_color` (below).
+            //
+            // So the failure is isolated to `sdf.stroke` / `border_color` in
+            // the RoundedShadowView prototype, below anything octos-one
+            // controls. Fixing it is makepad widget work, not emitter work.
+            let ink = a.bordercolor.unwrap_or(0xff000000);
+            let _ = write!(out, " draw_bg.border_color: {}", hex(ink));
+        }
+        // `Attrs.elevation` — declared by the node, read by the evaluator
+        // (`l0_eval.rs:158`), and until now written by nothing at all. Material
+        // semantics, which is what the field's own doc comment promises: the
+        // shadow both softens and drops as the surface rises.
+        //
+        // The ink is derived here rather than themed because carrying a
+        // `shadowcolor` would mean editing `Attrs` in the splash-node
+        // submodule, and this change stays inside octos-one. The consequence is
+        // that only SOFT shadows are expressible today — a hard offset block
+        // (neubrutalist, memphis) needs a themed ink and near-zero blur, and
+        // that is the measured +0.64 capability. `shadow_offset` below is the
+        // uniform that will carry it, so the follow-up is one contract field,
+        // not new shader work.
+        if let Some(e) = a.elevation.filter(|e| *e > 0.0) {
+            let alpha = ((0.10 + 0.02 * e).min(0.38) * 255.0) as u32;
+            let _ = write!(out, " draw_bg.shadow_color: {}", hex(alpha << 24));
+            let _ = write!(out, " draw_bg.shadow_radius: {:.1}", e * 1.5);
+            let _ = write!(out, " draw_bg.shadow_offset: vec2(0.0, {:.1})", e * 0.5);
+        } else {
+            // Explicitly transparent: the prototype defaults `shadow_color` to
+            // `#0007`, so every card would otherwise gain a shadow it never
+            // asked for and all four goldens would move.
+            let _ = write!(out, " draw_bg.shadow_color: #00000000");
         }
     }
     if node.kind == NodeKind::Text {
@@ -1847,4 +1898,59 @@ mod two_maps {
         assert!(!dsl.contains("nav_zoom_by"), "no call without a map:\n{dsl}");
     }
 
+}
+
+#[cfg(test)]
+mod stroke_and_shadow_tests {
+    use super::*;
+    use splash_node::{Attrs, NodeKind, UiNode};
+
+    fn card_with(border: Option<f32>, ink: Option<u32>, lift: Option<f32>) -> String {
+        let a = Attrs { border, bordercolor: ink, elevation: lift, ..Default::default() };
+        let n = UiNode { kind: NodeKind::Card, attrs: a, children: vec![] };
+        to_dsl(&n)
+    }
+
+    /// A border with no ink used to emit `border_size` and leave `border_color`
+    /// at the prototype's `instance(#0000)` — a correctly sized, fully
+    /// transparent stroke. That is the shape of "emits but never renders".
+    #[test]
+    fn a_border_without_an_ink_still_gets_one() {
+        let dsl = card_with(Some(4.0), None, None);
+        assert!(dsl.contains("border_size: 4"), "border width missing: {dsl}");
+        assert!(dsl.contains("border_color:"), "border ink missing: {dsl}");
+        assert!(!dsl.contains("border_color: #00000000"), "ink is transparent: {dsl}");
+    }
+
+    /// Elevation is declared on the node and was written by nothing.
+    #[test]
+    fn elevation_reaches_the_shadow_uniforms() {
+        let dsl = card_with(None, None, Some(6.0));
+        assert!(dsl.contains("shadow_color:"), "no shadow ink: {dsl}");
+        assert!(dsl.contains("shadow_radius:"), "no shadow radius: {dsl}");
+        assert!(!dsl.contains("shadow_color: #00000000"), "shadow is transparent: {dsl}");
+    }
+
+    /// And a card that asks for no lift must stay byte-identical to before, or
+    /// the four device goldens move.
+    #[test]
+    fn no_elevation_means_an_explicitly_transparent_shadow() {
+        let dsl = card_with(None, None, None);
+        assert!(dsl.contains("shadow_color: #00000000"), "default shadow not cleared: {dsl}");
+    }
+}
+
+#[cfg(test)]
+mod dump_real_card {
+    /// Not an assertion — prints the lowered DSL for the light baseline so the
+    /// border/shadow properties can be read on the wire rather than inferred.
+    #[test]
+    #[ignore]
+    fn print_light_baseline_dsl() {
+        let src = include_str!("../../../../lab/style-factory/baselines/baseline-light.card");
+        let kit = crate::app::l0_card::kit_with_theme(src);
+        let head: String = kit.lines().filter(|l| l.contains("l0_stroke") || l.contains("panel_border"))
+            .collect::<Vec<_>>().join("\n");
+        println!("KIT KNOBS:\n{head}");
+    }
 }
