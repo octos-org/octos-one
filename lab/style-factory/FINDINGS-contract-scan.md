@@ -171,11 +171,28 @@ the things a judge calls atmosphere and depth:
   photo mood scores best precisely because a photograph occupies the space the
   other moods leave empty.
 
-## One defect still open
+## The "last row outside the panel" defect does not exist
 
-The photo mood's forecast scrim covers `Now`…`Fri` and leaves `Sat` outside it,
-sitting on the bare photograph. Visible in `bar_photo.png`; the judge called it
-"misaligned, ragged forecast card". Not diagnosed.
+Recorded here earlier as an open defect, on the strength of a judge complaint
+("misaligned, ragged forecast card") and my own glance at a full-size
+screenshot. Both were wrong.
+
+Cropping the final two rows of `bar_photo.png` settles it: the panel's rounded
+bottom-left corner sits BELOW `Sat`, and the Fri/Sat divider runs inside the
+panel's width. All seven rows are contained. The row centres are evenly spaced
+at 121px (1066, 1187, 1308, 1427, 1548, 1670, 1791) with no break.
+
+What made it look wrong at full size is that the panel is a translucent scrim
+over a photograph whose brightness falls toward the bottom of the frame, so the
+panel's edge loses contrast against the image exactly where the last row sits.
+A luminance edge-detector run down the panel's left edge agrees — it reports the
+edge only across the band where the photo behind it is bright enough, which is
+the same illusion in numeric form.
+
+**Two lessons, both already learned once in this project and both repeated here:**
+a judge's stated reason is a hypothesis, not a finding; and an edge you cannot
+see on a photographic background is not necessarily an edge that is missing.
+Crop and magnify before believing either.
 
 ---
 
