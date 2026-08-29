@@ -315,3 +315,22 @@ visibly improve.
 
 Had this been run after round 1 instead of after round 4, four rounds would not
 have been spent believing the work was inert.
+
+## A principled change, reverted for being unmeasurable
+
+The derived type scale is additive — 8, 10, 12, 14, 18 — so the RATIO between
+neighbours shrinks as sizes grow (1.25x, 1.20x, 1.17x). Perceived size
+difference is ratio-based, so the ramp loses contrast at the top, and three of
+four moods were scored "lacks strong visual hierarchy". A geometric scale is
+standard typographic practice and the fix looked obvious.
+
+Built it, and it moved almost nothing: rendered text-block heights went
+`[22,118,87,22,87,47,46]` to `[23,118,87,23,87,47,46]`. The reason is that the
+role it changes most is `font_title` (18 -> 20.7), and the weather card **does
+not use `TextTitle` at all** — it uses Hero, Value, Body, Row, Caption and
+Eyebrow, whose sizes move by fractions of a pixel.
+
+So: theoretically sound, and unmeasurable on the card in front of me. That is
+exactly the shape of the theme-axes work, which measured null after a week.
+**Reverted.** If a corpus card that leans on `TextTitle` is put in front of the
+same instruments and the change wins there, it can come back with evidence.
