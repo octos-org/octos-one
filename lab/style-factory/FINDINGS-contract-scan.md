@@ -206,3 +206,25 @@ disappeared once fixed: the mid-screen void (164px -> 126px), rain glyphs
 falling into the next row, stock-emoji icons, spectral gradient bars, and a flat
 one-tone page. The screens moved from *broken* to *competent*. The score simply
 does not resolve that difference — which is itself the finding.
+
+## Confirmed by the project's own scorer
+
+The rubric above was one I wrote. The app already ships its own UX critic
+(`monitor.rs:ux_score`, gpt-4o), so the current renders were scored with THAT
+instrument too — its prompt verbatim, changing only the app noun:
+
+> "You are a ruthless senior mobile UI/UX designer... Score its VISUAL DESIGN +
+> UX from 0-10 (**reserve 9-10 for App-Store-featured quality; most screens are
+> 4-6**)."
+
+**All four moods: 6/10. Mean 6.00.**
+
+So two independent judges, two independent rubrics, two different model families
+agree — Opus at 5.25, gpt-4o at 6.00 — and the project's own rubric says in its
+own words that this band is where most screens live and that 9-10 is reserved
+for App-Store-featured work. The app's dev loop iterates while `score < 8`, so
+even the shipped self-improvement loop does not target 9.
+
+That is four independent lines of evidence: five rounds of real fixes that never
+moved the number, a best-in-corpus HTML twin at 7, an unconstrained AI mockup at
+7, and the project's own instrument at 6 with a rubric that says so.
