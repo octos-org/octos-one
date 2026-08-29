@@ -156,3 +156,53 @@ the things a judge calls atmosphere and depth:
 The photo mood's forecast scrim covers `Now`…`Fri` and leaves `Sat` outside it,
 sitting on the bare photograph. Visible in `bar_photo.png`; the judge called it
 "misaligned, ragged forecast card". Not diagnosed.
+
+---
+
+# Calibrating the 9/10 target (2026-08-30)
+
+Five rounds of fix-and-rescore moved the mean from 5.25 to 5.25. Every complaint
+the judge named was fixed and stopped being raised; the number never moved. That
+raised the obvious question, which should have been asked before round 1: **what
+does this rubric actually award?**
+
+Scored with the *identical* prompt used on our device renders:
+
+| subject | score |
+|---|---|
+| our best device render | 6 |
+| **top-scoring HTML twin** — unconstrained CSS, best implementation in the 100-specimen corpus | **7** |
+| **AI-generated design mockup** — an image, not an implementation, under no engineering constraint whatsoever | **7** |
+| the target | **9** |
+
+**Nothing in this project reaches 9, including a professional-grade generated
+design that never had to be built.** The judge reserves 9-10 for "ship as a
+flagship app screen" and does not award it to a Didone editorial poster with
+plaster texture.
+
+So the gap between our renders and the ceiling is about **1 point**, not 4. The
+remaining 2 points sit above anything this pipeline has ever produced in any
+medium.
+
+## What that means for the target
+
+A 9/10 absolute score is not a renderer goal — it is a goal about the design
+being generated, and this rubric does not award it even to the mockups. Useful
+targets, given the calibration:
+
+- **Close the 1 point to the HTML twin.** That is the real, reachable headroom,
+  and it is what the capability queue was always about.
+- **Use paired judging, not absolute.** It has a measured 87% self-agreement and
+  it moved cleanly on real changes; the absolute score sat at 5 through five
+  rounds of genuine, visible improvement, which makes it nearly useless as a
+  progress signal.
+- **Recalibrate any absolute target against a reference first.** Five rounds
+  were spent chasing a number that a design mockup cannot hit.
+
+## The rounds were not wasted
+
+Every one produced a merged, delivery-gated improvement, and each complaint
+disappeared once fixed: the mid-screen void (164px -> 126px), rain glyphs
+falling into the next row, stock-emoji icons, spectral gradient bars, and a flat
+one-tone page. The screens moved from *broken* to *competent*. The score simply
+does not resolve that difference — which is itself the finding.
