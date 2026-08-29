@@ -1906,10 +1906,7 @@ mod stroke_and_shadow_tests {
     use splash_node::{Attrs, NodeKind, UiNode};
 
     fn card_with(border: Option<f32>, ink: Option<u32>, lift: Option<f32>) -> String {
-        let mut a = Attrs::default();
-        a.border = border;
-        a.bordercolor = ink;
-        a.elevation = lift;
+        let a = Attrs { border, bordercolor: ink, elevation: lift, ..Default::default() };
         let n = UiNode { kind: NodeKind::Card, attrs: a, children: vec![] };
         to_dsl(&n)
     }
