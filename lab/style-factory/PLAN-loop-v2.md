@@ -103,6 +103,34 @@ So the answer to "do the mockups have the same wrapping defect" is no, and the
 tool cannot be used to check. Its measured false-positive rate on the renders it
 IS for — photo, glass, a content-rich card, the quake exemplar — is zero.
 
+### Does the fidelity judge catch it instead?
+
+Partially, and the control is what settles it. Same mockup, same prompt, the
+broken live card against the exemplar:
+
+| render | fidelity | gaps text |
+|---|---|---|
+| broken live card | **2** | "…**broken column alignment, wrapped labels**, default Material greys" |
+| exemplar, good layout | **2** | style gaps only — wrapping never mentioned |
+
+The judge genuinely NOTICES the defect: it names it for the broken card and not
+for the good one. But **the score is identical.** Both are saturated by the same
+unbuildable style gaps — memphis palette, geometric ornament, circular badges —
+so a broken layout cannot move the number.
+
+This is the absolute-score failure one level down, and it confirms two rules
+already in this plan from a second direction:
+
+- **Mine the `gaps` text, never the score.** The signal was only ever in the
+  words.
+- **Screen buildability first.** Grading against a 2/10-buildable design
+  saturates the measurement before layout is even considered.
+
+And it justifies keeping the cheap gate: the deterministic lint flagged the
+broken card in under a second with no ambiguity; the judge cost a model call and
+returned 2 = 2. The two instruments are not redundant — one sees geometry, the
+other sees intent, and neither substitutes for the other.
+
 ## 7. Genericity gate
 
 How many of the 967 corpus cards consume the capability, before building it.
