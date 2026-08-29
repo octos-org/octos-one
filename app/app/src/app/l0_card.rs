@@ -102,51 +102,7 @@ fn kit_for(source: &str) -> String {
         })
         .map(|(_, src)| *src)
         .unwrap_or("");
-    // Axis deltas sit between the mood and the derive step, in catalog order,
-    // so a factor an axis moves still reaches everything derived from it. An
-    // omitted axis contributes nothing, which is what makes every existing card
-    // byte-identical: four moods remain exactly four moods until a card asks.
-    let axes: String = splash_ui_l0::card_theme_axes(source)
-        .into_iter()
-        .filter_map(|(axis, value)| axis_delta(&axis, &value))
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("{PALETTE_BASE}\n{delta}\n{axes}\n{PALETTE_DERIVE}\n{KIT_BODY}")
-}
-
-
-/// The palette fragment answering one axis value, or `None` when L0 catalogues
-/// the axis but this kit has nothing to say about that value.
-///
-/// A table rather than a path join: the fragments are compiled in, so a value
-/// the kit forgot is a compile error here instead of a missing file on device.
-/// `catalog::AXES` and this table are pinned together by
-/// `every_axis_value_is_answered`.
-fn axis_delta(axis: &str, value: &str) -> Option<&'static str> {
-    Some(match (axis, value) {
-        ("radius", "none") => include_str!("../../../../splash-makepad/components/l0/_axis_radius_none.splash"),
-        ("radius", "small") => include_str!("../../../../splash-makepad/components/l0/_axis_radius_small.splash"),
-        ("radius", "large") => include_str!("../../../../splash-makepad/components/l0/_axis_radius_large.splash"),
-        ("radius", "full") => include_str!("../../../../splash-makepad/components/l0/_axis_radius_full.splash"),
-        ("density", "compact") => include_str!("../../../../splash-makepad/components/l0/_axis_density_compact.splash"),
-        ("density", "regular") => include_str!("../../../../splash-makepad/components/l0/_axis_density_regular.splash"),
-        ("density", "airy") => include_str!("../../../../splash-makepad/components/l0/_axis_density_airy.splash"),
-        ("emphasis", "quiet") => include_str!("../../../../splash-makepad/components/l0/_axis_emphasis_quiet.splash"),
-        ("emphasis", "clear") => include_str!("../../../../splash-makepad/components/l0/_axis_emphasis_clear.splash"),
-        ("emphasis", "poster") => include_str!("../../../../splash-makepad/components/l0/_axis_emphasis_poster.splash"),
-        ("icons", "filled") => include_str!("../../../../splash-makepad/components/l0/_axis_icons_filled.splash"),
-        ("icons", "mono") => include_str!("../../../../splash-makepad/components/l0/_axis_icons_mono.splash"),
-        ("accent", "neutral") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_neutral.splash"),
-        ("accent", "indigo") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_indigo.splash"),
-        ("accent", "blue") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_blue.splash"),
-        ("accent", "red") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_red.splash"),
-        ("accent", "green") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_green.splash"),
-        ("accent", "amber") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_amber.splash"),
-        ("accent", "cyan") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_cyan.splash"),
-        ("accent", "magenta") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_magenta.splash"),
-        ("accent", "violet") => include_str!("../../../../splash-makepad/components/l0/_axis_accent_violet.splash"),
-        _ => return None,
-    })
+    format!("{PALETTE_BASE}\n{delta}\n{PALETTE_DERIVE}\n{KIT_BODY}")
 }
 
 /// The kit source, for tests that need to reproduce the DEVICE's exact chain.
@@ -158,6 +114,7 @@ pub(super) fn kit_src() -> String {
 /// The kit as the device would assemble it FOR THIS CARD — mood included.
 /// Test-only sibling of `kit_src`, for tests that exercise a themed card.
 #[cfg(test)]
+#[allow(dead_code)]
 pub(super) fn kit_with_theme(source: &str) -> String {
     kit_for(source)
 }
@@ -529,7 +486,7 @@ fn fetched_scalars(
         };
         out.insert((*field).to_owned(), value);
     }
-    (!out.is_empty()).then(|| serde_json::Value::Object(out))
+    (!out.is_empty()).then_some(serde_json::Value::Object(out))
 }
 
 /// The values a card's `when`s compare against, answered before realize.
@@ -956,45 +913,6 @@ mod tests {
     /// "minimal weather tokyo" put the H/L/feels row in dark grey directly on a
     /// photo of the sky. The card keeps asking for both; the kit answers with the
     /// mood that reads.
-    /// Every axis value L0 catalogues must have a fragment answering it.
-    ///
-    /// The same guarantee `l0_themes_are_all_answered` gives moods: a value the
-    /// parser accepts and the kit ignores renders in the base and looks
-    /// deliberate, which is the worst kind of wrong.
-    #[test]
-    fn every_axis_value_is_answered() {
-        let missing: Vec<String> = splash_ui_l0::catalog::AXES
-            .iter()
-            .flat_map(|(axis, values)| {
-                values
-                    .iter()
-                    .filter(|v| super::axis_delta(axis, v).is_none())
-                    .map(move |v| format!("{axis}: .{v}"))
-            })
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "these axis values parse but no fragment answers them: {missing:?}"
-        );
-    }
-
-    /// An omitted axis must leave the assembled kit exactly as it was.
-    #[test]
-    fn axes_are_opt_in() {
-        let plain = "theme light\nview root Surface(pad: .page) { Rule() }\n";
-        let axed = "theme light radius: .none\nview root Surface(pad: .page) { Rule() }\n";
-        assert_eq!(
-            super::kit_for(plain),
-            super::kit_for("view root Surface(pad: .page) { Rule() }\ntheme light\n"),
-            "the same declarations must assemble the same kit"
-        );
-        assert_ne!(
-            super::kit_for(plain),
-            super::kit_for(axed),
-            "an axis a card names must reach the kit"
-        );
-    }
-
     #[test]
     fn a_light_mood_over_a_photo_page_becomes_photo() {
         let photo_card = "theme light\n\
@@ -1584,6 +1502,10 @@ pub(crate) fn error_card() -> String {
     )
 }
 
+// No caller since refusals became a quiet card rather than a diagnostics screen;
+// kept because the diagnostics text is still the useful thing to render if that
+// decision is revisited.
+#[allow(dead_code)]
 pub(crate) fn diagnostics_card(headline: &str, reasons: &[String]) -> String {
     let mut out = String::from(
         "SolidView{ width: Fill height: Fit flow: Down new_batch: true \
