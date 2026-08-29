@@ -1949,7 +1949,7 @@ mod dump_real_card {
     fn print_light_baseline_dsl() {
         let src = include_str!("../../../../lab/style-factory/baselines/baseline-light.card");
         let kit = crate::app::l0_card::kit_with_theme(src);
-        let head: String = kit.lines().filter(|l| l.contains("l0_stroke") || l.contains("panel_border"))
+        let head: String = kit.lines().filter(|l| l.contains("air_factor") || l.contains("l0_col_gap"))
             .collect::<Vec<_>>().join("\n");
         println!("KIT KNOBS:\n{head}");
     }
