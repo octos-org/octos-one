@@ -62,6 +62,8 @@ const PALETTES: &[(&str, &str)] = &[
     ("light", include_str!("../../../../splash-makepad/components/l0/_palette_light.splash")),
     ("glass", include_str!("../../../../splash-makepad/components/l0/_palette_glass.splash")),
     ("photo", include_str!("../../../../splash-makepad/components/l0/_palette_photo.splash")),
+    ("vibrant", include_str!("../../../../splash-makepad/components/l0/_palette_vibrant.splash")),
+    ("minimal", include_str!("../../../../splash-makepad/components/l0/_palette_minimal.splash")),
 ];
 
 /// The kit as this host assembles it for `source`: base, the card's declared
