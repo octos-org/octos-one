@@ -1,0 +1,19 @@
+// extracted palette (E4 v2) — spliced into the axis slot.
+// ink clamped 13.7:1 -> 13.7:1 · panel lift 1.13:1 · scrim top 56 -> 56 (5.5:1 over a photo)
+let l0_base     = argb(255, 238, 238, 238)
+let l0_base_2   = argb(255, 224, 224, 224)
+let l0_sheet    = argb(255, 229, 229, 229)
+let l0_fill     = argb(255, 225, 225, 225)
+let l0_hairline = argb(255, 209, 209, 209)
+let l0_stroke   = argb(255, 201, 201, 201)
+let l0_active   = argb(255, 197, 197, 197)
+let l0_bar_rail = argb(255, 205, 205, 205)
+let l0_text     = argb(255, 34, 34, 34)
+let l0_soft     = argb(255, 54, 54, 54)
+let l0_dim      = argb(255, 103, 103, 103)
+let icon_mono   = 1
+let l0_accent   = argb(255, 131, 131, 131)
+let l0_bar      = l0_accent
+let l0_go       = l0_accent
+let l0_scrim_top = argb(56, 238, 238, 238)
+let l0_scrim     = argb(242, 238, 238, 238)
