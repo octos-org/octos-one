@@ -1,0 +1,407 @@
+{
+ "names": [
+  "r004-weather-punk_zine",
+  "r010-weather-punk_zine",
+  "r012-weather-art_deco",
+  "r021-weather-swiss",
+  "r034-news-japanese_ma",
+  "r061-stock-swiss",
+  "r096-quake-memphis",
+  "ref_mockup"
+ ],
+ "model": "glm-5.3-flash",
+ "results": [
+  {
+   "i": 0,
+   "j": 1,
+   "swap": 0,
+   "winner": 0,
+   "why": "Stronger hierarchy, bolder focal number, cleaner, more confident visua"
+  },
+  {
+   "i": 0,
+   "j": 1,
+   "swap": 1,
+   "winner": 0,
+   "why": "Cleaner hierarchy, disciplined grid, single accent color guides the ey"
+  },
+  {
+   "i": 0,
+   "j": 2,
+   "swap": 0,
+   "winner": 2,
+   "why": "Cleaner hierarchy, restrained palette, eye led confidently to temperat"
+  },
+  {
+   "i": 0,
+   "j": 2,
+   "swap": 1,
+   "winner": 2,
+   "why": "Clearer hierarchy and restraint guide the eye confidently."
+  },
+  {
+   "i": 0,
+   "j": 3,
+   "swap": 0,
+   "winner": 3,
+   "why": "Cleaner hierarchy, restrained palette, eye flows effortlessly to key d"
+  },
+  {
+   "i": 0,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner hierarchy, stronger restraint, eye led confidently to temperat"
+  },
+  {
+   "i": 0,
+   "j": 4,
+   "swap": 0,
+   "winner": 4,
+   "why": "Clear hierarchy, restrained palette, confident focus and effortless re"
+  },
+  {
+   "i": 0,
+   "j": 4,
+   "swap": 1,
+   "winner": 4,
+   "why": "Calmer hierarchy, confident whitespace, restrained and clearly guided "
+  },
+  {
+   "i": 0,
+   "j": 5,
+   "swap": 0,
+   "winner": 0,
+   "why": "Bold focal hierarchy and energetic composition lead the eye confidentl"
+  },
+  {
+   "i": 0,
+   "j": 5,
+   "swap": 1,
+   "winner": 5,
+   "why": "Clearer hierarchy, restrained palette, calmer confident visual flow"
+  },
+  {
+   "i": 0,
+   "j": 6,
+   "swap": 0,
+   "winner": 0,
+   "why": "Bolder focal hierarchy and confident eye flow; B is a flat repetitive "
+  },
+  {
+   "i": 0,
+   "j": 6,
+   "swap": 1,
+   "winner": 0,
+   "why": "Stronger hierarchy, clear focal point, bolder restraint guiding the ey"
+  },
+  {
+   "i": 0,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Cleaner hierarchy and restraint; eye led effortlessly to key info"
+  },
+  {
+   "i": 0,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Clearer hierarchy, restrained palette, effortless visual flow"
+  },
+  {
+   "i": 1,
+   "j": 2,
+   "swap": 0,
+   "winner": 2,
+   "why": "Clearer hierarchy, restrained palette, symmetrical composition guides "
+  },
+  {
+   "i": 1,
+   "j": 2,
+   "swap": 1,
+   "winner": 2,
+   "why": "Clearer hierarchy and restrained palette lead the eye confidently."
+  },
+  {
+   "i": 1,
+   "j": 3,
+   "swap": 0,
+   "winner": 3,
+   "why": "Cleaner hierarchy and restraint guide the eye effortlessly"
+  },
+  {
+   "i": 1,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner hierarchy and restraint guide the eye more confidently."
+  },
+  {
+   "i": 1,
+   "j": 4,
+   "swap": 0,
+   "winner": 4,
+   "why": "Restrained hierarchy, generous whitespace, eye led cleanly through con"
+  },
+  {
+   "i": 1,
+   "j": 4,
+   "swap": 1,
+   "winner": 1,
+   "why": "Stronger hierarchy and confident focal point, though A shows admirable"
+  },
+  {
+   "i": 1,
+   "j": 5,
+   "swap": 0,
+   "winner": 5,
+   "why": "Clearer hierarchy, cleaner alignment, restrained palette guides the ey"
+  },
+  {
+   "i": 1,
+   "j": 5,
+   "swap": 1,
+   "winner": 1,
+   "why": "Confident hierarchy, striking focal number, unified bold composition d"
+  },
+  {
+   "i": 1,
+   "j": 6,
+   "swap": 0,
+   "winner": 1,
+   "why": "Stronger hierarchy, bold focal point, confident eye flow, restrained p"
+  },
+  {
+   "i": 1,
+   "j": 6,
+   "swap": 1,
+   "winner": 1,
+   "why": "Bolder hierarchy, confident focal point, restrained palette guides the"
+  },
+  {
+   "i": 1,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Calmer hierarchy, generous whitespace, cohesive restrained palette gui"
+  },
+  {
+   "i": 1,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Calmer hierarchy, restrained palette, cleaner eye flow"
+  },
+  {
+   "i": 2,
+   "j": 3,
+   "swap": 0,
+   "winner": 3,
+   "why": "Clear hierarchy, restrained palette, confident whitespace guiding the "
+  },
+  {
+   "i": 2,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner hierarchy and restraint; B's ornament competes with data."
+  },
+  {
+   "i": 2,
+   "j": 4,
+   "swap": 0,
+   "winner": 4,
+   "why": "Cleaner hierarchy, generous whitespace, restrained typography leads th"
+  },
+  {
+   "i": 2,
+   "j": 4,
+   "swap": 1,
+   "winner": 4,
+   "why": "Clearer hierarchy, generous whitespace, restrained and confidently gui"
+  },
+  {
+   "i": 2,
+   "j": 5,
+   "swap": 0,
+   "winner": 5,
+   "why": "Clearer hierarchy, cleaner alignment, restrained palette guides the ey"
+  },
+  {
+   "i": 2,
+   "j": 5,
+   "swap": 1,
+   "winner": 2,
+   "why": "Strong hierarchy, confident focal point, cohesive style with disciplin"
+  },
+  {
+   "i": 2,
+   "j": 6,
+   "swap": 0,
+   "winner": 2,
+   "why": "Clear hierarchy, restrained ornament, confident focal point; B is nois"
+  },
+  {
+   "i": 2,
+   "j": 6,
+   "swap": 1,
+   "winner": 2,
+   "why": "Confident hierarchy, restrained palette, elegant single focal point"
+  },
+  {
+   "i": 2,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Restrained composition, clearer hierarchy, generous whitespace guides "
+  },
+  {
+   "i": 2,
+   "j": 7,
+   "swap": 1,
+   "winner": 2,
+   "why": "Stronger hierarchy, unified system, and clearer visual flow"
+  },
+  {
+   "i": 3,
+   "j": 4,
+   "swap": 0,
+   "winner": 3,
+   "why": "Clear hierarchy, confident focal number, clean table rhythm"
+  },
+  {
+   "i": 3,
+   "j": 4,
+   "swap": 1,
+   "winner": 3,
+   "why": "Clear typographic hierarchy, confident scale contrast, efficiently gui"
+  },
+  {
+   "i": 3,
+   "j": 5,
+   "swap": 0,
+   "winner": 3,
+   "why": "Cleaner hierarchy, restrained palette, and effortless visual flow"
+  },
+  {
+   "i": 3,
+   "j": 5,
+   "swap": 1,
+   "winner": 3,
+   "why": "Clearer hierarchy, restrained palette, confident oversized focal numbe"
+  },
+  {
+   "i": 3,
+   "j": 6,
+   "swap": 0,
+   "winner": 3,
+   "why": "Clear hierarchy, restrained typography, confident focus; B is cluttere"
+  },
+  {
+   "i": 3,
+   "j": 6,
+   "swap": 1,
+   "winner": 3,
+   "why": "Clean hierarchy, generous whitespace, restrained and confidently eye-l"
+  },
+  {
+   "i": 3,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Stronger hierarchy, elegant contrast, confident visual rhythm guiding "
+  },
+  {
+   "i": 3,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Stronger typographic hierarchy and more confident visual rhythm"
+  },
+  {
+   "i": 4,
+   "j": 5,
+   "swap": 0,
+   "winner": 5,
+   "why": "Clearer hierarchy, confident data emphasis, strong alignment and rhyth"
+  },
+  {
+   "i": 4,
+   "j": 5,
+   "swap": 1,
+   "winner": 4,
+   "why": "Elegant whitespace, clearer hierarchy, restrained palette, confident v"
+  },
+  {
+   "i": 4,
+   "j": 6,
+   "swap": 0,
+   "winner": 4,
+   "why": "Calmer hierarchy, confident whitespace, restrained eye flow vs busy cl"
+  },
+  {
+   "i": 4,
+   "j": 6,
+   "swap": 1,
+   "winner": 4,
+   "why": "Calmer composition, clearer hierarchy, restrained typography guides th"
+  },
+  {
+   "i": 4,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Stronger focal hierarchy and elegant type rhythm guiding the eye"
+  },
+  {
+   "i": 4,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Confident focal hierarchy, elegant type scale, restrained unified comp"
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "swap": 0,
+   "winner": 5,
+   "why": "Cleaner hierarchy, restrained palette, confident single focal point"
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "swap": 1,
+   "winner": 5,
+   "why": "Clear hierarchy, restrained palette, confident alignment guides the ey"
+  },
+  {
+   "i": 5,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Stronger hierarchy, confident scale contrast, restrained palette, eleg"
+  },
+  {
+   "i": 5,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Elegant hierarchy, confident focal point, restrained palette guides th"
+  },
+  {
+   "i": 6,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Restrained, elegant hierarchy; confident focal point with calm composi"
+  },
+  {
+   "i": 6,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Clear hierarchy, restrained palette, confident focal point; B is busy "
+  }
+ ]
+}

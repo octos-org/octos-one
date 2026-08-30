@@ -102,7 +102,20 @@ fn kit_for(source: &str) -> String {
         })
         .map(|(_, src)| *src)
         .unwrap_or("");
-    format!("{PALETTE_BASE}\n{delta}\n{PALETTE_DERIVE}\n{KIT_BODY}")
+    // `MAKEPAD_L0_PALETTE_OVERRIDE=<file>` splices extra colour bindings in
+    // AFTER the mood delta and BEFORE the derivation — the slot a theme axis
+    // would occupy, and the only place it can go: `let` resolves at its own
+    // line, so an override appended after the derive would leave every derived
+    // size and colour still reading the value it meant to replace.
+    //
+    // Measurement only. Nothing sets this in normal operation, and an unreadable
+    // path is ignored rather than fatal — a missing override should render the
+    // shipped look, not a blank screen.
+    let axis = std::env::var("MAKEPAD_L0_PALETTE_OVERRIDE")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .unwrap_or_default();
+    format!("{PALETTE_BASE}\n{delta}\n{axis}\n{PALETTE_DERIVE}\n{KIT_BODY}")
 }
 
 /// The kit source, for tests that need to reproduce the DEVICE's exact chain.

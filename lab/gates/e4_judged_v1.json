@@ -1,0 +1,389 @@
+[
+ {
+  "sid": "000",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm cream headings feel intentional; matching hierarchy keeps emphasi",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm cream title adds intentional accent; equally legible, emphasis on",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Warmer cream accent gives clearer hierarchy and deliberate, non-defaul",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm cream accent feels intentional and highlights the title better",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark theme gives stronger contrast, clearer hierarchy; B's card barely",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark palette boosts contrast, icon legibility, and deliberate emphasis",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm cream palette feels intentional, with stronger text contrast and ",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark palette reads deliberate, high contrast, and emphasizes content c",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "002",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm gold on deep teal feels deliberate, legible, and well emphasized.",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm gold-on-teal reads intentional and keeps emphasis cohesive",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Warm gold on deep teal feels intentional, cohesive, and keeps emphasis",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Gold-on-teal feels deliberately chosen and keeps contrast strong throu",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "003",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark palette keeps hierarchy legible; B dims key content on black",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark theme with white text and blue accents is far more legible and in",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark theme keeps all text legible with clear accent emphasis",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Dark cards keep text legible, accent bars add chosen, purposeful empha",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "004",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Deeper green gives cleaner contrast for icons and calmer emphasis",
+  "mockup": "r034-news-japanese_ma"
+ },
+ {
+  "sid": "004",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "near-identical renders; A's slightly deeper contrast reads more intent",
+  "mockup": "r034-news-japanese_ma"
+ },
+ {
+  "sid": "004",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Deeper green reads more deliberate, though both render cards look iden",
+  "mockup": "r034-news-japanese_ma"
+ },
+ {
+  "sid": "004",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "shipped",
+  "why": "Slightly richer green reads more intentional, with equally clean legib",
+  "mockup": "r034-news-japanese_ma"
+ },
+ {
+  "sid": "005",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Slightly richer dark contrast gives cleaner hierarchy without losing l",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Slightly better contrast hierarchy; emphasis lands on titles cleanly",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Legibility identical, but B's warmer palette reads more intentional.",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "glm",
+  "winner": "extracted",
+  "why": "Identical dark palette; A wins by default with clean legibility.",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "000",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "Panel lifts off background; B's card is flat near-black, indistinguish",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "Lifted card surface separates the list; A's panel vanishes into backgr",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "extracted",
+  "why": "Warm cream headline reads chosen; darker panel lifts list text contras",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "000",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "Elevated card surface separates from background; A's panel disappears",
+  "mockup": "r004-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "B's white icons vanish on cream; A keeps every element legible.",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "A's white glyphs vanish on cream; B's contrast makes icons and heading",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "B's white plate icons vanish on cream; A keeps every element legible.",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "001",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "A's white icons and Search pill vanish on cream; B keeps everything le",
+  "mockup": "r010-weather-punk_zine"
+ },
+ {
+  "sid": "002",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "extracted",
+  "why": "Legible amber-on-teal, surfaces define groups, palette chosen not defa",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "extracted",
+  "why": "Legible and deliberate; B is default white plus misplaced blue accent",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "White-on-black holds contrast; B's gold-on-teal dims labels and flatte",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "002",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "extracted",
+  "why": "Sand-on-teal stays legible, reads deliberately chosen; B's default blu",
+  "mockup": "r012-weather-art_deco"
+ },
+ {
+  "sid": "003",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "B's dark-on-black hero text and headline are near-invisible; emphasis ",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "A's dark-on-dark headline and 16\u00b0 are near-invisible; B's violet accen",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "glm",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "B's dark-on-dark text vanishes; A keeps hierarchy, accent bars carry e",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "003",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "A's dark-on-dark text is illegible; B's accent directs emphasis cohere",
+  "mockup": "r021-weather-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "opus",
+  "swap": 0,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "renders look identical; no visible colour difference to judge",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "opus",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "palettes are visually identical here; no colour difference to judge",
+  "mockup": "r061-stock-swiss"
+ },
+ {
+  "sid": "005",
+  "arm": "glm",
+  "swap": 1,
+  "judge": "opus",
+  "winner": "shipped",
+  "why": "Renders look identical; no colour difference visible \u2014 B by default.",
+  "mockup": "r061-stock-swiss"
+ }
+]

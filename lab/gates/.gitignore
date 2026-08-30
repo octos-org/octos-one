@@ -1,0 +1,9 @@
+geom/
+samples/
+__pycache__/
+e0/
+e4/
+e4_v1/
+e4_v2/
+local/
+*.png
