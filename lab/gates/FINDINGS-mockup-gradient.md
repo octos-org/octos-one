@@ -491,3 +491,73 @@ source palette and got a duller card ("grey mutes every emphasis"), and
   at 41% are not an edge case to fix later; they are half the remaining problem
   and they need the scrim in the transfer.
 - Emoji-as-icon is 6% and wants an L0 lint, not a transfer fix.
+
+---
+
+# The scrim, carried. Photo cards go from worst arm to winning.
+
+41% of the corpus puts its text on a photograph, where legibility never came
+from `l0_base` at all. The palette earns it with a gradient — `l0_scrim_top` at
+56/255 lets the picture through, `l0_scrim` at 242/255 is nearly opaque where
+the text is dense. The transfer never set either.
+
+| run | Opus ext/ship | GLM ext/ship |
+|---|---|---|
+| v1 photo+emoji cards, naive transfer | 1 / 6 | 5 / 4 |
+| v2 photo+emoji cards, fixed transfer | 1 / 6 | 3 / 3 |
+| v3 transferable cards | 5 / 5 | 0 / 6 |
+| v4a **photo** cards, scrim solved to WCAG 4.5:1 | 4 / 5 | 6 / 2 |
+| **v5 photo cards, scrim solved to parity** | **5 / 6** | **8 / 2** |
+
+## Three things the measurement corrected
+
+**The bottom stop was never the risk.** At 242/255 the scrim is essentially the
+ground colour, so clamping ink against it moved nothing — 15.3:1 to 14.5:1
+across the whole extraction set. The risk is the TOP, where the photograph shows
+through.
+
+**Mid-grey is the average photo, not the worst.** The first attempt clamped
+against `(128,128,128)` and passed a light palette at 4.5:1 that measures 1.3:1
+over the same card's shadows. Three judge verdicts duly said "grey-on-grey hero
+is illegible". A photograph contains everything, so the scrim has to hold
+against the region that hurts *this* ink — dark under dark ink, bright under
+light.
+
+**WCAG's 4.5:1 is the wrong bar for this surface, and the incumbent proves it.**
+Measured by the same worst-case test, the shipped photo palette achieves
+**1.9:1** — near-black scrim at 56/255 under pure white ink. Holding the
+transfer to 4.5:1 pushed every extracted scrim to 136–252/255, which is a photo
+card with the photo turned off. That exact trade was measured earlier this
+session and lost: a scrim raised to reach AA hit 3.37:1 and the paired judge
+preferred the older, less legible build.
+
+Held to **parity with what ships** instead, the scrims land at 68–156 and both
+judges improve — Opus 4/5 to 5/6, GLM 6/2 to 8/2. A gate should encode "no worse
+than the incumbent" when the absolute standard assumes a uniform background the
+surface does not have.
+
+## Why the remaining three still lose
+
+Every one of Opus's losses says the same thing:
+
+> "grey-on-grey header and hero temperature barely read" · "A's grays wash out,
+> flatten emphasis" · "B's header sinks into grey"
+
+Those three extractions came from `swiss`, `japanese_ma` and `stock-swiss` —
+**all greyscale mockups**. The transfer is carrying them faithfully; a grey
+palette makes a grey card, and Opus reliably prefers crisp white on dark.
+
+That is a *selection* problem, not a transfer problem, and it belongs upstream:
+a mockup whose extracted ink is near-neutral has no palette identity worth
+transferring, and the ranking step should say so before a render is paid for.
+Chroma of the extracted ink is a one-line check.
+
+## Standing
+
+- The scrim closes the 41% gap. Photo cards are no longer the arm the transfer
+  cannot reach; they are now the arm it does best on.
+- Extraction is at parity with the shipped palette under Opus (5/6, 5/5) and
+  ahead under GLM (8/2) — still not a decisive win, and n is 6 per arm.
+- Next is not another transfer tune. It is **skipping low-chroma sources**, and
+  then running the whole thing at a mockup-pool size that can support a
+  conclusion.

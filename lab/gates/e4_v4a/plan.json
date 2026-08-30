@@ -1,0 +1,128 @@
+[
+ {
+  "sid": "002",
+  "card": "travel-00784.card",
+  "arm": "shipped",
+  "mockup": "r004-weather-punk_zine",
+  "png": "002-shipped.png"
+ },
+ {
+  "sid": "002",
+  "card": "travel-00784.card",
+  "arm": "opus",
+  "mockup": "r004-weather-punk_zine",
+  "png": "002-opus.png"
+ },
+ {
+  "sid": "002",
+  "card": "travel-00784.card",
+  "arm": "glm",
+  "mockup": "r004-weather-punk_zine",
+  "png": "002-glm.png"
+ },
+ {
+  "sid": "003",
+  "card": "travel-00664.card",
+  "arm": "shipped",
+  "mockup": "r010-weather-punk_zine",
+  "png": "003-shipped.png"
+ },
+ {
+  "sid": "003",
+  "card": "travel-00664.card",
+  "arm": "opus",
+  "mockup": "r010-weather-punk_zine",
+  "png": "003-opus.png"
+ },
+ {
+  "sid": "003",
+  "card": "travel-00664.card",
+  "arm": "glm",
+  "mockup": "r010-weather-punk_zine",
+  "png": "003-glm.png"
+ },
+ {
+  "sid": "013",
+  "card": "dashboard-01015.card",
+  "arm": "shipped",
+  "mockup": "r012-weather-art_deco",
+  "png": "013-shipped.png"
+ },
+ {
+  "sid": "013",
+  "card": "dashboard-01015.card",
+  "arm": "opus",
+  "mockup": "r012-weather-art_deco",
+  "png": "013-opus.png"
+ },
+ {
+  "sid": "013",
+  "card": "dashboard-01015.card",
+  "arm": "glm",
+  "mockup": "r012-weather-art_deco",
+  "png": "013-glm.png"
+ },
+ {
+  "sid": "015",
+  "card": "travel-00704.card",
+  "arm": "shipped",
+  "mockup": "r021-weather-swiss",
+  "png": "015-shipped.png"
+ },
+ {
+  "sid": "015",
+  "card": "travel-00704.card",
+  "arm": "opus",
+  "mockup": "r021-weather-swiss",
+  "png": "015-opus.png"
+ },
+ {
+  "sid": "015",
+  "card": "travel-00704.card",
+  "arm": "glm",
+  "mockup": "r021-weather-swiss",
+  "png": "015-glm.png"
+ },
+ {
+  "sid": "016",
+  "card": "travel-00579.card",
+  "arm": "shipped",
+  "mockup": "r034-news-japanese_ma",
+  "png": "016-shipped.png"
+ },
+ {
+  "sid": "016",
+  "card": "travel-00579.card",
+  "arm": "opus",
+  "mockup": "r034-news-japanese_ma",
+  "png": "016-opus.png"
+ },
+ {
+  "sid": "016",
+  "card": "travel-00579.card",
+  "arm": "glm",
+  "mockup": "r034-news-japanese_ma",
+  "png": "016-glm.png"
+ },
+ {
+  "sid": "017",
+  "card": "travel-00524.card",
+  "arm": "shipped",
+  "mockup": "r061-stock-swiss",
+  "png": "017-shipped.png"
+ },
+ {
+  "sid": "017",
+  "card": "travel-00524.card",
+  "arm": "opus",
+  "mockup": "r061-stock-swiss",
+  "png": "017-opus.png"
+ },
+ {
+  "sid": "017",
+  "card": "travel-00524.card",
+  "arm": "glm",
+  "mockup": "r061-stock-swiss",
+  "png": "017-glm.png"
+ }
+]
