@@ -1,0 +1,406 @@
+{
+ "names": [
+  "r004-weather-punk_zine",
+  "r010-weather-punk_zine",
+  "r012-weather-art_deco",
+  "r021-weather-swiss",
+  "r034-news-japanese_ma",
+  "r061-stock-swiss",
+  "r096-quake-memphis",
+  "ref_mockup"
+ ],
+ "results": [
+  {
+   "i": 0,
+   "j": 1,
+   "swap": 0,
+   "winner": 0,
+   "why": "Tighter hierarchy, two-color restraint, aligned rows; B's baselines dr"
+  },
+  {
+   "i": 0,
+   "j": 1,
+   "swap": 1,
+   "winner": 1,
+   "why": "Torn-collage zones structure the page; restrained palette, cleaner top"
+  },
+  {
+   "i": 0,
+   "j": 2,
+   "swap": 0,
+   "winner": 2,
+   "why": "Disciplined center axis, one focal point, restrained ornament; A's col"
+  },
+  {
+   "i": 0,
+   "j": 2,
+   "swap": 1,
+   "winner": 2,
+   "why": "Symmetric spine, disciplined palette, cleaner hierarchy; B's collage c"
+  },
+  {
+   "i": 0,
+   "j": 3,
+   "swap": 0,
+   "winner": 0,
+   "why": "Bolder hierarchy, confident eye path, disciplined grid; B reads defaul"
+  },
+  {
+   "i": 0,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner grid, calmer hierarchy; B's texture and overlapping \u00b0C fight l"
+  },
+  {
+   "i": 0,
+   "j": 4,
+   "swap": 0,
+   "winner": 0,
+   "why": "Decisive hierarchy, disciplined table under chaos; B's void reads as b"
+  },
+  {
+   "i": 0,
+   "j": 4,
+   "swap": 1,
+   "winner": 0,
+   "why": "Commits fully; clear four-tier hierarchy, decisive eye path. A's void "
+  },
+  {
+   "i": 0,
+   "j": 5,
+   "swap": 0,
+   "winner": 0,
+   "why": "Bolder hierarchy, decisive focal point; B is competent but flat, gener"
+  },
+  {
+   "i": 0,
+   "j": 5,
+   "swap": 1,
+   "winner": 0,
+   "why": "Committed art direction; disc-anchored numeral and banded table lead t"
+  },
+  {
+   "i": 0,
+   "j": 6,
+   "swap": 0,
+   "winner": 0,
+   "why": "Decisive hierarchy, one hero figure, disciplined palette; B is uniform"
+  },
+  {
+   "i": 0,
+   "j": 6,
+   "swap": 1,
+   "winner": 0,
+   "why": "Decisive hero-to-table hierarchy, disciplined two-color palette; A's o"
+  },
+  {
+   "i": 0,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Cleaner hierarchy, restrained palette, serif scale leads eye without t"
+  },
+  {
+   "i": 0,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Single focal point, clean descending hierarchy, restraint, generous ne"
+  },
+  {
+   "i": 1,
+   "j": 2,
+   "swap": 0,
+   "winner": 2,
+   "why": "Unified system, disciplined symmetry, restrained palette; A's scraps a"
+  },
+  {
+   "i": 1,
+   "j": 2,
+   "swap": 1,
+   "winner": 2,
+   "why": "Disciplined symmetry, clean tiers, one hero numeral; B's collage crowd"
+  },
+  {
+   "i": 1,
+   "j": 3,
+   "swap": 0,
+   "winner": 1,
+   "why": "Committed composition, real scale contrast, confident eye path; B read"
+  },
+  {
+   "i": 1,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Flawless alignment, ruthless restraint, one clean eye path; B's rows d"
+  },
+  {
+   "i": 1,
+   "j": 4,
+   "swap": 0,
+   "winner": 1,
+   "why": "Confident scale jump and disciplined palette; B's void is empty, not a"
+  },
+  {
+   "i": 1,
+   "j": 4,
+   "swap": 1,
+   "winner": 1,
+   "why": "Confident scale hierarchy fills the frame; A's empty half orphans a st"
+  },
+  {
+   "i": 1,
+   "j": 5,
+   "swap": 0,
+   "winner": 1,
+   "why": "Bolder scale contrast and committed composition; B is competent but ge"
+  },
+  {
+   "i": 1,
+   "j": 5,
+   "swap": 1,
+   "winner": 1,
+   "why": "Bolder hierarchy, deliberate collage tension, eye led decisively despi"
+  },
+  {
+   "i": 1,
+   "j": 6,
+   "swap": 0,
+   "winner": 1,
+   "why": "Decisive scale jump, single focal point; B is uniform, cluttered with "
+  },
+  {
+   "i": 1,
+   "j": 6,
+   "swap": 1,
+   "winner": 1,
+   "why": "Staged hierarchy, three-color restraint, one dominant focal point; A's"
+  },
+  {
+   "i": 1,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Restrained palette, clean vertical rhythm, unmuddled hierarchy; A's fo"
+  },
+  {
+   "i": 1,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Cleaner hierarchy, real restraint, eye led confidently; B's collage fi"
+  },
+  {
+   "i": 2,
+   "j": 3,
+   "swap": 0,
+   "winner": 2,
+   "why": "Fully resolved composition; commanding numeral, unified axis, ornament"
+  },
+  {
+   "i": 2,
+   "j": 3,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner hierarchy, disciplined left rail; B's ornament competes, forec"
+  },
+  {
+   "i": 2,
+   "j": 4,
+   "swap": 0,
+   "winner": 2,
+   "why": "Coherent hierarchy and confident focal point; B's void reads accidenta"
+  },
+  {
+   "i": 2,
+   "j": 4,
+   "swap": 1,
+   "winner": 2,
+   "why": "Confident hierarchy, resolved framing; A's void is unmotivated with or"
+  },
+  {
+   "i": 2,
+   "j": 5,
+   "swap": 0,
+   "winner": 2,
+   "why": "Committed hierarchy, ornament serves structure; B is competent but gen"
+  },
+  {
+   "i": 2,
+   "j": 5,
+   "swap": 1,
+   "winner": 2,
+   "why": "Committed style, dominant focal numeral, disciplined symmetry; A reads"
+  },
+  {
+   "i": 2,
+   "j": 6,
+   "swap": 0,
+   "winner": 2,
+   "why": "Single dominant numeral, clean tiers, restrained ornament; B is unifor"
+  },
+  {
+   "i": 2,
+   "j": 6,
+   "swap": 1,
+   "winner": 2,
+   "why": "Clear hierarchy, disciplined ornament; A's decoration is noisy and und"
+  },
+  {
+   "i": 2,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Restrained hierarchy, confident asymmetry, real negative space; A's or"
+  },
+  {
+   "i": 2,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Restraint, asymmetric tension, clear hierarchy; B is ornate, evenly-we"
+  },
+  {
+   "i": 3,
+   "j": 4,
+   "swap": 0,
+   "winner": 3,
+   "why": "Cleaner descending hierarchy; B's vast void holds only a stray orphan "
+  },
+  {
+   "i": 3,
+   "j": 4,
+   "swap": 1,
+   "winner": 3,
+   "why": "Decisive scale jump, aligned columns; A's top half is empty with orpha"
+  },
+  {
+   "i": 3,
+   "j": 5,
+   "swap": 0,
+   "winner": 3,
+   "why": "Bolder scale contrast, calmer palette, cleaner grid; B's rules and mon"
+  },
+  {
+   "i": 3,
+   "j": 5,
+   "swap": 1,
+   "winner": 3,
+   "why": "Cleaner grayscale restraint, one dominant numeral, calmer hierarchy; A"
+  },
+  {
+   "i": 3,
+   "j": 6,
+   "swap": 0,
+   "winner": 3,
+   "why": "Clear scale hierarchy, disciplined grid, restraint; B is decorative no"
+  },
+  {
+   "i": 3,
+   "j": 6,
+   "swap": 1,
+   "winner": 3,
+   "why": "Clear hierarchy, disciplined grid; A's decorative noise fights its own"
+  },
+  {
+   "i": 3,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Committed palette, serif/caps contrast, asymmetric list, breathing neg"
+  },
+  {
+   "i": 3,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Deliberate scale contrast, asymmetric two-column tension, confident se"
+  },
+  {
+   "i": 4,
+   "j": 5,
+   "swap": 0,
+   "winner": 5,
+   "why": "Consistent grid, clear hierarchy; A wastes half the canvas on void."
+  },
+  {
+   "i": 4,
+   "j": 5,
+   "swap": 1,
+   "winner": 5,
+   "why": "Clean rule-divided grid, decisive hierarchy; B's void holds a stray or"
+  },
+  {
+   "i": 4,
+   "j": 6,
+   "swap": 0,
+   "winner": 4,
+   "why": "Restrained hierarchy, clear reading path; B's confetti ornament drowns"
+  },
+  {
+   "i": 4,
+   "j": 6,
+   "swap": 1,
+   "winner": 4,
+   "why": "Restrained editorial hierarchy leads the eye; A's ornament collides an"
+  },
+  {
+   "i": 4,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Decisive scale contrast, confident hierarchy; A has dead void, weak an"
+  },
+  {
+   "i": 4,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Confident scale contrast, deliberate whitespace; B has a dead void and"
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "swap": 0,
+   "winner": 5,
+   "why": "Clear hierarchy, disciplined grid, restrained palette; B's ornament cl"
+  },
+  {
+   "i": 5,
+   "j": 6,
+   "swap": 1,
+   "winner": 5,
+   "why": "Clear hierarchy, disciplined grid, restrained palette; A's confetti fi"
+  },
+  {
+   "i": 5,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Bolder scale contrast, generous negative space, one confident focal po"
+  },
+  {
+   "i": 5,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Bolder scale contrast, confident asymmetry, restrained palette; B is f"
+  },
+  {
+   "i": 6,
+   "j": 7,
+   "swap": 0,
+   "winner": 7,
+   "why": "Restrained palette, clear hierarchy; A's decorative noise fights its o"
+  },
+  {
+   "i": 6,
+   "j": 7,
+   "swap": 1,
+   "winner": 7,
+   "why": "Clear hierarchy, generous negative space; B is cluttered, decoration d"
+  }
+ ]
+}

@@ -9646,6 +9646,17 @@ impl AppMain for App {
             static FIRST_DRAW: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(true);
             if FIRST_DRAW.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                // `MAKEPAD_WINDOW_SIZE=360x780` gives the desktop build the
+                // phone's shape. Layout is the thing under test, and a card
+                // laid out at 900x700 is a different card — the desktop
+                // default is landscape and the device is not.
+                if let Ok(spec) = std::env::var("MAKEPAD_WINDOW_SIZE") {
+                    if let Some((w, h)) = spec.split_once(['x', 'X']) {
+                        if let (Ok(w), Ok(h)) = (w.trim().parse::<f64>(), h.trim().parse::<f64>()) {
+                            self.ui.window(cx, ids!(main_window)).resize(cx, dvec2(w, h));
+                        }
+                    }
+                }
                 self.collapse_sidebar_if_narrow(cx);
             }
         }
@@ -9661,6 +9672,44 @@ impl AppMain for App {
 
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
+
+        // `MAKEPAD_DUMP_GEOMETRY=<path>` writes every laid-out node — rect,
+        // clipped rect, text, ink and fill — as JSON, then exits. This is the
+        // input to `lab/gates/`, which checks layout defects deterministically
+        // instead of guessing at them from a screenshot.
+        //
+        // It runs AFTER `ui.handle_event` because `Area::rect` reads the
+        // retained instance buffer and is only valid once the draw for this
+        // frame has actually run. `MAKEPAD_DUMP_GEOMETRY_FRAMES` sets how many
+        // frames to let the card settle first; sources land asynchronously and
+        // a dump taken too early measures the pending state.
+        if let Event::Draw(_) = event {
+            if let Ok(path) = std::env::var("MAKEPAD_DUMP_GEOMETRY") {
+                static DRAWS: std::sync::atomic::AtomicU32 =
+                    std::sync::atomic::AtomicU32::new(0);
+                let n = DRAWS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                let wait: u32 = std::env::var("MAKEPAD_DUMP_GEOMETRY_FRAMES")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(90);
+                if n >= wait {
+                    let size = self.ui.window(cx, ids!(main_window)).get_inner_size(cx);
+                    let body = cx.widget_tree().geometry_json(cx);
+                    let json = format!(
+                        "{{\"screen\":{{\"w\":{},\"h\":{}}},{}",
+                        size.x.round() as i64,
+                        size.y.round() as i64,
+                        &body[1..]
+                    );
+                    match std::fs::write(&path, json) {
+                        Ok(()) => log::info!("geometry dumped to {path} after {n} frames"),
+                        Err(why) => log::error!("geometry dump to {path} failed: {why}"),
+                    }
+                    std::process::exit(0);
+                }
+                cx.redraw_all();
+            }
+        }
 
         // Transport wake-ups arrive as signals; refresh the top-bar
         // connection dot/label from APP_STATE so Live/Reconnecting/Offline

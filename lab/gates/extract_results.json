@@ -1,0 +1,282 @@
+{
+ "r004-weather-punk_zine": {
+  "cv": {
+   "ground": "#000000",
+   "ink": "#e3dbce",
+   "accent": "#cece33",
+   "ground_share": 0.119,
+   "hero_to_body": 1.0,
+   "distinct_sizes": 1,
+   "margin_fraction": 0.0,
+   "bands": 1,
+   "hero_align": "center"
+  },
+  "glm": {
+   "ground": "#121212",
+   "ink": "#f2e9d8",
+   "accent": "#d7e021",
+   "ground_share": 0.4,
+   "hero_to_body": 8.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.08,
+   "bands": 11,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#111111",
+   "ink": "#eae7dc",
+   "accent": "#cddc1f",
+   "ground_share": 0.5,
+   "hero_to_body": 8.5,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.05,
+   "bands": 4,
+   "hero_align": "center"
+  }
+ },
+ "r010-weather-punk_zine": {
+  "cv": {
+   "ground": "#c0cd2d",
+   "ink": "#1d1e1c",
+   "accent": "#8b7a8f",
+   "ground_share": 0.168,
+   "hero_to_body": 1.0,
+   "distinct_sizes": 2,
+   "margin_fraction": 0.0,
+   "bands": 2,
+   "hero_align": "center"
+  },
+  "glm": {
+   "ground": "#f0ead9",
+   "ink": "#1c1a17",
+   "accent": "#b5d326",
+   "ground_share": 0.35,
+   "hero_to_body": 9.0,
+   "distinct_sizes": 6,
+   "margin_fraction": 0.07,
+   "bands": 4,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#efeae0",
+   "ink": "#1e1e1e",
+   "accent": "#c3d92b",
+   "ground_share": 0.34,
+   "hero_to_body": 12.0,
+   "distinct_sizes": 6,
+   "margin_fraction": 0.04,
+   "bands": 4,
+   "hero_align": "left"
+  }
+ },
+ "r012-weather-art_deco": {
+  "cv": {
+   "ground": "#034b4b",
+   "ink": "#caa863",
+   "accent": "#024a4a",
+   "ground_share": 0.133,
+   "hero_to_body": 13.25,
+   "distinct_sizes": 6,
+   "margin_fraction": 0.025,
+   "bands": 18,
+   "hero_align": "center"
+  },
+  "glm": {
+   "ground": "#0e5f52",
+   "ink": "#d9b46a",
+   "accent": "#d9b46a",
+   "ground_share": 0.85,
+   "hero_to_body": 7.0,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.06,
+   "bands": 5,
+   "hero_align": "center"
+  },
+  "opus": {
+   "ground": "#0d5450",
+   "ink": "#e0b969",
+   "accent": "#e8c47a",
+   "ground_share": 0.88,
+   "hero_to_body": 9.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.07,
+   "bands": 5,
+   "hero_align": "center"
+  }
+ },
+ "r021-weather-swiss": {
+  "cv": {
+   "ground": "#f4f4f4",
+   "ink": "#a5a5a5",
+   "accent": "#f3f3f2",
+   "ground_share": 0.28,
+   "hero_to_body": 8.92,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.072,
+   "bands": 13,
+   "hero_align": "left"
+  },
+  "glm": {
+   "ground": "#eeeeee",
+   "ink": "#222222",
+   "accent": "#eeeeee",
+   "ground_share": 0.55,
+   "hero_to_body": 5.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.07,
+   "bands": 2,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#f2f2f0",
+   "ink": "#3a3a3a",
+   "accent": "#f2f2f0",
+   "ground_share": 0.88,
+   "hero_to_body": 8.5,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.075,
+   "bands": 4,
+   "hero_align": "left"
+  }
+ },
+ "r034-news-japanese_ma": {
+  "cv": {
+   "ground": "#f4eddf",
+   "ink": "#beb8ab",
+   "accent": "#f3ecde",
+   "ground_share": 0.292,
+   "hero_to_body": 2.83,
+   "distinct_sizes": 3,
+   "margin_fraction": 0.062,
+   "bands": 15,
+   "hero_align": "left"
+  },
+  "glm": {
+   "ground": "#ece7da",
+   "ink": "#333333",
+   "accent": "#333333",
+   "ground_share": 0.85,
+   "hero_to_body": 3.0,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.06,
+   "bands": 3,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#f2ece1",
+   "ink": "#33312c",
+   "accent": "#f2ece1",
+   "ground_share": 0.93,
+   "hero_to_body": 2.6,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.065,
+   "bands": 4,
+   "hero_align": "left"
+  }
+ },
+ "r061-stock-swiss": {
+  "cv": {
+   "ground": "#070c10",
+   "ink": "#0a1315",
+   "accent": "#050d10",
+   "ground_share": 0.126,
+   "hero_to_body": 2.85,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.0,
+   "bands": 17,
+   "hero_align": "left"
+  },
+  "glm": {
+   "ground": "#0d1210",
+   "ink": "#c8cdd0",
+   "accent": "#d8c05a",
+   "ground_share": 0.72,
+   "hero_to_body": 3.2,
+   "distinct_sizes": 4,
+   "margin_fraction": 0.1,
+   "bands": 7,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#0b1210",
+   "ink": "#9aa5a3",
+   "accent": "#e8c76a",
+   "ground_share": 0.85,
+   "hero_to_body": 4.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.1,
+   "bands": 3,
+   "hero_align": "left"
+  }
+ },
+ "r096-quake-memphis": {
+  "cv": {
+   "ground": "#d5e3af",
+   "ink": "#08422f",
+   "accent": "#033727",
+   "ground_share": 0.138,
+   "hero_to_body": 8.53,
+   "distinct_sizes": 3,
+   "margin_fraction": 0.0,
+   "bands": 4,
+   "hero_align": "center"
+  },
+  "glm": {
+   "ground": "#eef0d8",
+   "ink": "#123524",
+   "accent": "#8db54b",
+   "ground_share": 0.45,
+   "hero_to_body": 3.5,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.06,
+   "bands": 7,
+   "hero_align": "center"
+  },
+  "opus": {
+   "ground": "#f2f7dc",
+   "ink": "#14432a",
+   "accent": "#f5c518",
+   "ground_share": 0.62,
+   "hero_to_body": 4.2,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.06,
+   "bands": 8,
+   "hero_align": "center"
+  }
+ },
+ "ref_mockup": {
+  "cv": {
+   "ground": "#db622e",
+   "ink": "#cf491e",
+   "accent": "#d44d20",
+   "ground_share": 0.096,
+   "hero_to_body": 6.57,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.075,
+   "bands": 15,
+   "hero_align": "left"
+  },
+  "glm": {
+   "ground": "#d2522a",
+   "ink": "#f5ece2",
+   "accent": "#f5ece2",
+   "ground_share": 0.92,
+   "hero_to_body": 8.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.08,
+   "bands": 3,
+   "hero_align": "left"
+  },
+  "opus": {
+   "ground": "#cb4f2a",
+   "ink": "#f8f1e8",
+   "accent": "#cb4f2a",
+   "ground_share": 0.92,
+   "hero_to_body": 12.0,
+   "distinct_sizes": 5,
+   "margin_fraction": 0.085,
+   "bands": 2,
+   "hero_align": "left"
+  }
+ }
+}
